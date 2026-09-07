@@ -8,7 +8,21 @@ frappe.ui.form.on("Transcript Request", {
 		const pending_states = ["Submitted", "Under Review", "Approved"];
 		if (!pending_states.includes(frm.doc.status)) return;
 
+		const payment_blocked = frm.doc.payment_required &&
+			!["Not Required", "Paid"].includes(frm.doc.payment_status);
+
 		frm.add_custom_button(__("Approve & Generate"), () => {
+			if (payment_blocked) {
+				frappe.msgprint({
+					title: __("Payment Incomplete"),
+					indicator: "red",
+					message: __(
+						"This request cannot be approved until payment is completed. Current payment status: {0}",
+						[frm.doc.payment_status]
+					),
+				});
+				return;
+			}
 			frappe.confirm(
 				__("Generate the transcript for this request now?"),
 				() => {
@@ -26,6 +40,12 @@ frappe.ui.form.on("Transcript Request", {
 								});
 								frm.reload_doc();
 							}
+						},
+						error: () => {
+							frappe.show_alert({
+								message: __("Approval failed. Please check the request and try again."),
+								indicator: "red",
+							}, 6);
 						},
 					});
 				}
@@ -53,6 +73,12 @@ frappe.ui.form.on("Transcript Request", {
 								frappe.show_alert({ message: __("Request rejected"), indicator: "orange" });
 								frm.reload_doc();
 							}
+						},
+						error: () => {
+							frappe.show_alert({
+								message: __("Rejection failed. Please check the request and try again."),
+								indicator: "red",
+							}, 6);
 						},
 					});
 				},
