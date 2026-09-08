@@ -73,6 +73,7 @@ jinja = {
 		"slcm.admission.utils.portal.get_portal_website_branding",
 		"slcm.admission.utils.portal.get_typography_style_block",
 		"slcm.admission.doctype.seat_allocation.seat_allocation.get_results_notification_context",
+		"slcm.slcm.doctype.fee_certificate_request.fee_certificate_request.get_fee_certificate_context",
 	],
 }
 
