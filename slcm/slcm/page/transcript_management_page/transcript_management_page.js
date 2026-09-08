@@ -792,12 +792,7 @@ frappe.pages["transcript-management-page"].on_page_load = function (wrapper) {
 						</div>
 					</div>
 					<div class="tm-stat-card">
-						<div class="tm-stat-icon tm-stat-icon-interim">
-							<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
-								fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-								<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-							</svg>
-						</div>
+						<div class="tm-stat-icon tm-stat-icon-interim" style="font-size:18px; font-weight:700;">₹</div>
 						<div class="tm-stat-body">
 							<div class="tm-stat-value" id="tm-rstat-revenue">—</div>
 							<div class="tm-stat-label">${__("Revenue Collected")}</div>
