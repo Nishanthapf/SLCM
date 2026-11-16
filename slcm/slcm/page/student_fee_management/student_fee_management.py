@@ -416,7 +416,7 @@ def get_student_dues(student):
 		"Fee Concession",
 		filters={"student": student, "docstatus": ["!=", 2]},
 		fields=[
-			"name", "fee_demand", "fee_component", "concession_type",
+			"name", "fee_demand", "fee_component", "concession_type", "concession_date",
 			"waiver_value", "waiver_amount", "status", "docstatus", "reason", "approved_on", "creation",
 		],
 		order_by="creation desc",
@@ -785,6 +785,38 @@ def move_to_excess(student, fee_demand, amount, credit_type, remarks=None, acade
 	return {"credit_note": note.name}
 
 
+def _submit_stipend(student, values, amended_from=None):
+	"""Create and submit a Stipend Payment from the dialog values."""
+	remarks = _require_remarks(values.get("remarks"))
+	amount = flt(values.get("amount"))
+	if amount <= 0:
+		frappe.throw(_("Amount must be greater than zero."))
+	sm = frappe.db.get_value("Student Master", student, ["first_name", "programme_of_study"], as_dict=True)
+	if not sm:
+		frappe.throw(_("Student {0} not found.").format(student))
+
+	doc = frappe.new_doc("Stipend Payment")
+	doc.update({
+		"student": student,
+		"student_name": sm.first_name,
+		"programme": sm.programme_of_study if frappe.db.exists("Programme", sm.programme_of_study) else None,
+		"academic_year": values.get("academic_year"),
+		"academic_term": values.get("academic_term"),
+		"stipend_type": values.get("stipend_type"),
+		"payment_date": values.get("payment_date"),
+		"payment_mode": values.get("payment_mode"),
+		"amount": amount,
+		"reference_number": (values.get("reference_number") or "").strip() or None,
+		"remarks": remarks,
+		"status": "Draft",
+		"amended_from": amended_from,
+	})
+	doc.flags.ignore_permissions = bool(amended_from)
+	doc.insert()
+	doc.submit()
+	return doc
+
+
 @frappe.whitelist()
 def record_stipend(
 	student,
@@ -799,32 +831,134 @@ def record_stipend(
 ):
 	"""Create and submit a Stipend Payment for the student (normal Stipend Payment permissions apply)."""
 	_check_access()
-	remarks = _require_remarks(remarks)
+	doc = _submit_stipend(student, frappe._dict(locals()))
+	return {"stipend_payment": doc.name}
+
+
+def _active_stipend(stipend_payment, student):
+	if not frappe.db.exists("Stipend Payment", stipend_payment):
+		frappe.throw(_("Stipend Payment {0} was not found.").format(stipend_payment))
+	doc = frappe.get_doc("Stipend Payment", stipend_payment)
+	if doc.student != student:
+		frappe.throw(_("Stipend Payment {0} does not belong to this student.").format(stipend_payment))
+	if doc.docstatus != 1:
+		frappe.throw(_("Stipend Payment {0} is not active (it is {1}).").format(stipend_payment, doc.status or _("a draft")))
+	return doc
+
+
+def _cancel_stipend(doc, remarks):
+	doc.add_comment("Comment", _("Cancelled from Student Due Details: {0}").format(frappe.utils.escape_html(remarks)))
+	doc.flags.ignore_permissions = True
+	doc.cancel()
+
+
+@frappe.whitelist()
+def edit_stipend(
+	student,
+	stipend_payment,
+	stipend_type,
+	payment_date,
+	payment_mode,
+	amount,
+	remarks=None,
+	academic_year=None,
+	academic_term=None,
+	reference_number=None,
+):
+	"""Correct a stipend payment: it is cancelled (its ERPNext entry reversed) and an amended Stipend Payment
+	(SP-xxxx-1) is submitted in its place, in one transaction - any error leaves the original."""
+	_check_access()
+	values = frappe._dict(locals())
+	values.remarks = _require_remarks(remarks)
+	doc = _active_stipend(stipend_payment, student)
 	if flt(amount) <= 0:
 		frappe.throw(_("Amount must be greater than zero."))
 
-	sm = frappe.db.get_value("Student Master", student, ["first_name", "programme_of_study"], as_dict=True)
-	if not sm:
-		frappe.throw(_("Student {0} not found.").format(student))
+	frappe.db.savepoint("sfm_edit_stipend")
+	try:
+		_cancel_stipend(doc, values.remarks)
+		new = _submit_stipend(student, values, amended_from=doc.name)
+	except Exception:
+		frappe.db.rollback(save_point="sfm_edit_stipend")
+		raise
+	return {"stipend_payment": new.name, "old_stipend_payment": doc.name}
 
-	doc = frappe.new_doc("Stipend Payment")
-	doc.update({
-		"student": student,
-		"student_name": sm.first_name,
-		"programme": sm.programme_of_study if frappe.db.exists("Programme", sm.programme_of_study) else None,
-		"academic_year": academic_year,
-		"academic_term": academic_term,
-		"stipend_type": stipend_type,
-		"payment_date": payment_date,
-		"payment_mode": payment_mode,
-		"amount": flt(amount),
-		"reference_number": reference_number,
-		"remarks": remarks,
-		"status": "Draft",
-	})
-	doc.insert()
-	doc.submit()
+
+@frappe.whitelist()
+def delete_stipend(student, stipend_payment, remarks=None):
+	"""Delete a stipend payment: it is cancelled (its ERPNext entry reversed); the record stays for the audit trail."""
+	_check_access()
+	remarks = _require_remarks(remarks)
+	doc = _active_stipend(stipend_payment, student)
+	_cancel_stipend(doc, remarks)
 	return {"stipend_payment": doc.name}
+
+
+def _active_concession(concession, student):
+	if not frappe.db.exists("Fee Concession", concession):
+		frappe.throw(_("Fee Concession {0} was not found.").format(concession))
+	doc = frappe.get_doc("Fee Concession", concession)
+	if doc.student != student:
+		frappe.throw(_("Fee Concession {0} does not belong to this student.").format(concession))
+	if doc.docstatus != 1:
+		frappe.throw(_("Fee Concession {0} is not active (it is {1}).").format(concession, doc.status or _("a draft")))
+	if frappe.db.get_value("Fee Demand", doc.fee_demand, "status") == "Cancelled":
+		frappe.throw(_("Due {0} is cancelled, so its concession can no longer be changed.").format(doc.fee_demand))
+	return doc
+
+
+def _cancel_concession(doc, remarks):
+	doc.add_comment("Comment", _("Cancelled from Student Due Details: {0}").format(frappe.utils.escape_html(remarks)))
+	doc.flags.ignore_permissions = True
+	doc.cancel()
+
+
+@frappe.whitelist()
+def edit_concession(student, concession, concession_type, waiver_value, reason, concession_date=None, remarks=None):
+	"""Correct a scholarship / waiver: the concession is cancelled (its waiver taken off the due) and an amended
+	Fee Concession (CON-xxxx-1) is submitted on the same due, in one transaction - any error (for example a waiver
+	larger than the unpaid balance) leaves the original as it was."""
+	_check_access()
+	remarks = _require_remarks(remarks)
+	reason = (reason or "").strip()
+	if not reason:
+		frappe.throw(_("Reason is mandatory."))
+	if flt(waiver_value) <= 0:
+		frappe.throw(_("Waiver Value must be greater than zero."))
+	doc = _active_concession(concession, student)
+
+	frappe.db.savepoint("sfm_edit_concession")
+	try:
+		_cancel_concession(doc, remarks)
+		new = frappe.new_doc("Fee Concession")
+		new.update({
+			"student": student,
+			"fee_demand": doc.fee_demand,
+			"concession_type": concession_type,
+			"waiver_value": flt(waiver_value),
+			"concession_date": concession_date or doc.concession_date,
+			"reason": reason,
+			"amended_from": doc.name,
+		})
+		new.flags.ignore_permissions = True
+		new.insert()
+		new.submit()
+		new.add_comment("Comment", _("Amended from {0}: {1}").format(doc.name, frappe.utils.escape_html(remarks)))
+	except Exception:
+		frappe.db.rollback(save_point="sfm_edit_concession")
+		raise
+	return {"concession": new.name, "old_concession": doc.name}
+
+
+@frappe.whitelist()
+def delete_concession(student, concession, remarks=None):
+	"""Delete a scholarship / waiver: the concession is cancelled and its waiver taken off the due (the due's
+	pending amount goes back up). The record stays as Reversed for the audit trail."""
+	_check_access()
+	remarks = _require_remarks(remarks)
+	doc = _active_concession(concession, student)
+	_cancel_concession(doc, remarks)
+	return {"concession": doc.name}
 
 
 @frappe.whitelist()

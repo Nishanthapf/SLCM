@@ -84,7 +84,7 @@ frappe.ui.form.on("Fee Concession", {
 
 		if (waiver > original) {
 			frappe.show_alert({
-				message: __("Waiver Amount cannot exceed Original Amount ₹{0}", [format_currency(original, "INR")]),
+				message: __("Waiver Amount cannot exceed Original Amount {0}", [format_currency(original, "INR")]),
 				indicator: "red",
 			});
 			return;
@@ -94,7 +94,7 @@ frappe.ui.form.on("Fee Concession", {
 
 		// Show live preview
 		frappe.show_alert({
-			message: __("Waiver: ₹{0} | Outstanding after waiver: ₹{1}", [
+			message: __("Waiver: {0} | Outstanding after waiver: {1}", [
 				format_currency(waiver, "INR"),
 				format_currency(Math.max(0, original - waiver - flt(frm.doc.paid_amount)), "INR"),
 			]),

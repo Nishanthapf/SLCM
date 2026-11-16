@@ -86,6 +86,50 @@ DEMAND_COLUMNS = [
 ]
 DEMAND_ROWS = 500  # formatted / validated rows in the blank sheet
 
+# Fee Refund sheet (pre-filled per Refund Source): (header, width, key in the row | None for an input column, kind)
+#   Headers equal Fee Refund labels. Bank details are pre-filled from the student and may be edited.
+REFUND_COLUMNS = [  # same order as the Fee Refund form
+	("Student", 18, "student", None),
+	("Registration ID", 18, "registration_id", None),
+	("Student Name", 26, "student_name", None),
+	("Refund Source", 16, "refund_source", None),
+	("Fee Demand", 17, "fee_demand", None),
+	("Available Excess", 14, "available_excess", "money_info"),
+	("Fee Component", 30, "fee_component", None),
+	("Amount Paid", 14, "paid_amount", "money_info"),
+	("Refund Type", 18, "refund_type", "select:refund_type"),
+	("Refund Amount", 15, None, "money"),
+	("Refund Date", 14, None, "date"),
+	("Refund Mode", 16, None, "select:refund_mode"),
+	("Bank Name", 24, "bank_name", "text"),
+	("Account Number", 20, "account_number", "text"),
+	("IFSC Code", 14, "ifsc_code", "text"),
+	("UTR / Reference Number", 24, None, "text"),
+	("Reason for Refund", 36, None, "text"),
+	("Remarks", 30, None, "text"),
+	("Transaction Date", 15, None, "date"),
+]
+REFUND_SOURCES = ("Excess Amount", "Fee Demand")
+
+# Student Credit Note sheet (excess money received): blank creation sheet, like Fee Demand.
+#   (header, width, required, kind) — headers equal Student Credit Note labels.
+EXCESS_COLUMNS = [  # same order as the Student Credit Note form; give Registration ID or Student
+	("Student", 18, False, "student"),
+	("Registration ID", 18, True, "registration_id"),
+	("Student Name", 26, False, "auto"),
+	("Credit Type", 18, True, "select:credit_type"),
+	("Academic Year", 14, False, "academic_year"),
+	("Credit Amount", 15, True, "money"),
+	("Received Via", 16, True, "select:received_via"),
+	("University Bank Account", 38, False, "select:received_bank_account"),
+	("Received Date", 14, True, "date"),
+	("Reference / UTR", 24, False, None),
+	("Remarks", 40, False, None),
+]
+
+# Every doctype the fee bulk upload covers (templates, history and delete)
+BULK_DOCTYPES = ("Fee Demand", "Fee Payment", "Fee Concession", "Fee Refund", "Student Credit Note")
+
 OPEN_DUES_CONDITIONS = [
 	"fd.status NOT IN ('Paid', 'Cancelled', 'Waived')",
 	"IFNULL(fd.outstanding_amount, 0) > 0",
@@ -102,7 +146,7 @@ def as_list(value):
 
 
 def _check(doctype):
-	if doctype not in PREFILLED and doctype != "Fee Demand":
+	if doctype not in BULK_DOCTYPES:
 		frappe.throw(_("No bulk-upload template for {0}.").format(doctype))
 	if not frappe.has_permission(doctype, "create"):
 		frappe.throw(_("You are not permitted to create {0}.").format(_(doctype)), frappe.PermissionError)
@@ -119,7 +163,7 @@ def get_filter_options(doctype):
 	that have open dues. Fee Demand sheet: years / programmes of students (for the Students reference list)."""
 	_check(doctype)
 	out = {}
-	if doctype == "Fee Demand":
+	if doctype in ("Fee Demand", "Fee Refund", "Student Credit Note"):
 		for key, col in (("academic_year", "academic_year"), ("programme", "programme_of_study")):
 			out[key] = frappe.db.sql(
 				f"""SELECT {col} AS value, COUNT(*) AS n FROM `tabStudent Master`
@@ -196,12 +240,16 @@ def _field_options(doctype, fieldname):
 # ── Download ─────────────────────────────────────────────────────────────────
 @frappe.whitelist()
 def download_template(doctype, academic_year=None, programme=None, fee_component=None, file_type="Excel",
-	from_date=None, to_date=None, date_based_on="Due Date"):
+	from_date=None, to_date=None, date_based_on="Due Date", refund_source="Excess Amount"):
 	"""The bulk-upload sheet for ``doctype`` as Excel (styled, with dropdowns) or CSV (same columns)."""
 	_check(doctype)
 	csv = (file_type or "").upper() == "CSV"
 	if doctype == "Fee Demand":
 		return _demand_template(academic_year, programme, csv)
+	if doctype == "Fee Refund":
+		return _refund_template(refund_source, academic_year, programme, csv)
+	if doctype == "Student Credit Note":
+		return _excess_template(academic_year, programme, csv)
 
 	cfg = PREFILLED[doctype]
 	dues = get_open_dues(doctype, academic_year, programme, fee_component,
@@ -287,6 +335,129 @@ def _demand_template(academic_year, programme, csv):
 	return _xlsx_response(wb, filename)
 
 
+def _student_conditions(academic_year, programme, alias="sm"):
+	conditions, values = [], {}
+	for value, column, key in ((academic_year, "academic_year", "ay"), (programme, "programme_of_study", "pr")):
+		selected = as_list(value)
+		if selected:
+			conditions.append(f"{alias}.{column} IN %({key})s")
+			values[key] = tuple(selected)
+	return conditions, values
+
+
+def get_refund_rows(refund_source="Excess Amount", academic_year=None, programme=None):
+	"""Pre-filled refund rows. Excess Amount: one row per student with unused excess. Fee Demand: one row per due
+	with money paid on it and no approved refund yet (Fee Refund allows one per due)."""
+	if refund_source not in REFUND_SOURCES:
+		frappe.throw(_("Refund Source must be Excess Amount or Fee Demand."))
+	conditions, values = _student_conditions(academic_year, programme)
+	extra = "".join(f" AND {c}" for c in conditions)
+	bank = """sm.savings_bank_name AS bank_name, sm.savings_account_number AS account_number,
+		sm.savings_ifsc_code AS ifsc_code"""
+	reg = "IFNULL(NULLIF(sm.registration_id, ''), sm.application_number) AS registration_id"
+	if refund_source == "Excess Amount":
+		return frappe.db.sql(
+			f"""SELECT sm.name AS student, {reg}, sm.first_name AS student_name, 'Excess Amount' AS refund_source,
+				NULL AS fee_demand, NULL AS fee_component, NULL AS paid_amount,
+				SUM(cn.available_credit) AS available_excess, 'Excess Refund' AS refund_type, {bank}
+			FROM `tabStudent Credit Note` cn JOIN `tabStudent Master` sm ON sm.name = cn.student
+			WHERE cn.docstatus = 1 AND cn.status = 'Active' AND cn.available_credit > 0{extra}
+			GROUP BY sm.name HAVING available_excess > 0
+			ORDER BY registration_id, sm.name""",
+			values,
+			as_dict=True,
+		)
+	return frappe.db.sql(
+		f"""SELECT sm.name AS student, {reg}, sm.first_name AS student_name, 'Fee Demand' AS refund_source,
+			fd.name AS fee_demand, fd.fee_component, fd.paid_amount, NULL AS available_excess,
+			NULL AS refund_type, {bank}
+		FROM `tabFee Demand` fd JOIN `tabStudent Master` sm ON sm.name = fd.student
+		WHERE fd.paid_amount > 0 AND fd.status != 'Cancelled'
+			AND NOT EXISTS (SELECT 1 FROM `tabFee Refund` fr
+				WHERE fr.fee_demand = fd.name AND fr.status = 'Approved' AND fr.docstatus = 1){extra}
+		ORDER BY registration_id, fd.due_date, fd.name""",
+		values,
+		as_dict=True,
+	)
+
+
+def _refund_template(refund_source, academic_year, programme, csv):
+	"""Fee Refund sheet pre-filled with what can be refunded; the office fills the yellow columns and deletes the
+	rows it is not refunding (each remaining row becomes one submitted Fee Refund)."""
+	refund_source = refund_source or "Excess Amount"
+	rows_data = get_refund_rows(refund_source, academic_year, programme)
+	headers = [h for h, _w, _k, _kind in REFUND_COLUMNS]
+	rows = [[(r.get(key) if key else None) for _h, _w, key, _kind in REFUND_COLUMNS] for r in rows_data]
+	filename = "Fee Refund Bulk Upload ({0}) - {1}".format(refund_source, today())
+	if csv:
+		return _csv_response(headers, rows, filename)
+
+	from openpyxl.comments import Comment
+
+	wb, ws, col = _new_sheet("Refunds", headers, [w for _h, w, _k, _kind in REFUND_COLUMNS])
+	yellow = _fill("FFFF00")
+	for h, _w, _k, kind in REFUND_COLUMNS:
+		if kind and kind != "money_info":
+			ws[f"{col[h]}1"].fill = yellow
+	ws[f"{col['Refund Amount']}1"].comment = Comment(
+		_("Delete the rows you are not refunding. Excess: up to Available Excess. Fee Demand: up to Amount Paid."), "SLCM"
+	)
+	ws[f"{col['Bank Name']}1"].comment = Comment(_("Pre-filled from the student's bank details; correct if needed."), "SLCM")
+	for row in rows:
+		ws.append(row)
+	last = max(ws.max_row, 2)
+	_format(ws, col, last, dates=("Refund Date", "Transaction Date"), money=("Amount Paid", "Available Excess", "Refund Amount"))
+	_decimal_validation(ws, col["Refund Amount"], last)
+	for h, _w, _k, kind in REFUND_COLUMNS:
+		if kind and kind.startswith("select:"):
+			_list_validation(wb, ws, col[h], last, h, _field_options("Fee Refund", kind.split(":", 1)[1]))
+	return _xlsx_response(wb, filename)
+
+
+def _excess_template(academic_year, programme, csv):
+	"""Blank Student Credit Note sheet for excess money received + a Students reference sheet."""
+	headers = [h for h, _w, _r, _k in EXCESS_COLUMNS]
+	filename = "Excess Received Bulk Upload - {0}".format(today())
+	if csv:
+		return _csv_response(headers, [], filename)
+
+	from openpyxl.comments import Comment
+	from openpyxl.styles import Font
+
+	wb, ws, col = _new_sheet("Excess Received", headers, [w for _h, w, _r, _k in EXCESS_COLUMNS])
+	last = DEMAND_ROWS + 1
+	for h, _w, required, kind in EXCESS_COLUMNS:
+		ws[f"{col[h]}1"].font = Font(bold=True, color="808080" if kind == "auto" else ("FF0000" if required else "000000"))
+	ws[f"{col['Registration ID']}1"].comment = Comment(
+		_("The student's Registration ID (see the Students sheet). Or fill Student with the system ID instead."), "SLCM"
+	)
+	ws[f"{col['Student']}1"].comment = Comment(_("Optional when Registration ID is filled."), "SLCM")
+	ws[f"{col['Student Name']}1"].comment = Comment(_("Filled by the system from the student. Leave blank."), "SLCM")
+	ws[f"{col['University Bank Account']}1"].comment = Comment(_("The account the money reached; leave blank for Cash."), "SLCM")
+	ws[f"{col['Academic Year']}1"].comment = Comment(_("Optional."), "SLCM")
+	_format(ws, col, last, dates=("Received Date",), money=("Credit Amount",))
+	_decimal_validation(ws, col["Credit Amount"], last)
+	for h, _w, _r, kind in EXCESS_COLUMNS:
+		if kind and kind.startswith("select:"):
+			_list_validation(wb, ws, col[h], last, h, _field_options("Student Credit Note", kind.split(":", 1)[1]))
+	_list_validation(wb, ws, col["Academic Year"], last, "Academic Year", frappe.get_all("Academic Year", pluck="name", order_by="name desc"))
+
+	students = _students(academic_year, programme)
+	ref = wb.create_sheet("Students")
+	ref.append(["Student", "Registration ID", "Student Name", "Student Email ID", "Programme", "Academic Year"])
+	for c in ref[1]:
+		c.font = Font(bold=True)
+	for st in students:
+		ref.append([st.name, st.registration_id, st.first_name, st.email, st.programme_of_study, st.academic_year])
+	for letter, width in zip("ABCDEF", (18, 30, 28, 34, 22, 14)):
+		ref.column_dimensions[letter].width = width
+	ref.freeze_panes = "A2"
+	if students:
+		_range_validation(ws, col["Student"], last, f"=Students!$A$2:$A${len(students) + 1}", "Student")
+		_range_validation(ws, col["Registration ID"], last, f"=Students!$B$2:$B${len(students) + 1}", "Registration ID")
+	return _xlsx_response(wb, filename)
+
+
 def _students(academic_year=None, programme=None):
 	conditions, values = ["1=1"], {}
 	for value, column, key in ((academic_year, "academic_year", "ay"), (programme, "programme_of_study", "pr")):
@@ -335,7 +506,7 @@ def _new_sheet(title, headers, widths):
 def _format(ws, col, last, dates=(), money=()):
 	for h in dates:
 		for r in range(2, last + 1):
-			ws[f"{col[h]}{r}"].number_format = "dd-mm-yyyy"
+			ws[f"{col[h]}{r}"].number_format = "dd/mm/yyyy"
 	for h in money:
 		for r in range(2, last + 1):
 			ws[f"{col[h]}{r}"].number_format = "#,##0.00"
@@ -396,7 +567,7 @@ def _xlsx_response(wb, filename):
 def data_import_download_template(doctype, export_fields=None, export_records=None, export_filters=None, file_type="CSV"):
 	"""Override of Data Import's "Download Template" (hooks.py): for Fee Concession / Fee Payment /
 	Fee Demand the blank template is the bulk-upload sheet. Other doctypes / export types are untouched."""
-	if (doctype in PREFILLED or doctype == "Fee Demand") and export_records in (None, "", "blank_template"):
+	if doctype in BULK_DOCTYPES and export_records in (None, "", "blank_template"):
 		return download_template(doctype, file_type="CSV" if (file_type or "").upper() == "CSV" else "Excel")
 
 	from frappe.core.doctype.data_import.data_import import download_template as standard

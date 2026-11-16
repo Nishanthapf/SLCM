@@ -21,8 +21,16 @@ def get_available_excess(student, for_update=False):
 class FeeRefund(Document):
 
 	def validate(self):
+		from slcm.slcm.doctype.student_credit_note.student_credit_note import resolve_student_from_registration_id
+
+		resolve_student_from_registration_id(self)
 		if flt(self.refund_amount) <= 0:
 			frappe.throw("Refund Amount must be greater than zero.")
+		# money paid out to an account needs the account (bulk uploads come through here, not the page dialog)
+		if self.docstatus == 0 and self.refund_mode in ("NEFT", "Cheque", "Online") and not (
+			self.bank_name and self.account_number and self.ifsc_code
+		):
+			frappe.throw(f"Bank Name, Account Number and IFSC Code are required for {self.refund_mode} refunds.")
 		if self.refund_source == EXCESS:
 			self._validate_excess_refund()
 		else:

@@ -5,9 +5,34 @@ from frappe.utils import flt, today
 # Credit types that stand for money the student paid; the others (e.g. Scholarship Credit) carry no cash.
 CASH_CREDIT_TYPES = ("Overpayment", "Advance Deposit")
 
+def resolve_student_from_registration_id(doc):
+	"""Bulk-upload rows may give the student by Registration ID (or Application Number) instead of the system ID.
+	Fill Student from it, or check the two agree when both are given; then set Registration ID / Student Name from
+	the student. New records only. (Registration ID is fetched only when empty, so a typed value reaches here.)"""
+	if doc.docstatus != 0:
+		return
+	reg = (doc.registration_id or "").strip()
+	if reg and not doc.student:
+		doc.student = frappe.db.get_value("Student Master", {"registration_id": reg}, "name") or frappe.db.get_value(
+			"Student Master", {"application_number": reg}, "name"
+		)
+		if not doc.student:
+			frappe.throw(f"No student has Registration ID {reg}.")
+	if not doc.student:
+		return
+	sm = frappe.db.get_value(
+		"Student Master", doc.student, ["registration_id", "application_number", "first_name"], as_dict=True
+	) or frappe._dict()
+	if reg and reg not in (sm.registration_id, sm.application_number):
+		frappe.throw(f"Registration ID {reg} does not belong to student {doc.student}.")
+	doc.registration_id = sm.registration_id or None
+	doc.student_name = sm.first_name or doc.student_name
+
+
 class StudentCreditNote(Document):
 
 	def validate(self):
+		resolve_student_from_registration_id(self)
 		if flt(self.credit_amount) <= 0:
 			frappe.throw("Credit Amount must be greater than zero.")
 		self.validate_money_received()
@@ -66,14 +91,21 @@ class StudentCreditNote(Document):
 		if demand.student != self.student:
 			frappe.throw("This credit note belongs to a different student.")
 
+		if demand.status in ("Paid", "Cancelled", "Waived"):
+			frappe.throw(f"Fee Demand {fee_demand} is {demand.status} and cannot take an adjustment.")
+		if amount > flt(demand.outstanding_amount) + 0.005:
+			frappe.throw(
+				f"Amount (₹{amount:,.2f}) exceeds the due's outstanding amount (₹{flt(demand.outstanding_amount):,.2f})."
+			)
+
 		demand.credit_adjusted = flt(demand.credit_adjusted) + amount
-		demand.outstanding_amount = max(
-			0,
-			flt(demand.net_payable or demand.original_amount) - flt(demand.paid_amount) - flt(demand.credit_adjusted)
-		)
-		if demand.outstanding_amount == 0:
-			demand.status = "Paid"
+		# Fee Demand.validate recalculates outstanding and status (Paid / Partially Paid) from paid + adjusted
+		demand.flags.payment_update = True
+		# money is being applied: a stale Source Document link (e.g. a deleted re-exam) must not block it,
+		# the same as Fee Demand.update_payment_status
+		demand.flags.ignore_links = True
 		demand.save(ignore_permissions=True)
+		demand.flags.payment_update = False
 
 		new_available = available - amount
 		new_used = flt(self.used_credit) + amount

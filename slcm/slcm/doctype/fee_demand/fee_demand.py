@@ -18,6 +18,23 @@ def demand_type_for_component_type(component_type):
 
 
 class FeeDemand(Document):
+	# The Source Document (e.g. a Re Exam Registration) may be deleted after its due was raised. That stale link must not
+	# block every later save of the due (concession, payment, excess adjustment, refund ...), so a source link that is
+	# unchanged since the due was saved is not re-validated. A new due, or a changed source, is still checked.
+	_SOURCE_LINK_FIELDS = ("trigger_ref_doctype", "trigger_ref_name")
+
+	def get_invalid_links(self, is_submittable=False):
+		# the base check blanks an invalid link on the document, so read the values before it runs
+		current = {f: self.get(f) for f in self._SOURCE_LINK_FIELDS}
+		invalid_links, cancelled_links = super().get_invalid_links(is_submittable=is_submittable)
+		if self.is_new() or not any(link[0] in self._SOURCE_LINK_FIELDS for link in invalid_links):
+			return invalid_links, cancelled_links
+		saved = frappe.db.get_value("Fee Demand", self.name, list(self._SOURCE_LINK_FIELDS), as_dict=True) or {}
+		if all((current[f] or None) == (saved.get(f) or None) for f in self._SOURCE_LINK_FIELDS):
+			self.update(current)  # keep the (stale) reference as it was
+			invalid_links = [link for link in invalid_links if link[0] not in self._SOURCE_LINK_FIELDS]
+		return invalid_links, cancelled_links
+
 
 	def validate(self):
 		self._block_edit_if_cancelled()
@@ -127,7 +144,8 @@ class FeeDemand(Document):
 			return
 
 		outstanding = flt(self.outstanding_amount)
-		paid = flt(self.paid_amount)
+		# settled = cash paid + excess adjusted against the due (same as the student / parent portals)
+		paid = flt(self.paid_amount) + flt(self.credit_adjusted)
 
 		if outstanding <= 0 and paid > 0:
 			self.status = "Paid"

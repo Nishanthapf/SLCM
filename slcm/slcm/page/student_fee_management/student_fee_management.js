@@ -5,6 +5,7 @@
 
 const SFM_PAGE = "student-fee-management";
 const SFM_API = "slcm.slcm.page.student_fee_management.student_fee_management.";
+const SFM_BULK_API = "slcm.slcm.fee.bulk_history.";
 // Offline (staff-recorded) payments can be edited or deleted; gateway payments cannot. Mirrors FeePayment.is_offline.
 const SFM_OFFLINE_EDITABLE = (p) => p.docstatus === 1 && !p.payment_gateway && p.payment_mode !== "Online Payment";
 const SFM_PAGE_SIZES = [10, 25, 50, 100];
@@ -435,13 +436,30 @@ class StudentFeeManagement {
 				text: __("Apply scholarships / waivers to open dues. Pre-filled with the dues; fill only the yellow concession columns."),
 				submit: 1,
 			},
+			{
+				doctype: "Fee Refund",
+				icon: "undo",
+				title: __("Refunds"),
+				text: __("Issue refunds from students' excess or from paid dues. Pre-filled with what can be refunded; delete the rows you skip."),
+				submit: 1,
+			},
+			{
+				doctype: "Student Credit Note",
+				icon: "wallet",
+				title: __("Excess Received"),
+				text: __("Record excess money received from students (duplicate payment, advance). Blank sheet with a Students list."),
+				submit: 1,
+			},
 		].filter((t) => frappe.model.can_create(t.doctype));
-		if (!types.length) return frappe.msgprint(__("You don't have permission to create fee demands, payments or concessions."));
+		if (!types.length) return frappe.msgprint(__("You don't have permission to create fee records in bulk."));
 
-		const dialog = new frappe.ui.Dialog({ title: __("Bulk Upload"), size: "large" });
+		const dialog = new frappe.ui.Dialog({ title: __("Bulk Upload"), size: "extra-large" });
 		dialog.$wrapper.addClass("sfm-dialog");
 		$(dialog.body).html(`
-			<p class="sfm-muted sfm-bu-intro">${__("1. Download the template  ·  2. Fill the highlighted columns  ·  3. Import it. Headers match the fields, so no column mapping is needed.")}</p>
+			<div class="sfm-section-head">
+				<p class="sfm-muted sfm-bu-intro">${__("1. Download the template  ·  2. Fill the highlighted columns  ·  3. Import it. Headers match the fields, so no column mapping is needed.")}</p>
+				<button type="button" class="sfm-btn sfm-btn-secondary sfm-btn-sm" data-bu-history>${sfm_icon("clock", 14)}<span>${__("Upload History")}</span></button>
+			</div>
 			<div class="sfm-bu-grid">
 				${types
 					.map(
@@ -457,6 +475,10 @@ class StudentFeeManagement {
 					.join("")}
 			</div>
 		`);
+		$(dialog.body).on("click", "[data-bu-history]", () => {
+			dialog.hide();
+			this.bulk_history_dialog();
+		});
 		$(dialog.body).on("click", "[data-bu-download]", async (e) => {
 			const doctype = $(e.currentTarget).data("bu-download");
 			if (!window.slcm_download_bulk_template) await frappe.require("/assets/slcm/js/bulk_upload_template.js");
@@ -472,6 +494,139 @@ class StudentFeeManagement {
 				submit_after_import: cint($(e.currentTarget).data("submit")),
 			});
 		});
+		dialog.show();
+	}
+
+	// ── Bulk upload history / delete ─────────────────────────────────────
+	async bulk_history_dialog() {
+		const dialog = new frappe.ui.Dialog({ title: __("Bulk Upload History"), size: "extra-large" });
+		dialog.$wrapper.addClass("sfm-dialog");
+		const load = async () => {
+			$(dialog.body).html(`<div class="sfm-empty-state"><div class="sfm-empty-title">${__("Loading…")}</div></div>`);
+			const rows = (await frappe.call({ method: SFM_BULK_API + "get_history" })).message || [];
+			const state = (r) =>
+				!r.created
+					? sfm_badge(r.status || __("Pending"))
+					: r.active === 0
+					? `<span class="sfm-badge sfm-badge-muted">${__("Deleted")}</span>`
+					: r.active < r.created
+					? `<span class="sfm-badge sfm-badge-pending">${__("{0} of {1} active", [r.active, r.created])}</span>`
+					: `<span class="sfm-badge sfm-badge-paid">${__("Active")}</span>`;
+			$(dialog.body).html(`
+				<p class="sfm-muted">${__("Every fee bulk upload. Delete reverses all records an upload created (dues, payments, concessions, refunds or excess) and keeps them as Cancelled for the audit trail. If any record cannot be reversed, nothing changes.")}</p>
+				<div class="sfm-panel sfm-table-panel"><div class="sfm-table-scroll">
+					<table class="sfm-table">
+						<thead><tr>
+							<th scope="col">${__("Uploaded On")}</th><th scope="col">${__("Type")}</th><th scope="col">${__("Uploaded By")}</th>
+							<th scope="col">${__("File")}</th><th scope="col" class="num">${__("Created")}</th><th scope="col" class="num">${__("Failed")}</th>
+							<th scope="col">${__("State")}</th><th scope="col" class="center">${__("Actions")}</th>
+						</tr></thead>
+						<tbody>${
+							rows.length
+								? rows
+										.map(
+											(r) => `<tr data-import="${sfm_esc(r.name)}">
+								<td>${sfm_datetime(r.creation)}</td>
+								<td>${sfm_esc(__(r.reference_doctype))}</td>
+								<td>${sfm_esc(r.owner_name || r.owner)}</td>
+								<td class="sfm-wrap">${sfm_esc(r.file_name || "—")}</td>
+								<td class="num">${r.created}</td>
+								<td class="num">${r.failed}</td>
+								<td>${state(r)}</td>
+								<td class="center"><div class="sfm-row-actions">
+									<button type="button" class="sfm-icon-btn sfm-icon-btn-sm" data-hist="view" title="${__("View records")}"
+										aria-label="${sfm_esc(__("View records of {0}", [r.name]))}">${sfm_icon("eye", 14)}</button>
+									<a class="sfm-icon-btn sfm-icon-btn-sm" href="${frappe.utils.get_form_link("Data Import", r.name)}" title="${__("Open import log")}"
+										aria-label="${sfm_esc(__("Open import log {0}", [r.name]))}">${sfm_icon("file-text", 14)}</a>
+									<button type="button" class="sfm-icon-btn sfm-icon-btn-sm sfm-icon-btn-danger" data-hist="delete" ${r.active ? "" : "disabled"}
+										title="${r.active ? __("Delete upload") : __("Nothing left to delete")}"
+										aria-label="${sfm_esc(__("Delete upload {0}", [r.name]))}">${sfm_icon("trash", 14)}</button>
+								</div></td>
+							</tr>`
+										)
+										.join("")
+								: `<tr><td colspan="8"><div class="sfm-empty-state"><div class="sfm-empty-title">${__("No fee bulk uploads yet")}</div></div></td></tr>`
+						}</tbody>
+					</table>
+				</div></div>
+			`);
+			$(dialog.body)
+				.off("click")
+				.on("click", "[data-hist]", (e) => {
+					const $btn = $(e.currentTarget);
+					const r = rows.find((x) => x.name === $btn.closest("tr").data("import"));
+					if (!r) return;
+					if ($btn.data("hist") === "view") this.bulk_records_dialog(r);
+					else this.bulk_delete_dialog(r, load);
+				});
+		};
+		dialog.show();
+		load();
+	}
+
+	async bulk_records_dialog(imp) {
+		const { doctype, records } = (await frappe.call({ method: SFM_BULK_API + "get_records", args: { data_import: imp.name } })).message;
+		const dialog = new frappe.ui.Dialog({ title: __("Records of {0}", [imp.name]), size: "large" });
+		dialog.$wrapper.addClass("sfm-dialog");
+		$(dialog.body).html(`
+			<div class="sfm-panel sfm-table-panel"><div class="sfm-table-scroll">
+				<table class="sfm-table">
+					<thead><tr>
+						<th scope="col">${__(doctype)}</th><th scope="col">${__("Registration ID")}</th><th scope="col">${__("Reference")}</th>
+						<th scope="col" class="num">${__("Amount")}</th><th scope="col">${__("Status")}</th>
+					</tr></thead>
+					<tbody>${
+						records.length
+							? records
+									.map(
+										(r) => `<tr>
+							<td>${r.exists ? `<a class="sfm-link" href="${frappe.utils.get_form_link(doctype, r.name)}">${sfm_esc(r.name)}</a>` : sfm_esc(r.name)}</td>
+							<td>${sfm_esc(r.registration_id || "—")}</td>
+							<td>${sfm_esc(r.reference || "—")}</td>
+							<td class="num">${sfm_money(r.amount)}</td>
+							<td>${sfm_badge(r.status)}</td>
+						</tr>`
+									)
+									.join("")
+							: `<tr><td colspan="5"><div class="sfm-empty-state"><div class="sfm-empty-title">${__("This upload created no records")}</div></div></td></tr>`
+					}</tbody>
+				</table>
+			</div></div>
+		`);
+		dialog.show();
+	}
+
+	bulk_delete_dialog(imp, on_done) {
+		const dialog = new frappe.ui.Dialog({
+			title: __("Delete Upload {0}", [imp.name]),
+			fields: [
+				{
+					fieldtype: "HTML",
+					fieldname: "info",
+					options: `<p class="sfm-muted">${__(
+						"This reverses the {0} active {1} record(s) created by this upload — payments and refunds are cancelled, dues re-open or are cancelled, excess is withdrawn — and keeps them as Cancelled. If any one cannot be reversed, nothing changes. This cannot be undone.",
+						[imp.active, sfm_esc(__(imp.reference_doctype))]
+					)}</p>`,
+				},
+				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Reason for deleting"), reqd: 1 },
+			],
+			primary_action_label: __("Delete Upload"),
+			primary_action: async ({ remarks }) => {
+				if (!(remarks || "").trim()) return frappe.msgprint(__("Remarks are mandatory."));
+				const r = await frappe.call({
+					method: SFM_BULK_API + "delete_import",
+					args: { data_import: imp.name, remarks },
+					freeze: true,
+					freeze_message: __("Reversing records…"),
+				});
+				dialog.hide();
+				frappe.show_alert({ message: __("{0} record(s) reversed", [r.message.reversed]), indicator: "green" }, 7);
+				on_done && on_done();
+				if (this.detail) this.show_student(this.detail.profile.name);
+			},
+		});
+		dialog.$wrapper.addClass("sfm-dialog");
+		dialog.get_primary_btn().removeClass("btn-primary").addClass("btn-danger");
 		dialog.show();
 	}
 
@@ -1903,6 +2058,7 @@ class StudentFeeManagement {
 							<th scope="col">${__("Due")}</th>
 							<th scope="col" class="num">${__("Scholarship")}<div class="sfm-th-sub">${__("Waiver")}</div></th>
 							<th scope="col">${__("Status")}</th><th scope="col">${__("Reason")}</th>
+							<th scope="col" class="center">${__("Actions")}</th>
 						</tr></thead>
 						<tbody>
 							${
@@ -1916,10 +2072,20 @@ class StudentFeeManagement {
 								<td class="num sfm-amount-strong">${sfm_money(c.waiver_amount)}</td>
 								<td>${sfm_badge(c.status || ["Draft", "Approved", "Cancelled"][c.docstatus])}</td>
 								<td class="sfm-remark" title="${sfm_esc(c.reason || "")}">${sfm_esc(c.reason || "—")}</td>
+								<td class="center">${
+									c.docstatus === 1
+										? `<div class="sfm-row-actions" data-concession="${sfm_esc(c.name)}">
+											<button type="button" class="sfm-icon-btn sfm-icon-btn-sm" data-con-act="edit"
+												aria-label="${sfm_esc(__("Edit concession {0}", [c.name]))}" title="${__("Edit")}">${sfm_icon("pencil", 14)}</button>
+											<button type="button" class="sfm-icon-btn sfm-icon-btn-sm sfm-icon-btn-danger" data-con-act="delete"
+												aria-label="${sfm_esc(__("Delete concession {0}", [c.name]))}" title="${__("Delete")}">${sfm_icon("trash", 14)}</button>
+										</div>`
+										: '<span class="sfm-sub">—</span>'
+								}</td>
 							</tr>`
 											)
 											.join("")
-									: `<tr><td colspan="6"><div class="sfm-empty-state"><div class="sfm-empty-title">${__("No scholarships or waivers for this student")}</div></div></td></tr>`
+									: `<tr><td colspan="7"><div class="sfm-empty-state"><div class="sfm-empty-title">${__("No scholarships or waivers for this student")}</div></div></td></tr>`
 							}
 						</tbody>
 					</table>
@@ -1944,6 +2110,7 @@ class StudentFeeManagement {
 							<th scope="col">${__("Stipend No.")}</th><th scope="col">${__("Date")}</th><th scope="col">${__("Type")}</th>
 							<th scope="col">${__("Year / Term")}</th><th scope="col">${__("Mode")}</th><th scope="col">${__("Reference")}</th>
 							<th scope="col" class="num">${__("Amount")}</th><th scope="col">${__("Status")}</th><th scope="col">${__("Remarks")}</th>
+							<th scope="col" class="center">${__("Actions")}</th>
 						</tr></thead>
 						<tbody>
 							${
@@ -1960,10 +2127,20 @@ class StudentFeeManagement {
 								<td class="num sfm-amount-strong">${sfm_money(x.amount)}</td>
 								<td>${sfm_badge(x.status || ["Draft", "Submitted", "Cancelled"][x.docstatus])}</td>
 								<td class="sfm-remark" title="${sfm_esc(x.remarks || "")}">${sfm_esc(x.remarks || "—")}</td>
+								<td class="center">${
+									x.docstatus === 1
+										? `<div class="sfm-row-actions" data-stipend="${sfm_esc(x.name)}">
+											<button type="button" class="sfm-icon-btn sfm-icon-btn-sm" data-stp-act="edit"
+												aria-label="${sfm_esc(__("Edit stipend payment {0}", [x.name]))}" title="${__("Edit")}">${sfm_icon("pencil", 14)}</button>
+											<button type="button" class="sfm-icon-btn sfm-icon-btn-sm sfm-icon-btn-danger" data-stp-act="delete"
+												aria-label="${sfm_esc(__("Delete stipend payment {0}", [x.name]))}" title="${__("Delete")}">${sfm_icon("trash", 14)}</button>
+										</div>`
+										: '<span class="sfm-sub">—</span>'
+								}</td>
 							</tr>`
 											)
 											.join("")
-									: `<tr><td colspan="9"><div class="sfm-empty-state"><div class="sfm-empty-title">${__("No stipend payments for this student")}</div></div></td></tr>`
+									: `<tr><td colspan="10"><div class="sfm-empty-state"><div class="sfm-empty-title">${__("No stipend payments for this student")}</div></div></td></tr>`
 							}
 						</tbody>
 					</table>
@@ -1993,45 +2170,196 @@ class StudentFeeManagement {
 			frappe.new_doc("Fee Concession", { student: p.name })
 		);
 		$body.find('[data-act="new-stipend"]').on("click", () => this.stipend_dialog());
+		$body.on("click", "[data-con-act]", (e) => {
+			const $btn = $(e.currentTarget);
+			const c = concessions.find((r) => r.name === $btn.closest("[data-concession]").data("concession"));
+			if (!c) return;
+			if ($btn.data("con-act") === "edit") this.concession_dialog(c);
+			else this.delete_concession_dialog(c);
+		});
+		$body.on("click", "[data-stp-act]", (e) => {
+			const $btn = $(e.currentTarget);
+			const x = stipends.find((r) => r.name === $btn.closest("[data-stipend]").data("stipend"));
+			if (!x) return;
+			if ($btn.data("stp-act") === "edit") this.stipend_dialog(x);
+			else this.delete_stipend_dialog(x);
+		});
 	}
 
-	async stipend_dialog() {
+	// Record a stipend payment (x = null) or edit one (x = a row of this.detail.stipends): editing cancels it and
+	// submits an amended Stipend Payment in its place (server: edit_stipend).
+	async stipend_dialog(x = null) {
 		const p = this.detail.profile;
+		const editing = !!x;
 		await frappe.model.with_doctype("Stipend Payment");
 		const opt = (field, fallback) =>
 			((frappe.meta.get_docfield("Stipend Payment", field) || {}).options || fallback).split("\n").filter(Boolean);
 		const dialog = new frappe.ui.Dialog({
-			title: __("Record Stipend Payment — {0}", [p.first_name || p.name]),
+			title: editing ? __("Edit Stipend Payment {0}", [x.name]) : __("Record Stipend Payment — {0}", [p.first_name || p.name]),
 			fields: [
-				{ fieldtype: "Select", fieldname: "stipend_type", label: __("Stipend Type"), reqd: 1, options: opt("stipend_type", "University Financial"), default: opt("stipend_type", "University Financial")[0] },
-				{ fieldtype: "Currency", fieldname: "amount", label: __("Amount"), reqd: 1, options: "INR" },
-				{ fieldtype: "Date", fieldname: "payment_date", label: __("Payment Date"), reqd: 1, default: frappe.datetime.get_today() },
+				...(editing
+					? [{ fieldtype: "HTML", fieldname: "note", options: `<p class="sfm-muted">${__("Saving cancels {0} and records an amended stipend payment in its place.", [sfm_esc(x.name)])}</p>` }]
+					: []),
+				{ fieldtype: "Select", fieldname: "stipend_type", label: __("Stipend Type"), reqd: 1, options: opt("stipend_type", "University Financial"), default: editing ? x.stipend_type : opt("stipend_type", "University Financial")[0] },
+				{ fieldtype: "Currency", fieldname: "amount", label: __("Amount"), reqd: 1, options: "INR", default: editing ? x.amount : undefined },
+				{ fieldtype: "Date", fieldname: "payment_date", label: __("Payment Date"), reqd: 1, default: editing ? x.payment_date : frappe.datetime.get_today() },
 				{ fieldtype: "Column Break" },
-				{ fieldtype: "Select", fieldname: "payment_mode", label: __("Payment Mode"), reqd: 1, options: opt("payment_mode", "Bank Transfer"), default: "Bank Transfer" },
-				{ fieldtype: "Data", fieldname: "reference_number", label: __("Reference / UTR No.") },
-				{ fieldtype: "Link", fieldname: "academic_year", label: __("Academic Year"), options: "Academic Year", default: p.academic_year },
-				{ fieldtype: "Link", fieldname: "academic_term", label: __("Academic Term"), options: "Academic Term" },
+				{ fieldtype: "Select", fieldname: "payment_mode", label: __("Payment Mode"), reqd: 1, options: opt("payment_mode", "Bank Transfer"), default: editing ? x.payment_mode : "Bank Transfer" },
+				{ fieldtype: "Data", fieldname: "reference_number", label: __("Reference / UTR No."), default: editing ? x.reference_number : "" },
+				{ fieldtype: "Link", fieldname: "academic_year", label: __("Academic Year"), options: "Academic Year", default: editing ? x.academic_year : p.academic_year },
+				{ fieldtype: "Link", fieldname: "academic_term", label: __("Academic Term"), options: "Academic Term", default: editing ? x.academic_term : "" },
 				{ fieldtype: "Section Break" },
-				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Remarks"), reqd: 1 },
+				{ fieldtype: "Small Text", fieldname: "remarks", label: editing ? __("Reason for the change") : __("Remarks"), reqd: 1 },
 			],
-			primary_action_label: __("Record Stipend Payment"),
+			primary_action_label: editing ? __("Save Changes") : __("Record Stipend Payment"),
 			primary_action: (v) => {
 				if (flt(v.amount) <= 0) return frappe.msgprint(__("Amount must be greater than zero."));
 				if (!(v.remarks || "").trim()) return frappe.msgprint(__("Remarks are mandatory."));
-				frappe.confirm(__("Record a stipend payment of <b>{0}</b> to {1}?", [sfm_money(v.amount), sfm_esc(p.first_name || p.name)]), async () => {
+				delete v.note;
+				const question = editing
+					? __("Save changes to {0}? It will be cancelled and replaced by an amended stipend payment of <b>{1}</b>.", [x.name, sfm_money(v.amount)])
+					: __("Record a stipend payment of <b>{0}</b> to {1}?", [sfm_money(v.amount), sfm_esc(p.first_name || p.name)]);
+				frappe.confirm(question, async () => {
 					const r = await frappe.call({
-						method: SFM_API + "record_stipend",
-						args: { student: p.name, ...v },
+						method: SFM_API + (editing ? "edit_stipend" : "record_stipend"),
+						args: editing ? { student: p.name, stipend_payment: x.name, ...v } : { student: p.name, ...v },
 						freeze: true,
-						freeze_message: __("Recording stipend…"),
+						freeze_message: editing ? __("Updating stipend…") : __("Recording stipend…"),
 					});
 					dialog.hide();
-					frappe.show_alert({ message: __("Stipend payment {0} recorded", [r.message.stipend_payment]), indicator: "green" }, 7);
+					frappe.show_alert(
+						{
+							message: editing
+								? __("Stipend payment {0} updated as {1}", [x.name, r.message.stipend_payment])
+								: __("Stipend payment {0} recorded", [r.message.stipend_payment]),
+							indicator: "green",
+						},
+						7
+					);
 					this.show_student(p.name);
 				});
 			},
 		});
 		dialog.$wrapper.addClass("sfm-dialog");
+		dialog.show();
+	}
+
+	// Edit a scholarship / waiver: the concession is cancelled and an amended one submitted on the same due (server: edit_concession).
+	async concession_dialog(c) {
+		const p = this.detail.profile;
+		await frappe.model.with_doctype("Fee Concession");
+		const types = ((frappe.meta.get_docfield("Fee Concession", "concession_type") || {}).options || "").split("\n").filter(Boolean);
+		if (c.concession_type && !types.includes(c.concession_type)) types.push(c.concession_type);
+		const due = this.detail.demands.find((d) => d.name === c.fee_demand) || {};
+		const dialog = new frappe.ui.Dialog({
+			title: __("Edit Concession {0}", [c.name]),
+			fields: [
+				{
+					fieldtype: "HTML",
+					fieldname: "note",
+					options: `<p class="sfm-muted">${__("Due {0} · {1} · original {2}. Saving cancels {3} and applies an amended concession on the same due.", [
+						sfm_esc(c.fee_demand),
+						sfm_esc(c.fee_component || ""),
+						sfm_money(due.original_amount),
+						sfm_esc(c.name),
+					])}</p>`,
+				},
+				{ fieldtype: "Select", fieldname: "concession_type", label: __("Concession Type"), reqd: 1, options: types, default: c.concession_type },
+				{ fieldtype: "Currency", fieldname: "waiver_value", label: __("Waiver Value"), reqd: 1, options: "INR", default: c.waiver_value || c.waiver_amount },
+				{ fieldtype: "Column Break" },
+				{ fieldtype: "Date", fieldname: "concession_date", label: __("Date of concession"), default: c.concession_date },
+				{ fieldtype: "Small Text", fieldname: "reason", label: __("Reason"), reqd: 1, default: c.reason },
+				{ fieldtype: "Section Break" },
+				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Reason for the change"), reqd: 1 },
+			],
+			primary_action_label: __("Save Changes"),
+			primary_action: (v) => {
+				if (flt(v.waiver_value) <= 0) return frappe.msgprint(__("Waiver Value must be greater than zero."));
+				if (!(v.reason || "").trim() || !(v.remarks || "").trim()) return frappe.msgprint(__("Reason and Reason for the change are mandatory."));
+				frappe.confirm(__("Save changes to {0}? It will be cancelled and replaced by an amended concession of <b>{1}</b>.", [c.name, sfm_money(v.waiver_value)]), async () => {
+					const r = await frappe.call({
+						method: SFM_API + "edit_concession",
+						args: { student: p.name, concession: c.name, ...v },
+						freeze: true,
+						freeze_message: __("Updating concession…"),
+					});
+					dialog.hide();
+					frappe.show_alert({ message: __("Concession {0} updated as {1}", [c.name, r.message.concession]), indicator: "green" }, 7);
+					this.show_student(p.name);
+				});
+			},
+		});
+		dialog.$wrapper.addClass("sfm-dialog");
+		dialog.show();
+	}
+
+	delete_concession_dialog(c) {
+		const p = this.detail.profile;
+		const dialog = new frappe.ui.Dialog({
+			title: __("Delete Concession {0}", [c.name]),
+			fields: [
+				{
+					fieldtype: "HTML",
+					fieldname: "info",
+					options: `<p class="sfm-muted">${__("{0} · {1} on due {2}. Deleting cancels this concession and takes its waiver off the due, so the due's pending amount goes back up. This cannot be undone.", [
+						sfm_esc(c.concession_type || ""),
+						sfm_money(c.waiver_amount),
+						sfm_esc(c.fee_demand),
+					])}</p>`,
+				},
+				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Reason for deleting"), reqd: 1 },
+			],
+			primary_action_label: __("Delete Concession"),
+			primary_action: async ({ remarks }) => {
+				if (!(remarks || "").trim()) return frappe.msgprint(__("Remarks are mandatory."));
+				await frappe.call({
+					method: SFM_API + "delete_concession",
+					args: { student: p.name, concession: c.name, remarks },
+					freeze: true,
+					freeze_message: __("Deleting concession…"),
+				});
+				dialog.hide();
+				frappe.show_alert({ message: __("Concession {0} deleted", [c.name]), indicator: "green" }, 7);
+				this.show_student(p.name);
+			},
+		});
+		dialog.$wrapper.addClass("sfm-dialog");
+		dialog.get_primary_btn().removeClass("btn-primary").addClass("btn-danger");
+		dialog.show();
+	}
+
+	delete_stipend_dialog(x) {
+		const p = this.detail.profile;
+		const dialog = new frappe.ui.Dialog({
+			title: __("Delete Stipend Payment {0}", [x.name]),
+			fields: [
+				{
+					fieldtype: "HTML",
+					fieldname: "info",
+					options: `<p class="sfm-muted">${__("{0} · {1} · {2}. Deleting cancels this stipend payment (and its accounting entry). This cannot be undone.", [
+						sfm_esc(x.stipend_type || ""),
+						sfm_money(x.amount),
+						sfm_date(x.payment_date),
+					])}</p>`,
+				},
+				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Reason for deleting"), reqd: 1 },
+			],
+			primary_action_label: __("Delete Stipend Payment"),
+			primary_action: async ({ remarks }) => {
+				if (!(remarks || "").trim()) return frappe.msgprint(__("Remarks are mandatory."));
+				await frappe.call({
+					method: SFM_API + "delete_stipend",
+					args: { student: p.name, stipend_payment: x.name, remarks },
+					freeze: true,
+					freeze_message: __("Deleting stipend payment…"),
+				});
+				dialog.hide();
+				frappe.show_alert({ message: __("Stipend payment {0} deleted", [x.name]), indicator: "green" }, 7);
+				this.show_student(p.name);
+			},
+		});
+		dialog.$wrapper.addClass("sfm-dialog");
+		dialog.get_primary_btn().removeClass("btn-primary").addClass("btn-danger");
 		dialog.show();
 	}
 }

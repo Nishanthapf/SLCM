@@ -450,7 +450,7 @@ frappe.ui.form.on("Student Master", {
 					frm.set_value("fee_structure", data.fee_structure);
 				}
 				frappe.show_alert({
-					message: __("Fee loaded: ₹{0}", [frappe.utils.fmt_money(data.total_program_fee, 0, "INR")]),
+					message: __("Fee loaded: {0}", [frappe.utils.fmt_money(data.total_program_fee, 0, "INR")]),
 					indicator: "green"
 				});
 			},
@@ -488,7 +488,7 @@ frappe.ui.form.on("Student Master", {
 
 				const status_indicator = data.status === "Active" ? "green" : "orange";
 				frappe.show_alert({
-					message: __("{0} — ₹{1}{2}", [
+					message: __("{0} — {1}{2}", [
 						data.fee_structure_name,
 						frappe.utils.fmt_money(data.total_amount, 0, "INR"),
 						validity ? " · " + validity : "",
@@ -1237,7 +1237,7 @@ function _show_change_fee_structure_dialog(frm) {
 						if (res.valid_until) validity += " to " + frappe.datetime.str_to_user(res.valid_until);
 					}
 					frappe.show_alert({
-						message: __("Fee Structure changed to {0} — ₹{1}{2}", [
+						message: __("Fee Structure changed to {0} — {1}{2}", [
 							res.fee_structure_name,
 							frappe.utils.fmt_money(res.total_program_fee, 0, "INR"),
 							validity,

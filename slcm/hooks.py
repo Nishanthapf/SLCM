@@ -68,6 +68,8 @@ doctype_list_js = {
     "Fee Concession": "public/js/bulk_upload_template.js",
     "Fee Payment": "public/js/bulk_upload_template.js",
     "Fee Demand": "public/js/bulk_upload_template.js",
+    "Fee Refund": "public/js/bulk_upload_template.js",
+    "Student Credit Note": "public/js/bulk_upload_template.js",
     # Action → Enroll step-by-step wizard
     "Student Master": "public/js/enrollment_wizard.js",
     # Create Class → Add / Remove Students

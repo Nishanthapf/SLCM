@@ -1,4 +1,5 @@
-// Bulk-upload templates for Fee Concession, Fee Payment and Fee Demand (server: slcm.slcm.fee.bulk_upload).
+// Bulk-upload templates for Fee Concession, Fee Payment, Fee Demand, Fee Refund and Student Credit Note
+// (server: slcm.slcm.fee.bulk_upload).
 // Loaded on those three list views and on the Data Import form (see hooks.py).
 //   Fee Concession / Fee Payment — one row per open due, pre-filled; only the yellow columns are filled in.
 //   Fee Demand — blank creation sheet (Voucher No. is assigned by the system) + a Students reference sheet.
@@ -32,6 +33,24 @@
 			),
 			filters: ["academic_year", "programme"],
 		},
+		"Fee Refund": {
+			info: __(
+				"Pre-filled with what can be refunded: students with unused excess, or dues with money paid on them " +
+					"(choose the Refund Source). Delete the rows you are not refunding and fill the yellow columns — " +
+					"Refund Type, Amount, Date, Mode, UTR and Reason; bank details come from the student and can be corrected. " +
+					"Tick “Submit After Import” to issue the refunds."
+			),
+			filters: ["academic_year", "programme"],
+			refund_source: true,
+		},
+		"Student Credit Note": {
+			info: __(
+				"A blank sheet for excess money received from students — one row per receipt. Fill Registration ID (or Student), " +
+					"Credit Type, Credit Amount, Received Via and Received Date (red headers); Student Name is filled by the system. " +
+					"The “Students” sheet lists every student with their Registration ID. Tick “Submit After Import” to add the excess."
+			),
+			filters: ["academic_year", "programme"],
+		},
 	};
 	const FILTER_LABELS = {
 		academic_year: __("Academic Year"),
@@ -44,7 +63,7 @@
 		if (!cfg) return;
 		// Only values that exist (with counts) are offered; an empty filter means "all".
 		const opts = (await frappe.call({ method: API + "get_filter_options", args: { doctype } })).message || {};
-		const count_label = doctype === "Fee Demand" ? __("{0} student(s)") : __("{0} open due(s)");
+		const count_label = ["Fee Demand", "Fee Refund", "Student Credit Note"].includes(doctype) ? __("{0} student(s)") : __("{0} open due(s)");
 		const multi = (fieldname) => ({
 			fieldtype: "MultiSelectList",
 			fieldname,
@@ -60,6 +79,20 @@
 				...cfg.filters.slice(0, half).map(multi),
 				{ fieldtype: "Column Break" },
 				...cfg.filters.slice(half).map(multi),
+				...(cfg.refund_source
+					? [
+							{ fieldtype: "Section Break" },
+							{
+								fieldtype: "Select",
+								fieldname: "refund_source",
+								label: __("Refund Source"),
+								options: ["Excess Amount", "Fee Demand"],
+								default: "Excess Amount",
+								reqd: 1,
+								description: __("Excess Amount: students with unused excess. Fee Demand: dues with money paid on them."),
+							},
+					  ]
+					: []),
 				...(cfg.dates
 					? [
 							{ fieldtype: "Section Break", label: __("Date Range") },
@@ -92,6 +125,7 @@
 					return frappe.msgprint(__("From Date cannot be after To Date."));
 				}
 				const args = { doctype, file_type: values.file_type || "Excel" };
+				if (cfg.refund_source) args.refund_source = values.refund_source || "Excess Amount";
 				if (cfg.dates) {
 					if (values.from_date) args.from_date = values.from_date;
 					if (values.to_date) args.to_date = values.to_date;

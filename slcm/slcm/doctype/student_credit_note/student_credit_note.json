@@ -41,6 +41,7 @@
   },
   {
    "fetch_from": "student.registration_id",
+   "fetch_if_empty": 1,
    "fieldname": "registration_id",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -193,7 +194,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-11-16 16:00:00.000000",
+ "modified": "2026-11-16 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Student Credit Note",
