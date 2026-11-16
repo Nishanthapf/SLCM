@@ -107,3 +107,8 @@ slcm.patches.v2_0.fix_invalid_payment_status_values
 slcm.patches.v2_0.seed_international_portal_config
 slcm.patches.v2_0.merge_state_orissa_into_odisha
 slcm.patches.v2_0.rfid_venue_master_mapping
+slcm.patches.v2_0.backfill_fee_demand_registration_id
+slcm.patches.v2_0.register_user_activity_log_retention
+slcm.patches.v2_0.zero_outstanding_on_cancelled_fee_demands
+slcm.patches.v2_0.backfill_fee_registration_id
+slcm.patches.v2_0.fix_status_of_dues_settled_from_excess

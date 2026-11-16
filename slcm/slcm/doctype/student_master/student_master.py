@@ -9,7 +9,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from slcm.slcm.doctype.academic_term.academic_term import get_current_term
-from frappe.utils import flt, get_fullname, getdate, now_datetime, today
+from frappe.utils import cint, flt, get_fullname, getdate, now_datetime, today
 
 # ---------------------------------------------------------------------------
 # Single source of truth for the registration state machine
@@ -130,6 +130,10 @@ LOAN_ACCOUNT_FIELDS = (
 OPTIONAL_CHILD_TABLES = ("ug_degree_details", "pg_degree_details")
 
 
+# Savings bank details other than the account number / IFSC: entering any of them makes those two required.
+SAVINGS_DETAIL_FIELDS = ("savings_account_holder_name", "savings_bank_name", "savings_branch_name", "savings_passbook")
+
+
 class StudentMaster(Document):
     def validate(self):
         self.validate_status_transition()
@@ -178,7 +182,32 @@ class StudentMaster(Document):
             if value and not IFSC_PATTERN.match(value):
                 frappe.throw(_("{0} must be exactly 11 alphanumeric characters.").format(label))
 
+        self.validate_savings_account_complete()
         self.validate_unique_bank_accounts(reveal_owner)
+
+    def validate_savings_account_complete(self):
+        """Once any savings bank detail is entered (or the student has submitted them), the Account Number and
+        IFSC Code are required too. Students with no bank details yet (e.g. records created by Admission) are
+        not affected. A field masked for the current user is skipped: that user cannot see or set it."""
+        started = any(self.get(f) for f in SAVINGS_DETAIL_FIELDS) or cint(self.get("bank_details_submitted"))
+        if not started:
+            return
+        masked = {df.fieldname for df in self.meta.get_masked_fields()}
+        missing = [
+            label
+            for f, label in (
+                ("savings_account_number", _("Savings Bank Account Number")),
+                ("savings_ifsc_code", _("IFSC Code")),
+            )
+            if f not in masked and not (self.get(f) or "").strip()
+        ]
+        if missing:
+            frappe.throw(
+                _("Please enter {0}. It is required once Savings Bank Account Details are filled in.").format(
+                    ", ".join(missing)
+                ),
+                title=_("Savings Bank Account Details"),
+            )
 
     def validate_unique_bank_accounts(self, reveal_owner=True):
         """A savings or loan account number may belong to only one student, and a student's
@@ -186,7 +215,7 @@ class StudentMaster(Document):
         accounts = {}
         for f, label in (
             ("savings_account_number", _("Savings Bank Account Number")),
-            ("loan_account_number", _("Loan Account Number")),
+            ("loan_account_number", _("Education Loan Account Number")),
         ):
             value = re.sub(r"\s+", "", self.get(f) or "").upper()
             self.set(f, value or None)
@@ -194,7 +223,7 @@ class StudentMaster(Document):
                 accounts[f] = (value, label)
 
         if len(accounts) == 2 and accounts["savings_account_number"][0] == accounts["loan_account_number"][0]:
-            frappe.throw(_("Savings Bank Account Number and Loan Account Number cannot be the same."))
+            frappe.throw(_("Savings Bank Account Number and Education Loan Account Number cannot be the same."))
 
         for f, (value, label) in accounts.items():
             # Match against both columns: one student's savings number can't be another's loan number.

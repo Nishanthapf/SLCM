@@ -2,14 +2,18 @@
     Include once at the top of a template:  {% include "slcm/templates/print/nls_receipt_style.html" %}
     Page margins are read by Frappe's PDF renderer from the `.print-format` rule. -#}
 <style>
-  @font-face { font-family: 'Merriweather'; font-weight: 400; font-style: normal; src: url('{{ frappe.utils.get_url() }}/assets/slcm/fonts/Merriweather-Regular.ttf') format('truetype'); }
-  @font-face { font-family: 'Merriweather'; font-weight: 700; font-style: normal; src: url('{{ frappe.utils.get_url() }}/assets/slcm/fonts/Merriweather-Bold.ttf') format('truetype'); }
-  @font-face { font-family: 'Merriweather'; font-weight: 400; font-style: italic; src: url('{{ frappe.utils.get_url() }}/assets/slcm/fonts/Merriweather-Italic.ttf') format('truetype'); }
+  /* Fonts. wkhtmltopdf draws any @font-face (web) font as vector outlines, so the PDF's text could not be selected
+     or copied. The installed system font comes first ('Merriweather Light 18pt' is the family name inside these
+     TTFs; slcm.utils.fonts installs them on migrate), so PDFs embed real, copyable text. Browsers without it fall
+     back to the same files loaded as 'Merriweather Web'. */
+  @font-face { font-family: 'Merriweather Web'; font-weight: 400; font-style: normal; src: url('{{ frappe.utils.get_url() }}/assets/slcm/fonts/Merriweather-Regular.ttf') format('truetype'); }
+  @font-face { font-family: 'Merriweather Web'; font-weight: 700; font-style: normal; src: url('{{ frappe.utils.get_url() }}/assets/slcm/fonts/Merriweather-Bold.ttf') format('truetype'); }
+  @font-face { font-family: 'Merriweather Web'; font-weight: 400; font-style: italic; src: url('{{ frappe.utils.get_url() }}/assets/slcm/fonts/Merriweather-Italic.ttf') format('truetype'); }
 
   .print-format { margin-top: 6mm; margin-bottom: 6mm; margin-left: 6mm; margin-right: 6mm; padding: 0 !important; max-width: none !important; }
 
   .nls-doc, .nls-doc * { box-sizing: border-box; }
-  .nls-doc { font-family: 'Merriweather', Georgia, serif; font-size: 12pt; color: #000; }
+  .nls-doc { font-family: 'Merriweather Light 18pt', 'Merriweather Web', Georgia, serif; font-size: 12pt; color: #000; }
   .nls-doc * { margin: 0; padding: 0; }
 
   /* One bordered block; single-copy documents fill the page */

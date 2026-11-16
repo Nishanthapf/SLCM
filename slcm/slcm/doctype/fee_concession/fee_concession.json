@@ -56,20 +56,20 @@
   {
    "fieldname": "student",
    "fieldtype": "Link",
-   "label": "Student ID",
+   "in_standard_filter": 1,
+   "label": "Student",
    "options": "Student Master",
-   "search_index": 1,
    "reqd": 1,
-   "in_list_view": 1,
-   "in_standard_filter": 1
+   "search_index": 1
   },
   {
-   "fieldname": "registration_id",
-   "fieldtype": "Data",
-   "label": "Student Registration Id / Application Number",
-   "in_list_view": 1,
    "bold": 1,
    "description": "From the selected student.",
+   "fieldname": "registration_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Registration ID",
    "read_only": 1
   },
   {
@@ -91,51 +91,51 @@
   {
    "fieldname": "fee_demand",
    "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Voucher Number",
    "options": "Fee Demand",
-   "reqd": 1,
-   "in_list_view": 1,
-   "in_standard_filter": 1
+   "reqd": 1
   },
   {
+   "fetch_from": "fee_demand.fee_component",
    "fieldname": "fee_component",
    "fieldtype": "Data",
    "label": "Fee Component",
-   "read_only": 1,
-   "fetch_from": "fee_demand.fee_component"
+   "read_only": 1
   },
   {
+   "fetch_from": "fee_demand.demand_date",
    "fieldname": "demand_date",
    "fieldtype": "Date",
    "label": "Date of creation",
-   "read_only": 1,
-   "fetch_from": "fee_demand.demand_date"
+   "read_only": 1
   },
   {
    "fieldname": "column_break_dues",
    "fieldtype": "Column Break"
   },
   {
+   "fetch_from": "fee_demand.academic_year",
    "fieldname": "academic_year",
    "fieldtype": "Link",
    "label": "Academic Year",
-   "read_only": 1,
-   "fetch_from": "fee_demand.academic_year",
-   "options": "Academic Year"
+   "options": "Academic Year",
+   "read_only": 1
   },
   {
+   "fetch_from": "fee_demand.due_date",
    "fieldname": "due_date",
    "fieldtype": "Date",
    "label": "Due Date",
-   "read_only": 1,
-   "fetch_from": "fee_demand.due_date"
+   "read_only": 1
   },
   {
+   "fetch_from": "fee_demand.remarks",
    "fieldname": "remarks",
    "fieldtype": "Small Text",
    "label": "Remark",
-   "read_only": 1,
-   "fetch_from": "fee_demand.remarks"
+   "read_only": 1
   },
   {
    "fieldname": "section_amounts",
@@ -143,50 +143,50 @@
    "label": "Dues Amounts"
   },
   {
+   "fetch_from": "fee_demand.original_amount",
    "fieldname": "original_amount",
    "fieldtype": "Currency",
    "label": "Original Amount",
-   "read_only": 1,
-   "fetch_from": "fee_demand.original_amount"
+   "read_only": 1
   },
   {
+   "fetch_from": "fee_demand.penalty_amount",
    "fieldname": "penalty_amount",
    "fieldtype": "Currency",
    "label": "Penalty Amount",
-   "read_only": 1,
-   "fetch_from": "fee_demand.penalty_amount"
+   "read_only": 1
   },
   {
+   "description": "Equal to Waiver Value; this is the waiver applied to the voucher.",
    "fieldname": "waiver_amount",
    "fieldtype": "Currency",
    "label": "Scholarship / Waiver Amount",
-   "read_only": 1,
-   "description": "Equal to Waiver Value; this is the waiver applied to the voucher."
+   "read_only": 1
   },
   {
    "fieldname": "column_break_amounts",
    "fieldtype": "Column Break"
   },
   {
+   "fetch_from": "fee_demand.net_payable",
    "fieldname": "total_payable",
    "fieldtype": "Currency",
    "label": "Total Payable",
-   "read_only": 1,
-   "fetch_from": "fee_demand.net_payable"
+   "read_only": 1
   },
   {
+   "fetch_from": "fee_demand.paid_amount",
    "fieldname": "paid_amount",
    "fieldtype": "Currency",
    "label": "Paid Amount",
-   "read_only": 1,
-   "fetch_from": "fee_demand.paid_amount"
+   "read_only": 1
   },
   {
+   "fetch_from": "fee_demand.outstanding_amount",
    "fieldname": "pending_amount",
    "fieldtype": "Currency",
    "label": "Pending Amount",
-   "read_only": 1,
-   "fetch_from": "fee_demand.outstanding_amount"
+   "read_only": 1
   },
   {
    "fieldname": "section_concession",
@@ -202,23 +202,23 @@
    "reqd": 1
   },
   {
+   "description": "Waiver / scholarship amount (₹) applied to the fee demand.",
    "fieldname": "waiver_value",
    "fieldtype": "Currency",
-   "label": "Waiver Value",
-   "reqd": 1,
-   "options": "INR",
    "in_list_view": 1,
-   "description": "Waiver / scholarship amount (₹) applied to the fee demand."
+   "label": "Waiver Value",
+   "options": "INR",
+   "reqd": 1
   },
   {
    "fieldname": "column_break_2",
    "fieldtype": "Column Break"
   },
   {
+   "default": "Today",
    "fieldname": "concession_date",
    "fieldtype": "Date",
-   "label": "Date of concession",
-   "default": "Today"
+   "label": "Date of concession"
   },
   {
    "fieldname": "reason",
@@ -230,30 +230,30 @@
    "default": "Draft",
    "fieldname": "status",
    "fieldtype": "Select",
+   "hidden": 1,
    "label": "Status",
    "options": "Draft\nApproved\nRejected\nReversed",
-   "read_only": 1,
-   "hidden": 1
+   "read_only": 1
   },
   {
    "fieldname": "approved_by",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Approved By",
    "options": "User",
-   "read_only": 1,
-   "hidden": 1
+   "read_only": 1
   },
   {
    "fieldname": "approved_on",
    "fieldtype": "Date",
+   "hidden": 1,
    "label": "Approved On",
-   "read_only": 1,
-   "hidden": 1
+   "read_only": 1
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-09-24 23:00:00.000000",
+ "modified": "2026-11-16 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Fee Concession",
@@ -291,9 +291,9 @@
   }
  ],
  "row_format": "Dynamic",
+ "search_fields": "registration_id,fee_demand,concession_type",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "title_field": "registration_id",
- "search_fields": "registration_id,fee_demand,concession_type"
+ "title_field": "registration_id"
 }

@@ -42,6 +42,8 @@ const SFM_ICON_PATHS = {
 	columns: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/>',
 	eye: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
 	award: '<circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/>',
+	pencil: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
+	trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/>',
 };
 const sfm_icon = (name, size = 16, cls = "") =>
 	`<svg class="sfm-icon ${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${SFM_ICON_PATHS[name] || ""}</svg>`;
@@ -511,6 +513,16 @@ function sfm_inject_styles() {
 	.sfm-icon-btn:disabled { color: var(--sfm-border-strong); background: var(--sfm-subtle); cursor: not-allowed; }
 	.sfm-icon-btn.is-busy { cursor: progress; }
 	.sfm-icon-btn-sm { width: 26px; height: 26px; }
+	.sfm-icon-btn-danger { color: #b42318; }
+	.sfm-icon-btn-danger:hover:not(:disabled) { background: #fef3f2; border-color: #b42318; }
+	.sfm-row-actions { display: inline-flex; gap: 6px; }
+	/* fixed column grid (colgroup widths) so stacked tables line up; long values wrap inside their column */
+	.sfm-table.sfm-table-fixed { table-layout: fixed; min-width: 900px; }
+	.sfm-table.sfm-table-fixed td, .sfm-table.sfm-table-fixed th { overflow-wrap: anywhere; }
+	.sfm-adj-line { display: flex; flex-direction: column; line-height: 1.45; }
+	.sfm-adj-line + .sfm-adj-line { margin-top: 4px; }
+	[data-theme="dark"] .sfm-icon-btn-danger { color: #fda29b; }
+	[data-theme="dark"] .sfm-icon-btn-danger:hover:not(:disabled) { background: rgba(180, 35, 24, .18); }
 	.sfm-disabled-wrap { display: inline-block; cursor: not-allowed; }
 	.sfm-disabled-wrap .sfm-icon-btn { pointer-events: none; }
 	.sfm-count { position: absolute; top: -6px; right: -6px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--sfm-primary); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; }

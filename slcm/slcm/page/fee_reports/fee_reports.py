@@ -18,7 +18,7 @@ from slcm.slcm.page.student_fee_management.student_fee_management import (
 
 # (key, sheet header, is_amount)
 DUE_WISE_COLUMNS = [
-	("student_id", "Student ID", False),
+	("student_id", "Registration ID", False),
 	("student_name", "Student Name", False),
 	("email", "Email", False),
 	("programme", "Programme", False),
@@ -288,7 +288,7 @@ def export_report(report, **filters):
 	elif report == "outstanding":
 		ws.title = "Student wise outstanding fee"
 		components, rows, _count, totals = _outstanding(filters)
-		ws.append(["Sl. No.", "Student ID", "Student Name", "Student Email ID", "Academic Status"] + components + ["Total Outstanding Fee"])
+		ws.append(["Sl. No.", "Registration ID", "Student Name", "Student Email ID", "Academic Status"] + components + ["Total Outstanding Fee"])
 		for i, r in enumerate(rows, 1):
 			ws.append(
 				[i, r.student_id, r.student_name or "", r.email or "", r.academic_status or ""]

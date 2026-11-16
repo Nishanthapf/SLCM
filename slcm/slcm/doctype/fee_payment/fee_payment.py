@@ -16,6 +16,31 @@ class FeePayment(Document):
 		# Validate multi-demand allocation if demands table is used
 		if self.payment_demands:
 			self._validate_demand_allocation()
+		self._validate_unique_reference()
+
+	def is_offline(self):
+		"""Recorded by staff (cash, cheque, bank transfer ...), not captured by a payment gateway."""
+		return not self.payment_gateway and self.payment_mode != "Online Payment"
+
+	def _validate_unique_reference(self):
+		"""An offline payment's Reference / UTR No. books one transaction only: no other active Fee Payment may
+		carry it. Gateway payments are left alone (their id comes from the gateway, not from staff)."""
+		if not self.is_offline():
+			return
+		ref = (self.reference_number or "").strip()
+		self.reference_number = ref or None
+		if not ref:
+			return
+		dup = frappe.db.get_value(
+			"Fee Payment", {"reference_number": ref, "docstatus": 1, "name": ("!=", self.name or "")}, "name"
+		)
+		if dup:
+			frappe.throw(
+				_("Reference / UTR No. {0} is already used by Fee Payment {1}. A UTR can be used for one transaction only.").format(
+					frappe.bold(ref), frappe.bold(dup)
+				),
+				title=_("Duplicate UTR"),
+			)
 
 	def on_submit(self):
 		self.db_set("status", "Submitted", update_modified=False)

@@ -16,6 +16,12 @@ frappe.ui.form.on("Fee Demand", {
 
 	refresh(frm) {
 		frm.trigger("set_status_indicator");
+		if (!frm.is_new() && frm.doc.status === "Cancelled") {
+			// a cancelled due is final: read-only, no Save / Actions / Create buttons
+			frm.disable_form();
+			frm.set_intro(__("This due is cancelled and can no longer be edited. Pending amount is ₹0."), "red");
+			return;
+		}
 		frm.trigger("render_action_buttons");
 		frm.trigger("render_create_buttons");
 		frm.trigger("render_outstanding_note");
