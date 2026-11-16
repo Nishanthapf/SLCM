@@ -9,6 +9,7 @@
  "field_order": [
   "section_student",
   "student",
+  "registration_id",
   "student_name",
   "column_break_1",
   "programme",
@@ -35,11 +36,20 @@
   {
    "fieldname": "student",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Student",
    "options": "Student Master",
    "reqd": 1
+  },
+  {
+   "fetch_from": "student.registration_id",
+   "fieldname": "registration_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Registration ID",
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fetch_from": "student.first_name",
@@ -153,7 +163,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-11-02 17:31:53.140876",
+ "modified": "2026-11-16 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Stipend Payment",

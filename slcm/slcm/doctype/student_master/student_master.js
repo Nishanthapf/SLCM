@@ -450,7 +450,7 @@ frappe.ui.form.on("Student Master", {
 					frm.set_value("fee_structure", data.fee_structure);
 				}
 				frappe.show_alert({
-					message: __("Fee loaded: ₹{0}", [frappe.utils.fmt_money(data.total_program_fee, 0, "INR")]),
+					message: __("Fee loaded: {0}", [frappe.utils.fmt_money(data.total_program_fee, 0, "INR")]),
 					indicator: "green"
 				});
 			},
@@ -488,7 +488,7 @@ frappe.ui.form.on("Student Master", {
 
 				const status_indicator = data.status === "Active" ? "green" : "orange";
 				frappe.show_alert({
-					message: __("{0} — ₹{1}{2}", [
+					message: __("{0} — {1}{2}", [
 						data.fee_structure_name,
 						frappe.utils.fmt_money(data.total_amount, 0, "INR"),
 						validity ? " · " + validity : "",
@@ -1228,7 +1228,7 @@ function _show_change_fee_structure_dialog(frm) {
 						if (res.valid_until) validity += " to " + frappe.datetime.str_to_user(res.valid_until);
 					}
 					frappe.show_alert({
-						message: __("Fee Structure changed to {0} — ₹{1}{2}", [
+						message: __("Fee Structure changed to {0} — {1}{2}", [
 							res.fee_structure_name,
 							frappe.utils.fmt_money(res.total_program_fee, 0, "INR"),
 							validity,
@@ -2122,3 +2122,23 @@ function smr_remove(frm, st) {
 		},
 	}));
 }
+
+// Savings Bank Account Details: once any detail is entered (or the student has submitted them), Account Number and
+// IFSC Code become mandatory — the same rule StudentMaster.validate_savings_account_complete applies on save.
+// Fields masked for this user are read-only to them, so they are never marked mandatory.
+const SLCM_SAVINGS_DETAIL_FIELDS = ["savings_account_holder_name", "savings_bank_name", "savings_branch_name", "savings_passbook"];
+function slcm_toggle_savings_reqd(frm) {
+	const started = SLCM_SAVINGS_DETAIL_FIELDS.some((f) => frm.doc[f]) || cint(frm.doc.bank_details_submitted);
+	const masked = frm.meta.masked_fields || [];
+	["savings_account_number", "savings_ifsc_code"].forEach((f) => {
+		if (frm.fields_dict[f]) frm.toggle_reqd(f, !!started && !masked.includes(f));
+	});
+}
+frappe.ui.form.on("Student Master", {
+	refresh: slcm_toggle_savings_reqd,
+	savings_account_holder_name: slcm_toggle_savings_reqd,
+	savings_bank_name: slcm_toggle_savings_reqd,
+	savings_branch_name: slcm_toggle_savings_reqd,
+	savings_passbook: slcm_toggle_savings_reqd,
+	bank_details_submitted: slcm_toggle_savings_reqd,
+});

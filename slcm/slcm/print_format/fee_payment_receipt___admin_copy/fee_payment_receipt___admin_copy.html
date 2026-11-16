@@ -1,4 +1,4 @@
-{% set copy_label = "Receipt (Admin Copy)" %}
+{% set copy_label = "Receipt" %}
 
 {# ── Data resolution ── #}
 {% set org_name = "NATIONAL LAW SCHOOL OF INDIA UNIVERSITY" %}
@@ -10,13 +10,15 @@
 
 {% set student_full    = ([sm.first_name or "", sm.middle_name or "", sm.last_name or ""] | select | join(" ")) if sm else (doc.student_name or "—") %}
 {% set registration_id = (sm.registration_id if sm and sm.registration_id else "Not Available") %}
-{% set application_num = (sm.application_number if sm and sm.application_number else "Not Available") %}
 
 {# Prefer Fee Receipt data since Fee Payment may lack invoice-fetched fields #}
 {% set programme    = (fr.programme if fr and fr.programme else (frappe.db.get_value("Program", doc.program, "program_name") or doc.program or "—")) %}
-{% set academic_yr  = (fr.academic_year if fr and fr.academic_year else (doc.academic_year or "—")) %}
 {% set receipt_name = (doc.receipt or doc.name) %}
 {% set receipt_date = (fr.receipt_date if fr and fr.receipt_date else doc.payment_date) %}
+{# Academic Year in progress on the receipt date (latest year started on or before it), so a reprint never
+   changes; falls back to the year marked current, then to what the receipt stored. #}
+{% set ay_on_date = frappe.get_all("Academic Year", filters=[["year_start_date", "<=", receipt_date]], fields=["name"], order_by="year_start_date desc", limit_page_length=1) if receipt_date else [] %}
+{% set academic_yr = (ay_on_date[0].name if ay_on_date else (frappe.db.get_value("Academic Year", {"is_current_year": 1}, "name") or (fr.academic_year if fr and fr.academic_year else (doc.academic_year or "—")))) %}
 
 {# ── Scholarship resolution ── #}
 {% set inv_scholarship = frappe.utils.flt(fi.scholarship_amount if fi and fi.scholarship_amount else 0) %}
@@ -27,6 +29,16 @@
 {% set net_payable     = amount_paid %}
 
 {% include "slcm/templates/print/nls_receipt_style.html" %}
+<style>
+  /* One A4 page in every renderer (PDF download and browser print): the shared style's 355mm minimum height is
+     taller than A4, so the box sizes to its content and is never split across pages. */
+  .print-format .nls-doc .nls-copy.is-page, .nls-copy.is-page { min-height: 0 !important; }
+  .nls-copy { page-break-inside: avoid; break-inside: avoid; }
+  @page { size: A4; margin: 10mm; }
+  /* tighter rows so a payment covering many dues still fits */
+  .print-format .nls-doc .nls-table th, .print-format .nls-doc .nls-table td { padding: 4px 10px !important; }
+  .print-format .nls-doc .nls-meta td { padding: 3px 6px !important; }
+</style>
 <style>
   /* Fully ruled particulars table (local to this format; shared style untouched) */
   .print-format .nls-doc .nls-table.nls-grid, .nls-table.nls-grid { border: 1px solid #000; }
@@ -52,18 +64,16 @@
 
   <table class="nls-meta">
     <tr>
-      <td class="lbl">Registration Id:</td>
+      <td class="lbl">Registration ID:</td>
       <td class="val">{{ registration_id }}</td>
       <td class="lbl">Student Name:</td>
       <td class="val">{{ student_full }}</td>
     </tr>
     <tr>
       <td class="lbl">Receipt Number:</td>
-      <td style="padding:4px 6px; font-size:11.5pt;">
-        <span class="nls-boxed">{{ receipt_name }}</span>
-      </td>
-      <td class="lbl">Date:</td>
-      <td class="val">{{ frappe.utils.formatdate(receipt_date, "dd-MM-yyyy") }}</td>
+      <td class="val" style="font-weight:600;">{{ receipt_name }}</td>
+      <td class="lbl">Payment Date:</td>
+      <td class="val">{{ frappe.utils.formatdate(doc.payment_date or receipt_date, "dd/MM/yyyy") }}</td>
     </tr>
   </table>
 
@@ -73,14 +83,8 @@
     <tr>
       <td class="lbl">Academic Year:</td>
       <td class="val">{{ academic_yr }}</td>
-      <td class="lbl">Application Number:</td>
-      <td class="val">{{ application_num }}</td>
-    </tr>
-    <tr>
       <td class="lbl">Programme:</td>
       <td class="val">{{ programme }}</td>
-      <td class="lbl"></td>
-      <td class="val"></td>
     </tr>
   </table>
 
@@ -153,12 +157,12 @@
     <tr>
       <td class="lbl">Payment Mode:</td>
       <td class="val">{{ doc.payment_mode or "—" }}</td>
-      <td class="lbl">Transaction Id:</td>
+      <td class="lbl">Transaction ID:</td>
       <td class="val">{{ doc.reference_number or (fr.reference_number if fr and fr.reference_number else "N/A") }}</td>
     </tr>
     <tr>
       <td class="lbl">Transaction Date:</td>
-      <td class="val">{{ frappe.utils.formatdate(doc.transaction_date or doc.payment_date, "yyyy-MM-dd") }}</td>
+      <td class="val">{{ frappe.utils.formatdate(doc.transaction_date or doc.payment_date, "dd/MM/yyyy") }}</td>
       <td class="lbl">Amount Paid:</td>
       <td class="val">INR {{ "{:,.0f}".format(amount_paid) }}</td>
     </tr>

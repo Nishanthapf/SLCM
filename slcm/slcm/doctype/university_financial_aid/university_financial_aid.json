@@ -10,6 +10,7 @@
   "naming_series",
   "academic_year",
   "student",
+  "registration_id",
   "student_id",
   "student_name",
   "email_id",
@@ -64,6 +65,16 @@
    "label": "Student",
    "options": "Student Master",
    "reqd": 1
+  },
+  {
+   "fetch_from": "student.registration_id",
+   "fieldname": "registration_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Registration ID",
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fetch_from": "student.registration_id",
@@ -222,7 +233,7 @@
   }
  ],
  "links": [],
- "modified": "2026-09-24 16:19:17.907075",
+ "modified": "2026-11-16 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "University Financial Aid",

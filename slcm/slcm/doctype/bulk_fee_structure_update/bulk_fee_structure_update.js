@@ -88,7 +88,7 @@ function _run_preview(frm) {
 					if (d.valid_until) validity += " – " + frappe.datetime.str_to_user(d.valid_until);
 				}
 				frappe.show_alert({
-					message: __("{0} student(s) found · New Fee ₹{1} · {2}{3}", [
+					message: __("{0} student(s) found · New Fee {1} · {2}{3}", [
 						d.student_count,
 						frappe.utils.fmt_money(d.new_total, 0, "INR"),
 						d.fs_name,

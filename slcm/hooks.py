@@ -11,9 +11,11 @@ app_email = "tech4socialsector@azimpremjifoundation.org"
 app_license = "mit"
 
 # The erpnext_bridge entries are no-ops on sites without ERPNext.
-after_install = ["slcm.install.after_install", "slcm.erpnext_bridge.install.after_migrate"]
+after_install = ["slcm.install.after_install", "slcm.erpnext_bridge.install.after_migrate", "slcm.utils.fonts.install_print_fonts"]
 after_migrate = [
     "slcm.install.after_migrate",
+    # receipt fonts as system fonts, so wkhtmltopdf PDFs carry copyable text
+    "slcm.utils.fonts.install_print_fonts",
     "slcm.erpnext_bridge.install.after_migrate",
     "slcm.slcm.doctype.site_domain_settings.site_domain_settings.sync_after_migrate",
     "slcm.setup.nlsiu_admin_role.sync",
@@ -66,6 +68,8 @@ doctype_list_js = {
     "Fee Concession": "public/js/bulk_upload_template.js",
     "Fee Payment": "public/js/bulk_upload_template.js",
     "Fee Demand": "public/js/bulk_upload_template.js",
+    "Fee Refund": "public/js/bulk_upload_template.js",
+    "Student Credit Note": "public/js/bulk_upload_template.js",
     # Action → Enroll step-by-step wizard
     "Student Master": "public/js/enrollment_wizard.js",
     # Create Class → Add / Remove Students
@@ -408,6 +412,18 @@ fixtures = [
 boot_session = "slcm.slcm.utils.academics_desktop.filter_boot_icons"
 
 doc_events = {
+    # User Activity Log: every create / update / submit / cancel / delete / rename by a user
+    "*": {
+        "on_update": "slcm.utils.activity_log.on_update",
+        "on_submit": "slcm.utils.activity_log.on_submit",
+        "on_cancel": "slcm.utils.activity_log.on_cancel",
+        "on_update_after_submit": "slcm.utils.activity_log.on_update_after_submit",
+        "on_trash": "slcm.utils.activity_log.on_trash",
+        "after_rename": "slcm.utils.activity_log.after_rename",
+    },
+    # failed logins and exports / prints / downloads → User Activity Log
+    "Activity Log": {"after_insert": "slcm.utils.activity_log.on_activity_log"},
+    "Access Log": {"after_insert": "slcm.utils.activity_log.on_access_log"},
     # ERPNext accounting bridge: only queues a background posting after commit, never raises,
     # and does nothing unless ERPNext is installed and posting is enabled.
     "Fee Payment": {
@@ -633,7 +649,7 @@ override_whitelisted_methods = {
 # Ignore links to specified DocTypes when deleting documents
 # -----------------------------------------------------------
 
-ignore_links_on_delete = ["Admission Audit Log", "Merit Audit Log", "Seat Allocation Audit Log", "Communication", "ToDo", "Admission Cancellation", "Refund Request", "Attendance Log"]
+ignore_links_on_delete = ["User Activity Log", "Admission Audit Log", "Merit Audit Log", "Seat Allocation Audit Log", "Communication", "ToDo", "Admission Cancellation", "Refund Request", "Attendance Log"]
 
 # Request Events
 # ----------------
@@ -646,12 +662,19 @@ before_request = [
     "slcm.utils.portal_access.guard",
     "slcm.admission.portal_application_web_form.slcm_before_request"
 ]
-on_logout = "slcm.utils.auth_routing.handle_logout"
+on_logout = [
+    "slcm.utils.auth_routing.handle_logout",
+    "slcm.utils.activity_log.on_logout",
+]
 on_session_creation = [
     "slcm.utils.auth_routing.enforce_faculty_google_login",
     "slcm.utils.auth_routing.enforce_parent_google_login",
     "slcm.utils.auth_routing.enforce_student_google_login",
+    # last, so only logins the routing checks above let through are recorded
+    "slcm.utils.activity_log.on_session_creation",
 ]
+# User Activity Log: record opens and SLCM method calls
+after_request = ["slcm.utils.activity_log.after_request"]
 # after_request = ["slcm.utils.after_request"]
 
 # Job Events
@@ -693,9 +716,9 @@ on_session_creation = [
 # Automatically update python controller files with type annotations for this app.
 # export_python_type_annotations = True
 
-# default_log_clearing_doctypes = {
-# 	"Logging DocType Name": 30  # days to retain logs
-# }
+default_log_clearing_doctypes = {
+    "User Activity Log": 365,  # days to retain; change in Log Settings
+}
 
 # Translation
 # ------------
