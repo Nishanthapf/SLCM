@@ -126,6 +126,11 @@
   "scholarship_type",
   "scholarship_percentage",
   "number_of_instalments",
+  "whether_student_is_scholarship_beneficiary",
+  "if_yes",
+  "if_univeristy_financial_aid",
+  "if_external_scholarship_or_both",
+  "if_other",
   "fee_details_section",
   "fee_structure",
   "discount_amount",
@@ -283,9 +288,9 @@
   {
    "fieldname": "registration_id",
    "fieldtype": "Data",
-   "label": "Registration ID",
    "in_filter": 1,
    "in_standard_filter": 1,
+   "label": "Student ID",
    "search_index": 1
   },
   {
@@ -388,7 +393,6 @@
   {
    "fieldname": "fee_details_section",
    "fieldtype": "Section Break",
-   "hidden": 1,
    "label": "Fee Details"
   },
   {
@@ -430,7 +434,6 @@
    "collapsible": 1,
    "fieldname": "fee_structure_history_section",
    "fieldtype": "Section Break",
-   "hidden": 1,
    "label": "Fee Structure Change History"
   },
   {
@@ -571,7 +574,7 @@
    "depends_on": "eval:doc.availed_education_loan=='Yes'",
    "fieldname": "loan_account_number",
    "fieldtype": "Data",
-   "label": "Education Loan Account Number",
+   "label": "Loan Account Number",
    "length": 30,
    "mandatory_depends_on": "eval:doc.availed_education_loan=='Yes'",
    "mask": 1
@@ -1377,8 +1380,10 @@
    "fieldtype": "Column Break"
   },
   {
+   "depends_on": "eval:doc.whether_student_is_scholarship_beneficiary === \"Yes\"",
    "fieldname": "column_break_zmxd",
-   "fieldtype": "Column Break"
+   "fieldtype": "Column Break",
+   "options": "\nUniversity Financial Aid\nExternal Scholarship\nBoth"
   },
   {
    "fieldname": "column_break_ghqr",
@@ -1748,18 +1753,50 @@
    "options": "\nOn Campus\nOff Campus"
   },
   {
-   "description": "Set from the Ongoing term of the student's enrollment (Academic Term → Term Mapping).",
+   "description": "Set from the Ongoing term of the student's enrollment (Academic Term \u2192 Term Mapping).",
    "fieldname": "current_term",
    "fieldtype": "Link",
    "in_standard_filter": 1,
    "label": "Current Term",
    "options": "Term Master",
    "read_only": 1
+  },
+  {
+   "fieldname": "whether_student_is_scholarship_beneficiary",
+   "fieldtype": "Select",
+   "label": "Whether Student is Scholarship beneficiary?",
+   "options": "\nYes\nNo"
+  },
+  {
+   "depends_on": "eval:doc.whether_student_is_scholarship_beneficiary === \"Yes\"",
+   "fieldname": "if_yes",
+   "fieldtype": "Select",
+   "label": "If yes",
+   "options": "\nUniversity Financial Aid\nExternal Scholarship\nBoth"
+  },
+  {
+   "depends_on": "eval:doc.if_yes === \"University Financial Aid\"",
+   "fieldname": "if_univeristy_financial_aid",
+   "fieldtype": "Data",
+   "label": "If Univeristy Financial Aid"
+  },
+  {
+   "depends_on": "eval: doc.if_yes === \"External Scholarship\" || doc.if_yes === \"Both\"",
+   "fieldname": "if_external_scholarship_or_both",
+   "fieldtype": "Table MultiSelect",
+   "label": "If External Scholarship or both",
+   "options": "External Scholarship or Both Scholarship Child"
+  },
+  {
+   "depends_on": "eval: doc.if_external_scholarship_or_both && doc.if_external_scholarship_or_both.some(row => row.external_scholarship_or_both_scholarship === \"Other\")",
+   "fieldname": "if_other",
+   "fieldtype": "Data",
+   "label": "If other"
   }
  ],
  "image_field": "passport_size_photo",
  "links": [],
- "modified": "2026-11-16 12:49:25.331397",
+ "modified": "2026-11-16 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Student Master",

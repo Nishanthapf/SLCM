@@ -1,0 +1,34 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-11-16 17:35:03.360046",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "external_scholarship_or_both_scholarship"
+ ],
+ "fields": [
+  {
+   "fieldname": "external_scholarship_or_both_scholarship",
+   "fieldtype": "Link",
+   "label": "External Scholarship or Both Scholarship",
+   "options": "External Scholarship or Both Scholarship"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-16 17:35:41.041665",
+ "modified_by": "Administrator",
+ "module": "SLCM",
+ "name": "External Scholarship or Both Scholarship Child",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
