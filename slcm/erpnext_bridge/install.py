@@ -297,6 +297,9 @@ def _ensure_sidebar():
 		("Link", "Bank Account", "Bank Account", "DocType", None),
 		("Link", "Journal Entry", "Journal Entry", "DocType", None),
 	]
+	if frappe.db.exists("DocType", "User Activity Log"):
+		items += [("Section Break", "Audit", None, None, "shield")]
+		items += [("Link", "User Activity Log", "User Activity Log", "DocType", None)]
 	doc = (
 		frappe.get_doc("Workspace Sidebar", NAME)
 		if frappe.db.exists("Workspace Sidebar", NAME)

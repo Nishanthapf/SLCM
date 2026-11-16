@@ -154,6 +154,8 @@ class FeeConcession(Document):
 
 	def _reverse_waiver(self):
 		demand = frappe.get_doc("Fee Demand", self.fee_demand)
+		if demand.status == "Cancelled":
+			return  # a cancelled due is final; withdrawing its concession must not revive it
 
 		paid = flt(demand.paid_amount)
 		original = flt(demand.original_amount)

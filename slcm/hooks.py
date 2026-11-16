@@ -413,6 +413,18 @@ fixtures = [
 boot_session = "slcm.slcm.utils.academics_desktop.filter_boot_icons"
 
 doc_events = {
+    # User Activity Log: every create / update / submit / cancel / delete / rename by a user
+    "*": {
+        "on_update": "slcm.utils.activity_log.on_update",
+        "on_submit": "slcm.utils.activity_log.on_submit",
+        "on_cancel": "slcm.utils.activity_log.on_cancel",
+        "on_update_after_submit": "slcm.utils.activity_log.on_update_after_submit",
+        "on_trash": "slcm.utils.activity_log.on_trash",
+        "after_rename": "slcm.utils.activity_log.after_rename",
+    },
+    # failed logins and exports / prints / downloads → User Activity Log
+    "Activity Log": {"after_insert": "slcm.utils.activity_log.on_activity_log"},
+    "Access Log": {"after_insert": "slcm.utils.activity_log.on_access_log"},
     # ERPNext accounting bridge: only queues a background posting after commit, never raises,
     # and does nothing unless ERPNext is installed and posting is enabled.
     "Fee Payment": {
@@ -638,7 +650,7 @@ override_whitelisted_methods = {
 # Ignore links to specified DocTypes when deleting documents
 # -----------------------------------------------------------
 
-ignore_links_on_delete = ["Admission Audit Log", "Merit Audit Log", "Seat Allocation Audit Log", "Communication", "ToDo", "Admission Cancellation", "Refund Request", "Attendance Log"]
+ignore_links_on_delete = ["User Activity Log", "Admission Audit Log", "Merit Audit Log", "Seat Allocation Audit Log", "Communication", "ToDo", "Admission Cancellation", "Refund Request", "Attendance Log"]
 
 # Request Events
 # ----------------
@@ -651,12 +663,19 @@ before_request = [
     "slcm.utils.portal_access.guard",
     "slcm.admission.portal_application_web_form.slcm_before_request"
 ]
-on_logout = "slcm.utils.auth_routing.handle_logout"
+on_logout = [
+    "slcm.utils.auth_routing.handle_logout",
+    "slcm.utils.activity_log.on_logout",
+]
 on_session_creation = [
     "slcm.utils.auth_routing.enforce_faculty_google_login",
     "slcm.utils.auth_routing.enforce_parent_google_login",
     "slcm.utils.auth_routing.enforce_student_google_login",
+    # last, so only logins the routing checks above let through are recorded
+    "slcm.utils.activity_log.on_session_creation",
 ]
+# User Activity Log: record opens and SLCM method calls
+after_request = ["slcm.utils.activity_log.after_request"]
 # after_request = ["slcm.utils.after_request"]
 
 # Job Events
@@ -698,9 +717,9 @@ on_session_creation = [
 # Automatically update python controller files with type annotations for this app.
 # export_python_type_annotations = True
 
-# default_log_clearing_doctypes = {
-# 	"Logging DocType Name": 30  # days to retain logs
-# }
+default_log_clearing_doctypes = {
+    "User Activity Log": 365,  # days to retain; change in Log Settings
+}
 
 # Translation
 # ------------
