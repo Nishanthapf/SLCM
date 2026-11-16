@@ -166,6 +166,7 @@
   "loan_passbook",
   "tab_education",
   "class_x_details_section",
+  "class_x_exam_name",
   "class_x_completion_year",
   "class_x_school",
   "class_x_max_cgpa",
@@ -282,6 +283,8 @@
   {
    "fieldname": "registration_id",
    "fieldtype": "Data",
+   "in_filter": 1,
+   "in_standard_filter": 1,
    "label": "Student ID",
    "search_index": 1
   },
@@ -739,9 +742,8 @@
   {
    "depends_on": "eval:doc.state",
    "fieldname": "district",
-   "fieldtype": "Link",
-   "label": "District",
-   "options": "City"
+   "fieldtype": "Data",
+   "label": "District"
   },
   {
    "fieldname": "passport_available",
@@ -927,6 +929,11 @@
    "fieldname": "class_x_details_section",
    "fieldtype": "Section Break",
    "label": "Class X details"
+  },
+  {
+   "fieldname": "class_x_exam_name",
+   "fieldtype": "Data",
+   "label": "Name of Examination (Class X - as per marksheet)"
   },
   {
    "fieldname": "class_x_completion_year",
@@ -1750,7 +1757,7 @@
  ],
  "image_field": "passport_size_photo",
  "links": [],
- "modified": "2026-11-04 17:30:01.470612",
+ "modified": "2026-11-16 12:49:25.331397",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Student Master",
@@ -1973,6 +1980,42 @@
    "permlevel": 3,
    "read": 1,
    "role": "AAD Staff"
+  },
+  {
+   "permlevel": 3,
+   "read": 1,
+   "role": "NLSIU Admin",
+   "write": 1
+  },
+  {
+   "permlevel": 2,
+   "read": 1,
+   "role": "NLSIU Admin",
+   "write": 1
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "NLSIU Admin",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "NLSIU Admin",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "permlevel": 4,
+   "read": 1,
+   "role": "NLSIU Admin",
+   "write": 1
   }
  ],
  "row_format": "Dynamic",
