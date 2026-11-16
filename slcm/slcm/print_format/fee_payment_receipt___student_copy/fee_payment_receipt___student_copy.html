@@ -11,7 +11,6 @@
 {% set student_full    = ([sm.first_name or "", sm.middle_name or "", sm.last_name or ""] | select | join(" ")) if sm else (doc.student_name or "—") %}
 {% set registration_id = (sm.registration_id if sm and sm.registration_id else "Not Available") %}
 {% set application_num = (sm.application_number if sm and sm.application_number else "Not Available") %}
-{% set year_of_study   = (sm.current_year if sm and sm.current_year else "—") %}
 
 {% set programme   = (fr.programme if fr and fr.programme else (frappe.db.get_value("Program", doc.program, "program_name") or doc.program or "—")) %}
 {% set academic_yr = (fr.academic_year if fr and fr.academic_year else (doc.academic_year or "—")) %}
@@ -29,6 +28,18 @@
 {% set net_payable     = amount_paid %}
 
 {% include "slcm/templates/print/nls_receipt_style.html" %}
+<style>
+  /* Fully ruled particulars table (local to this format; shared style untouched) */
+  .print-format .nls-doc .nls-table.nls-grid, .nls-table.nls-grid { border: 1px solid #000; }
+  .print-format .nls-doc .nls-table.nls-grid th, .print-format .nls-doc .nls-table.nls-grid td,
+  .nls-table.nls-grid th, .nls-table.nls-grid td { border: 1px solid #000 !important; }
+  .print-format .nls-doc .nls-table.nls-grid tfoot td, .nls-table.nls-grid tfoot td { border-top: 2px solid #000 !important; }
+  /* Footer note: set apart from the payment details */
+  .print-format .nls-doc .nls-note, .nls-doc .nls-note {
+    margin-top: 40px !important; padding-top: 10px !important; border-top: 1px dashed #000;
+    text-align: center; font-style: italic; font-size: 10.5pt;
+  }
+</style>
 <div class="nls-doc">
 
 <div class="nls-copy is-page">
@@ -69,19 +80,19 @@
     <tr>
       <td class="lbl">Programme:</td>
       <td class="val">{{ programme }}</td>
-      <td class="lbl">Year:</td>
-      <td class="val">{{ year_of_study }}</td>
+      <td class="lbl"></td>
+      <td class="val"></td>
     </tr>
   </table>
 
   
 
-  <table class="nls-table">
+  <table class="nls-table nls-grid">
     <thead>
       <tr>
         <th style="width:10%">Sl No.</th>
         <th>Particulars</th>
-        <th style="width:26%">Amount</th>
+        <th style="width:26%">Amount (INR)</th>
       </tr>
     </thead>
     <tbody>
@@ -91,20 +102,20 @@
         <tr>
           <td>{{ loop.index }}</td>
           <td>{{ row.demand_description or row.fee_demand or "Fee Demand" }}</td>
-          <td>INR {{ "{:,.2f}".format(frappe.utils.flt(row.amount_allocated or 0)) }}</td>
+          <td>{{ "{:,.2f}".format(frappe.utils.flt(row.amount_allocated or 0)) }}</td>
         </tr>
         {% endfor %}
       {% elif gross_fee > 0 %}
         <tr>
           <td>1</td>
           <td>Programme Fee (Gross)</td>
-          <td>INR {{ "{:,.2f}".format(gross_fee) }}</td>
+          <td>{{ "{:,.2f}".format(gross_fee) }}</td>
         </tr>
       {% else %}
         <tr>
           <td>1</td>
           <td>Fee Payment</td>
-          <td>INR {{ "{:,.2f}".format(amount_paid) }}</td>
+          <td>{{ "{:,.2f}".format(amount_paid) }}</td>
         </tr>
       {% endif %}
 
@@ -113,7 +124,7 @@
       <tr class="scholarship-row">
         <td></td>
         <td>&#9670; Scholarship / Concession</td>
-        <td style="color:#000;">− INR {{ "{:,.2f}".format(scholarship_amt) }}</td>
+        <td style="color:#000;">− {{ "{:,.2f}".format(scholarship_amt) }}</td>
       </tr>
       {% endif %}
 
@@ -122,14 +133,14 @@
       <tr class="net-row">
         <td></td>
         <td>Net Payable after Scholarship</td>
-        <td>INR {{ "{:,.2f}".format(net_payable) }}</td>
+        <td>{{ "{:,.2f}".format(net_payable) }}</td>
       </tr>
       {% endif %}
     </tbody>
     <tfoot>
       <tr>
         <td colspan="2">Total Paid</td>
-        <td>INR {{ "{:,.2f}".format(amount_paid) }}</td>
+        <td>{{ "{:,.2f}".format(amount_paid) }}</td>
       </tr>
     </tfoot>
   </table>
@@ -165,7 +176,7 @@
   </table>
 
   <div class="nls-note">
-    This is a computer generated receipt, hence it does not require signature/seal.
+    This is a computer-generated receipt and does not require a signature or seal.
   </div>
 
 </div>
