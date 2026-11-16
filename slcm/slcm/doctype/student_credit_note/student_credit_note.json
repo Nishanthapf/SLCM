@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "student",
+  "registration_id",
   "student_name",
   "credit_type",
   "academic_year",
@@ -33,11 +34,21 @@
   {
    "fieldname": "student",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Student",
    "options": "Student Master",
    "reqd": 1
+  },
+  {
+   "fetch_from": "student.registration_id",
+   "fetch_if_empty": 1,
+   "fieldname": "registration_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Registration ID",
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fetch_from": "student.first_name",
@@ -183,7 +194,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-10-20 16:47:54.239129",
+ "modified": "2026-11-16 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Student Credit Note",

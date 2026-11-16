@@ -8,6 +8,7 @@
  "engine": "InnoDB",
  "field_order": [
   "student",
+  "registration_id",
   "reason",
   "amount",
   "fine_date",
@@ -18,10 +19,19 @@
   {
    "fieldname": "student",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Student",
    "options": "Student Master",
    "reqd": 1
+  },
+  {
+   "fetch_from": "student.registration_id",
+   "fieldname": "registration_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Registration ID",
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "reason",
@@ -45,12 +55,12 @@
   },
   {
    "default": "Unpaid",
+   "description": "Collected through the fine's Fee Demand: Paid is set when that demand is paid. Waived waives the demand.",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "Unpaid\nPaid\nWaived",
-   "description": "Collected through the fine's Fee Demand: Paid is set when that demand is paid. Waived waives the demand."
+   "options": "Unpaid\nPaid\nWaived"
   },
   {
    "fieldname": "issued_by",
@@ -61,7 +71,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-09 12:00:00.000000",
+ "modified": "2026-11-16 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Hostel Fine",

@@ -442,7 +442,7 @@ class FeeReports {
 		const amount = (v) => (flt(v) ? sfm_money(v) : '<span class="sfm-sub">0</span>');
 		$t.find("thead").html(`<tr>
 			<th scope="col" class="num">${__("Sl. No.")}</th>
-			<th scope="col">${__("Student ID")}</th>
+			<th scope="col">${__("Registration ID")}</th>
 			<th scope="col">${__("Student Name")}</th>
 			<th scope="col">${__("Student Email ID")}</th>
 			<th scope="col">${__("Academic Status")}</th>

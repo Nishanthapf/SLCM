@@ -18,8 +18,26 @@ def demand_type_for_component_type(component_type):
 
 
 class FeeDemand(Document):
+	# The Source Document (e.g. a Re Exam Registration) may be deleted after its due was raised. That stale link must not
+	# block every later save of the due (concession, payment, excess adjustment, refund ...), so a source link that is
+	# unchanged since the due was saved is not re-validated. A new due, or a changed source, is still checked.
+	_SOURCE_LINK_FIELDS = ("trigger_ref_doctype", "trigger_ref_name")
+
+	def get_invalid_links(self, is_submittable=False):
+		# the base check blanks an invalid link on the document, so read the values before it runs
+		current = {f: self.get(f) for f in self._SOURCE_LINK_FIELDS}
+		invalid_links, cancelled_links = super().get_invalid_links(is_submittable=is_submittable)
+		if self.is_new() or not any(link[0] in self._SOURCE_LINK_FIELDS for link in invalid_links):
+			return invalid_links, cancelled_links
+		saved = frappe.db.get_value("Fee Demand", self.name, list(self._SOURCE_LINK_FIELDS), as_dict=True) or {}
+		if all((current[f] or None) == (saved.get(f) or None) for f in self._SOURCE_LINK_FIELDS):
+			self.update(current)  # keep the (stale) reference as it was
+			invalid_links = [link for link in invalid_links if link[0] not in self._SOURCE_LINK_FIELDS]
+		return invalid_links, cancelled_links
+
 
 	def validate(self):
+		self._block_edit_if_cancelled()
 		self._fill_from_student()
 		self._set_demand_type()
 		self._calculate_amounts()
@@ -36,11 +54,12 @@ class FeeDemand(Document):
 			return
 		sm = frappe.db.get_value(
 			"Student Master", self.student,
-			["official_email_id", "email", "personal_email", "academic_year", "batch", "programme_of_study"],
+			["official_email_id", "email", "personal_email", "academic_year", "batch", "programme_of_study", "registration_id"],
 			as_dict=True,
 		)
 		if not sm:
 			return
+		self.registration_id = sm.registration_id
 		# Programme / Batch: stamped once so dues can be filtered and fined by programme.
 		# Stale links on the student are skipped rather than blocking the demand.
 		if not self.programme and sm.batch and frappe.db.exists("SLCM Batch", sm.batch):
@@ -73,6 +92,15 @@ class FeeDemand(Document):
 		elif self.demand_type not in options:
 			self.demand_type = demand_type_for_component_type(comp.get("component_type"))
 
+	def _block_edit_if_cancelled(self):
+		"""A cancelled due is final. Only a payment reversal (Fee Payment cancelled) may still touch it,
+		since money already received must always be booked."""
+		if self.is_new() or self.flags.payment_update:
+			return
+		if frappe.db.get_value("Fee Demand", self.name, "status") == "Cancelled":
+			frappe.throw(_("Fee Demand {0} is cancelled and can no longer be edited.").format(self.name),
+			             title=_("Cancelled Due"))
+
 	def _calculate_amounts(self):
 		self.original_amount = flt(self.original_amount)
 		self.waiver_amount = flt(self.waiver_amount)
@@ -83,8 +111,8 @@ class FeeDemand(Document):
 		self.net_payable = self.original_amount - self.waiver_amount + self.penalty_amount
 		self.outstanding_amount = self.net_payable - self.paid_amount - self.credit_adjusted
 
-		# Prevent negative outstanding
-		if self.outstanding_amount < 0:
+		# Prevent negative outstanding; a cancelled due has nothing left to pay
+		if self.outstanding_amount < 0 or self.status == "Cancelled":
 			self.outstanding_amount = 0
 
 	def _validate_waiver(self):
@@ -116,7 +144,8 @@ class FeeDemand(Document):
 			return
 
 		outstanding = flt(self.outstanding_amount)
-		paid = flt(self.paid_amount)
+		# settled = cash paid + excess adjusted against the due (same as the student / parent portals)
+		paid = flt(self.paid_amount) + flt(self.credit_adjusted)
 
 		if outstanding <= 0 and paid > 0:
 			self.status = "Paid"

@@ -2,6 +2,28 @@ frappe.ui.form.on("Fee Concession", {
 	refresh(frm) {
 		frm.trigger("set_status_indicator");
 		frm.trigger("set_fee_demand_filter");
+		frm.trigger("single_step_apply");
+	},
+
+	// One step: for users who may submit concessions, saving also submits (applies) the concession, so it never
+	// waits as a Draft. The toolbar's primary button becomes "Apply Concession" and Ctrl+S does the same.
+	// Users without submit permission keep the normal Save (a draft for an approver).
+	single_step_apply(frm) {
+		const can_apply = () => frm.doc.docstatus === 0 && !!(frm.perm[0] && frm.perm[0].submit);
+		if (!frm.__sfm_single_step) {
+			frm.__sfm_single_step = true;
+			const save = frm.save.bind(frm);
+			frm.save = function (action, callback, btn, on_error) {
+				if ((!action || action === "Save") && can_apply()) action = "Submit";
+				return save(action, callback, btn, on_error);
+			};
+			const toolbar_action = frm.toolbar.set_primary_action.bind(frm.toolbar);
+			frm.toolbar.set_primary_action = function (dirty) {
+				toolbar_action(dirty);
+				if (can_apply()) frm.page.set_primary_action(__("Apply Concession"), () => frm.save());
+			};
+		}
+		frm.toolbar.set_primary_action();
 	},
 
 	set_status_indicator(frm) {
@@ -84,7 +106,7 @@ frappe.ui.form.on("Fee Concession", {
 
 		if (waiver > original) {
 			frappe.show_alert({
-				message: __("Waiver Amount cannot exceed Original Amount ₹{0}", [format_currency(original, "INR")]),
+				message: __("Waiver Amount cannot exceed Original Amount {0}", [format_currency(original, "INR")]),
 				indicator: "red",
 			});
 			return;
@@ -94,7 +116,7 @@ frappe.ui.form.on("Fee Concession", {
 
 		// Show live preview
 		frappe.show_alert({
-			message: __("Waiver: ₹{0} | Outstanding after waiver: ₹{1}", [
+			message: __("Waiver: {0} | Outstanding after waiver: {1}", [
 				format_currency(waiver, "INR"),
 				format_currency(Math.max(0, original - waiver - flt(frm.doc.paid_amount)), "INR"),
 			]),
