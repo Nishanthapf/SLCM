@@ -12,7 +12,10 @@ Flow per student per day
 1. Fetch Attendance Sessions for the student on that date.
    If a Time Table entry exists but no Attendance Session was created yet,
    auto-create the session so RFID can still work without manual setup.
-2. Match each swipe to a session window (±20 min buffer).
+2. Match each swipe to a session window (±20 min buffer). Only Classroom
+   readers count; with Attendance Settings › Require Venue Match on, the
+   reader must also be mapped (RFID Device Room Mapping) to the session's
+   Time Table venue on the swipe date.
 3. Apply RFID mode (In Only / In and Out) to determine Present/Absent.
 4. Create or update Student Attendance — NEVER silently drops a swipe.
 5. Mark Attendance Log rows as processed.
@@ -233,6 +236,8 @@ def _process_student_day(logs):
     student   = logs[0].get("student")
     log_date  = getdate(logs[0].get("swipe_time"))
     rfid_mode = frappe.db.get_single_value("Attendance Settings", "rfid_swipe_mode") or "In Only"
+    require_venue = bool(frappe.db.get_single_value("Attendance Settings", "rfid_require_venue_match"))
+    device_cache = {}
 
     # Sort chronologically
     logs = sorted(logs, key=lambda x: x.get("swipe_time"))
@@ -254,7 +259,8 @@ def _process_student_day(logs):
     matched_any_names = set()
 
     for session in sessions:
-        matched = _match_swipes_to_session(logs, session)
+        eligible = _logs_eligible_for_session(logs, session, require_venue, device_cache)
+        matched = _match_swipes_to_session(eligible, session)
         if not matched:
             continue
 
@@ -283,8 +289,15 @@ def _process_student_day(logs):
             })
         elif log.name not in matched_any_names:
             reason = "Unmatched - No Session"
-            if _is_awaiting_activation(log, sessions):
+            venue_sessions = [
+                s for s in sessions
+                if _logs_eligible_for_session([log], s, require_venue, device_cache)
+            ]
+            if _is_awaiting_activation(log, venue_sessions):
                 reason = "Early Tap - Awaiting Activation"
+            elif require_venue and not _get_device_info(log.get("device_id"), log_date, device_cache)[1]:
+                # The venue check couldn't run: reader unregistered or unmapped that day
+                reason = "Unmatched - No Device Mapping"
             if log.get("match_status") != reason:
                 frappe.db.set_value("Attendance Log", log.name, "match_status", reason)
 
@@ -305,6 +318,39 @@ def _is_awaiting_activation(log, sessions):
         if start <= swipe_time <= end:
             return True
     return False
+
+
+def _get_device_info(device_id, on_date, cache):
+    """(device_type, [venues]) for a reader on a date; device_type is None
+    for an unregistered reader or a log with no device."""
+    key = (device_id, on_date)
+    if key not in cache:
+        if not device_id:
+            cache[key] = (None, [])
+        else:
+            device_type = frappe.db.get_value("RFID Device", device_id, "device_type")
+            cache[key] = (device_type, get_active_rooms_for_device(device_id, on_date=on_date))
+    return cache[key]
+
+
+def _logs_eligible_for_session(logs, session, require_venue, cache):
+    """Swipes that may count for `session`, judged by the reader they came from.
+
+    - Entry Gate / Other readers never count towards a session.
+    - With `require_venue`, the reader must be mapped to the session's venue
+      on the swipe date. A session with no venue (Time Table has none) can't
+      be checked, so it falls back to the time-window rule alone.
+    """
+    session_venue = session.get("room")
+    eligible = []
+    for lg in logs:
+        device_type, venues = _get_device_info(lg.get("device_id"), getdate(lg.get("swipe_time")), cache)
+        if device_type and device_type != "Classroom":
+            continue
+        if require_venue and session_venue and session_venue not in venues:
+            continue
+        eligible.append(lg)
+    return eligible
 
 
 def _diagnose_unmatched_reason(logs, log_date):
@@ -340,7 +386,7 @@ def _get_or_create_sessions(student, date):
         "Attendance Session",
         filters={"session_date": date, "session_status": ["!=", "Cancelled"], "docstatus": ["<", 2]},
         fields=["name", "session_date", "session_start_time", "session_end_time",
-                "class_schedule", "class_name", "course",
+                "class_schedule", "class_name", "course", "room",
                 "session_type", "duration_hours",
                 "rfid_activated_by", "rfid_activation_time", "rfid_active_until"],
     )
@@ -420,6 +466,7 @@ def _auto_create_session_from_schedule(cs, date):
             "duration_hours":    duration,
             "session_status":    "Conducted",
             "instructor":        cs.get("instructor"),
+            "room":              cs.get("venue"),
         })
         doc.flags.skip_auto_attendance = True  # we don't pre-populate; RFID does it
         doc.insert(ignore_permissions=True)
@@ -433,6 +480,7 @@ def _auto_create_session_from_schedule(cs, date):
             "class_schedule":     cs.name,
             "class_name":         cs.class_name,
             "course":             cs.course,
+            "room":               doc.room,
             "session_type":       "Lecture",
             "duration_hours":     duration,
         })
@@ -580,6 +628,7 @@ def _upsert_class_attendance(student, session, status, logs):
             "class_name":         session.get("class_name"),
             "course":             session.get("course"),
             "class_schedule":     session.get("class_schedule"),
+            "room":               session.get("room"),
             "attendance_date":    getdate(first_log.get("swipe_time")),
             "date":               getdate(first_log.get("swipe_time")),
             "status":             status,
@@ -830,7 +879,7 @@ def bulk_sync_attendance_logs(from_date, to_date, from_time=None, to_time=None, 
          swipe still falls within the first N minutes of the session
          (N = Attendance Settings.rfid_active_window_minutes) — treated as
          if it had been activated.
-      2. The System Manager hadn't mapped the reader to a room yet at
+      2. The System Manager hadn't mapped the reader to a venue yet at
          tap-time, but has since fixed the RFID Device Room Mapping — this
          re-evaluates every log fresh, so a mapping fix immediately makes
          past taps in that date range eligible.
@@ -842,8 +891,8 @@ def bulk_sync_attendance_logs(from_date, to_date, from_time=None, to_time=None, 
 
     from_date/to_date are required: bulk actions must be scoped to an
     explicit window, never "all unresolved logs ever". from_time/to_time
-    narrow that window to a time-of-day range within it; venue further
-    restricts to taps on devices currently mapped to that Room.
+    narrow that window to a time-of-day range within it; venue (Venue
+    Master) further restricts to taps on readers mapped to that venue.
     """
     frappe.only_for(("System Manager", "slcm_Programme Chair", *AAD_ROLES))
 
@@ -907,11 +956,15 @@ def _try_bulk_sync_one(log, window_minutes):
     swipe_time = get_datetime(log.get("swipe_time"))
     log_date = getdate(swipe_time)
 
+    device_type = frappe.db.get_value("RFID Device", log.get("device_id"), "device_type")
+    if device_type and device_type != "Classroom":
+        return {"synced": False, "reason": f"{device_type} reader — does not count for class attendance"}
+
     rooms = get_active_rooms_for_device(log.get("device_id"), on_date=log_date)
     if not rooms:
-        return {"synced": False, "reason": "Device not mapped to a room yet"}
+        return {"synced": False, "reason": "Device not mapped to a venue yet"}
 
-    candidate_sessions = frappe.get_all(
+    day_sessions = frappe.get_all(
         "Attendance Session",
         filters={
             "room": ["in", rooms],
@@ -922,8 +975,22 @@ def _try_bulk_sync_one(log, window_minutes):
         fields=["name", "session_start_time", "session_end_time", "duration_hours"],
     )
 
+    if not day_sessions:
+        return {"synced": False, "reason": "No session found for this venue/date"}
+
+    # A venue hosts several classes a day: only the session(s) around the tap
+    # time are candidates (20 min early grace, same as the RFID processor,
+    # so an early tap reports "before the session start" below).
+    candidate_sessions = [
+        s for s in day_sessions
+        if s.get("session_start_time") and s.get("session_end_time")
+        and add_to_date(get_datetime(f"{log_date} {s['session_start_time']}"), minutes=-20)
+        <= swipe_time
+        <= get_datetime(f"{log_date} {s['session_end_time']}")
+    ]
+
     if not candidate_sessions:
-        return {"synced": False, "reason": "No session found for this room/date"}
+        return {"synced": False, "reason": "No session at this venue around the tap time"}
     if len(candidate_sessions) > 1:
         return {"synced": False, "reason": "Multiple candidate sessions — ambiguous, sync individually"}
 
