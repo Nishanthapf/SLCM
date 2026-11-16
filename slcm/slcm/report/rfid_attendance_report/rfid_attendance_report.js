@@ -71,24 +71,46 @@ function rfid_multiselect_get_data(filter_name) {
 	document.head.appendChild(style);
 })();
 
+// Default range: the last 7 days, start of the first day to end of today.
+function rfid_default_from() {
+	return frappe.datetime.add_days(frappe.datetime.get_today(), -6) + " 00:00:00";
+}
+function rfid_default_to() {
+	return frappe.datetime.get_today() + " 23:59:59";
+}
+
+const RFID_REPORT_API = "slcm.slcm.report.rfid_attendance_report.rfid_attendance_report";
+const RFID_MULTISELECTS = ["academic_year", "programme", "terminal_alias", "venue", "student"];
+
 frappe.query_reports["RFID Attendance Report"] = {
 
 	onload: function (report) {
 		// ── Reset Filters button ─────────────────────────────────────────────
+		// ── Excel download: report + student-wise + most-swiped sheets ──────
+		report.page.add_inner_button(__("Download Excel"), function () {
+			let filters;
+			try {
+				filters = report.get_filter_values(true);
+			} catch (e) {
+				return; // a required filter is missing; Frappe already shows "Please set filters"
+			}
+			if (!filters) return;
+			open_url_post(`/api/method/${RFID_REPORT_API}.download_excel`, { filters: filters });
+			frappe.show_alert({ message: __("Preparing Excel — the download starts in a moment."), indicator: "blue" });
+		}).css({ "font-weight": "600" });
+
 		report.page.add_inner_button(__("Reset Filters"), function () {
-			const today   = frappe.datetime.get_today();
-			const week_ago = frappe.datetime.add_days(today, -6);
 
 			// Clear every MultiSelectList to an empty array
-			["academic_year", "programme", "terminal_alias", "area_alias", "student"].forEach(function (fn) {
+			RFID_MULTISELECTS.forEach(function (fn) {
 				const f = report.get_filter(fn);
 				if (f && f.set_value) f.set_value([]);
 			});
 
 			// Reset scalar filters to defaults
 			report.get_filter("view_by").set_input("Daily");
-			report.get_filter("from_date").set_input(week_ago);
-			report.get_filter("to_date").set_input(today);
+			report.get_filter("from_date").set_input(rfid_default_from());
+			report.get_filter("to_date").set_input(rfid_default_to());
 			report.get_filter("known_only").set_input(0);
 
 			// Clear the URL params so stale values don't re-apply on refresh
@@ -105,7 +127,7 @@ frappe.query_reports["RFID Attendance Report"] = {
 		setTimeout(function () {
 			report.page.page_form.find(".frappe-control").each(function () {
 				const fn = $(this).attr("data-fieldname");
-				if (["academic_year", "programme", "terminal_alias", "area_alias", "student"].includes(fn)) {
+				if (RFID_MULTISELECTS.includes(fn)) {
 					$(this).addClass("rfid-filter");
 				}
 			});
@@ -117,23 +139,23 @@ frappe.query_reports["RFID Attendance Report"] = {
 			fieldname: "view_by",
 			label: __("View By"),
 			fieldtype: "Select",
-			options: "Daily\nWeekly\nMonthly",
+			options: "Hourly\nDaily\nWeekly\nMonthly",
 			default: "Daily",
 			reqd: 1,
 			on_change: function () { frappe.query_report.refresh(); }
 		},
 		{
 			fieldname: "from_date",
-			label: __("From Date"),
-			fieldtype: "Date",
-			default: frappe.datetime.add_days(frappe.datetime.get_today(), -6),
+			label: __("From"),
+			fieldtype: "Datetime",
+			default: rfid_default_from(),
 			reqd: 1
 		},
 		{
 			fieldname: "to_date",
-			label: __("To Date"),
-			fieldtype: "Date",
-			default: frappe.datetime.get_today(),
+			label: __("To"),
+			fieldtype: "Datetime",
+			default: rfid_default_to(),
 			reqd: 1
 		},
 		{
@@ -155,10 +177,10 @@ frappe.query_reports["RFID Attendance Report"] = {
 			get_data: rfid_multiselect_get_data("terminal_alias")
 		},
 		{
-			fieldname: "area_alias",
-			label: __("Area"),
+			fieldname: "venue",
+			label: __("Venue"),
 			fieldtype: "MultiSelectList",
-			get_data: rfid_multiselect_get_data("area_alias")
+			get_data: rfid_multiselect_get_data("venue")
 		},
 		{
 			fieldname: "student",
@@ -176,58 +198,41 @@ frappe.query_reports["RFID Attendance Report"] = {
 
 	formatter: function (value, row, column, data, default_formatter) {
 		value = default_formatter(value, row, column, data);
+		if (!data) return value;
+		const esc = frappe.utils.escape_html;
 
-		const is_summary = data && data.bold == 1;
-
-		// ── Summary row styling ────────────────────────────────────────────
-		if (is_summary) {
+		// ── Period (summary) row ───────────────────────────────────────────
+		if (data.is_period_row) {
 			if (column.fieldname === "period_label") {
-				// Date (Tuesday) — style date part bold navy, weekday part lighter
 				const raw = data.period_label || "";
 				const m = raw.match(/^(.+?)\s+\((.+?)\)$/);
-				const formatted = m
-					? `<span style="color:#2b2e4a;font-weight:700">${m[1]}</span><span style="color:#6b7280;font-weight:400;font-size:.85em;margin-left:6px">(${m[2]})</span>`
-					: `<span style="color:#2b2e4a;font-weight:700;font-size:.95em">${raw}</span>`;
-				value = formatted;
+				return m
+					? `<span style="color:#2b2e4a;font-weight:700">${esc(m[1])}</span><span style="color:#6b7280;font-size:.85em;margin-left:6px">(${esc(m[2])})</span>`
+					: `<span style="color:#2b2e4a;font-weight:700">${esc(raw)}</span>`;
 			}
 			if (column.fieldname === "terminal_alias") {
-				value = `<span style="color:#2b2e4a;font-style:italic;font-size:.82em">${data.terminal_alias || ""}</span>`;
+				return `<span style="color:#2b2e4a;font-style:italic;font-size:.85em">${esc(data.terminal_alias || "")}</span>`;
 			}
-			if (column.fieldname === "total_swipes") {
-				value = `<b style="color:#2b2e4a">${data.total_swipes || 0}</b>`;
-			}
-			if (column.fieldname === "unique_students") {
-				value = `<b style="color:#2b2e4a">${data.unique_students || 0}</b>`;
-			}
-			if (column.fieldname === "known_students") {
-				value = `<b style="color:#2b2e4a">${data.known_students || 0}</b>`;
+			if (["total_swipes", "unique_students"].includes(column.fieldname)) {
+				return `<b style="color:#2b2e4a">${data[column.fieldname] || 0}</b>`;
 			}
 			if (column.fieldname === "unknown_swipes" && data.unknown_swipes > 0) {
-				value = `<b style="color:#8b1a1a">${data.unknown_swipes}</b>`;
+				return `<b style="color:#8b1a1a">${data.unknown_swipes}</b>`;
 			}
 			return value;
 		}
 
-		// ── Detail row styling ─────────────────────────────────────────────
-		if (column.fieldname === "terminal_alias" && data && data.terminal_alias) {
-			value = `<code style="background:#dde0f0;color:#2b2e4a;padding:2px 8px;border-radius:4px;font-size:.82em;font-weight:600">${data.terminal_alias}</code>`;
+		// ── Terminal row ───────────────────────────────────────────────────
+		if (column.fieldname === "terminal_alias" && data.terminal_alias) {
+			return `<code style="background:#dde0f0;color:#2b2e4a;padding:2px 8px;border-radius:4px;font-size:.82em;font-weight:600">${esc(data.terminal_alias)}</code>`;
 		}
-		if (column.fieldname === "area_alias" && data && data.area_alias) {
-			value = `<span style="color:#555;font-style:italic">${data.area_alias}</span>`;
+		if (column.fieldname === "venue" && data.venue) {
+			const unmapped = data.venue === "Not mapped";
+			return `<span style="color:${unmapped ? "#8b1a1a" : "#555"};${unmapped ? "font-style:italic" : ""}">${esc(data.venue)}</span>`;
 		}
-		if (column.fieldname === "unique_students" && data && data.unique_students > 0) {
-			value = `<span style="color:#2b2e4a">${data.unique_students}</span>`;
+		if (column.fieldname === "unknown_swipes" && data.unknown_swipes > 0) {
+			return `<span style="color:#8b1a1a;font-weight:600">${data.unknown_swipes}</span>`;
 		}
-		if (column.fieldname === "known_students" && data && data.known_students > 0) {
-			value = `<span style="color:#2b2e4a">${data.known_students}</span>`;
-		}
-		if (column.fieldname === "unknown_swipes" && data && data.unknown_swipes > 0) {
-			value = `<span style="color:#8b1a1a;font-weight:600">${data.unknown_swipes}</span>`;
-		}
-		if (column.fieldname === "student_name" && data && data.student) {
-			value = `<a href="/app/student-master/${data.student}" style="color:#2b2e4a;font-weight:600">${data.student_name || ""}</a>`;
-		}
-
 		return value;
 	},
 

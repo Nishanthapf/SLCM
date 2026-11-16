@@ -4,497 +4,613 @@
 """
 RFID Attendance Report
 ======================
-Two-level table:
-  Summary row: Period totals across ALL terminals
-  Detail rows: Breakdown by terminal + area
+Swipe activity per period, broken down by terminal and venue.
 
-Columns:
-  Period | [Weekday] | Terminal/Room | Area | Total Swipes
-  Unique Students | Known Students | Unknown Swipes
-  Student ID | Student Name | Programme | Academic Year
-  Period First Swipe | Period Last Swipe
+On screen (two levels):
+  Period row  : totals across all terminals for the Hour / Day / Week / Month
+  Detail rows : one per terminal (reader) + venue in that period
 
-Number Cards: Total Swipes | Unique Students | Terminals Active |
-              Unknown Swipes | Cards Assigned | No Card Assigned Yet
+Filters: View By, From / To (datetime; a date alone means start of day for
+From and end of day for To), academic year, programme, terminal, venue,
+student, known students only.
 
-Chart: Stacked bar — Known Students (navy) + Unknown Swipes (maroon)
+Venue comes from RFID Device Room Mapping (device -> Venue Master on the
+swipe date), falling back to the log's own location text.
+
+Excel download (same filters) — student-level detail lives here, not on screen:
+  Report                  the on-screen table
+  Student-wise (Daily)    one row per student per day
+  Student Totals          one row per student for the whole range
+  Most Swiped - Daily / Weekly / Monthly
+                          top student per period, overall and per terminal
 """
+
+import calendar as _calendar
+import datetime as _dt
+import io
+import json as _json
+from collections import OrderedDict
 
 import frappe
 from frappe import _
-from frappe.utils import getdate
-import calendar as _calendar
-import json as _json
+from frappe.utils import add_to_date, get_datetime, getdate
 
 from slcm.permissions import AAD_ROLES
+
+REPORT_NAME = "RFID Attendance Report"
+VIEWS = ("Hourly", "Daily", "Weekly", "Monthly")
+MULTISELECT_FILTERS = ("academic_year", "programme", "terminal_alias", "venue", "student")
+NOT_MAPPED = "Not mapped"
+MAX_EXCEL_ROWS = 300000
+
+# Venue of the reader on the swipe date (Venue Master via RFID Device Room
+# Mapping); falls back to the log's location text, then NOT_MAPPED.
+VENUE_EXPR = f"""COALESCE(
+    (SELECT m.room FROM `tabRFID Device Room Mapping` m
+     WHERE m.device = al.device_id AND m.is_active = 1
+       AND m.effective_from <= DATE(al.swipe_time)
+       AND (m.effective_to IS NULL OR m.effective_to >= DATE(al.swipe_time))
+     ORDER BY m.effective_from DESC LIMIT 1),
+    NULLIF(al.location, ''),
+    '{NOT_MAPPED}')"""
+
+TERMINAL_EXPR = "COALESCE(NULLIF(al.terminal_alias, ''), NULLIF(al.device_id, ''), 'Unknown Terminal')"
+KNOWN = "(b.student IS NOT NULL AND b.student != '')"
 
 
 # ── Filter options API ─────────────────────────────────────────────────────────
 
 @frappe.whitelist()
 def get_filter_options(filter_name, txt=""):
-    frappe.only_for(("System Manager", *AAD_ROLES))
-    txt = (txt or "").strip().lower()
+	frappe.only_for(("System Manager", *AAD_ROLES))
+	txt = (txt or "").strip()
+	like = f"%{txt}%"
 
-    if filter_name == "academic_year":
-        rows = frappe.db.sql("""
-            SELECT DISTINCT academic_year AS val
-            FROM `tabStudent Master`
-            WHERE academic_year IS NOT NULL AND academic_year != ''
-            ORDER BY academic_year DESC
-        """, as_list=True)
+	if filter_name == "student":
+		rows = frappe.db.sql("""
+			SELECT sm.name, sm.first_name
+			FROM `tabStudent Master` sm
+			WHERE EXISTS (SELECT 1 FROM `tabAttendance Log` al WHERE al.student = sm.name)
+			AND (sm.name LIKE %(like)s OR sm.first_name LIKE %(like)s)
+			ORDER BY sm.first_name ASC
+			LIMIT 50
+		""", {"like": like}, as_dict=True)
+		return [{"label": f"{r.first_name or r.name}  ({r.name})", "value": r.name, "description": ""} for r in rows]
 
-    elif filter_name == "programme":
-        rows = frappe.db.sql("""
-            SELECT DISTINCT programme_of_study AS val
-            FROM `tabStudent Master`
-            WHERE programme_of_study IS NOT NULL AND programme_of_study != ''
-            ORDER BY programme_of_study ASC
-        """, as_list=True)
+	if filter_name == "academic_year":
+		sql = """SELECT DISTINCT academic_year FROM `tabStudent Master`
+			WHERE IFNULL(academic_year, '') != '' AND academic_year LIKE %(like)s ORDER BY academic_year DESC"""
+	elif filter_name == "programme":
+		sql = """SELECT DISTINCT programme_of_study FROM `tabStudent Master`
+			WHERE IFNULL(programme_of_study, '') != '' AND programme_of_study LIKE %(like)s ORDER BY programme_of_study"""
+	elif filter_name == "terminal_alias":
+		sql = """SELECT DISTINCT terminal_alias FROM `tabAttendance Log`
+			WHERE IFNULL(terminal_alias, '') != '' AND terminal_alias LIKE %(like)s ORDER BY terminal_alias"""
+	elif filter_name == "venue":
+		sql = """SELECT v FROM (
+				SELECT DISTINCT room AS v FROM `tabRFID Device Room Mapping` WHERE is_active = 1
+				UNION SELECT DISTINCT location FROM `tabAttendance Log` WHERE IFNULL(location, '') != ''
+			) x WHERE v LIKE %(like)s ORDER BY v"""
+	else:
+		return []
 
-    elif filter_name == "terminal_alias":
-        rows = frappe.db.sql("""
-            SELECT DISTINCT terminal_alias AS val
-            FROM `tabAttendance Log`
-            WHERE terminal_alias IS NOT NULL AND terminal_alias != ''
-            ORDER BY terminal_alias ASC
-        """, as_list=True)
-
-    elif filter_name == "area_alias":
-        rows = frappe.db.sql("""
-            SELECT DISTINCT location AS val
-            FROM `tabAttendance Log`
-            WHERE location IS NOT NULL AND location != ''
-            ORDER BY location ASC
-        """, as_list=True)
-
-    elif filter_name == "student":
-        rows = frappe.db.sql("""
-            SELECT DISTINCT al.student AS val, sm.first_name AS lbl
-            FROM `tabAttendance Log` al
-            INNER JOIN `tabStudent Master` sm ON sm.name = al.student
-            WHERE al.student IS NOT NULL AND al.student != ''
-            ORDER BY sm.first_name ASC
-            LIMIT 300
-        """, as_list=True)
-        results = []
-        for r in rows:
-            sid, name = r[0], r[1] or r[0]
-            if not txt or txt in sid.lower() or txt in name.lower():
-                results.append({"label": f"{name}  ({sid})", "value": sid, "description": ""})
-        return results
-
-    else:
-        return []
-
-    results = []
-    for r in rows:
-        val = r[0] or ""
-        if not txt or txt in val.lower():
-            results.append({"label": val, "value": val, "description": ""})
-    return results
+	values = [r[0] for r in frappe.db.sql(sql, {"like": like})]
+	if filter_name == "venue" and txt.lower() in NOT_MAPPED.lower():
+		values.append(NOT_MAPPED)
+	return [{"label": v, "value": v, "description": ""} for v in values]
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 def execute(filters=None):
-    filters = filters or {}
-    _validate(filters)
+	filters = frappe._dict(filters or {})
+	_validate(filters)
+	base, params = _base_query(filters)
 
-    columns = _get_columns(filters)
-    data    = _get_data(filters)
-    summary = _get_summary(filters)
-    chart   = _get_chart(data, filters)
-
-    return columns, data, None, chart, summary
+	columns = _get_columns(filters)
+	data = _get_data(filters, base, params)
+	summary = _get_summary(base, params)
+	chart = _get_chart(data, filters)
+	return columns, data, None, chart, summary
 
 
 # ── Validation ─────────────────────────────────────────────────────────────────
 
 def _validate(filters):
-    if filters.get("from_date") and filters.get("to_date"):
-        if getdate(filters["from_date"]) > getdate(filters["to_date"]):
-            frappe.throw(_("From Date cannot be after To Date."))
+	"""Normalise From / To into filters.from_dt (inclusive) and filters.to_dt
+	(exclusive). A To value with no time part covers that whole day; a To
+	with a time includes that whole second."""
+	if not filters.get("from_date") or not filters.get("to_date"):
+		frappe.throw(_("From and To are required."))
+	try:
+		from_dt = get_datetime(filters.from_date)
+		to_dt = get_datetime(filters.to_date)
+	except Exception:
+		frappe.throw(_("From and To must be valid dates/times."))
+	if not from_dt or not to_dt:
+		frappe.throw(_("From and To must be valid dates/times."))
+
+	from_dt = from_dt.replace(microsecond=0)
+	to_dt = to_dt.replace(microsecond=0)
+	if _has_no_time(filters.to_date):
+		to_dt = add_to_date(to_dt, days=1)
+	else:
+		to_dt = add_to_date(to_dt, seconds=1)
+
+	if from_dt >= to_dt:
+		frappe.throw(_("From must be before To."))
+	if (filters.get("view_by") or "Daily") not in VIEWS:
+		frappe.throw(_("View By must be one of: {0}").format(", ".join(VIEWS)))
+
+	filters.from_dt, filters.to_dt = from_dt, to_dt
+
+
+def _has_no_time(value):
+	return isinstance(value, _dt.date) and not isinstance(value, _dt.datetime) or (
+		isinstance(value, str) and len(value.strip()) <= 10
+	)
 
 
 # ── Columns ────────────────────────────────────────────────────────────────────
 
 def _get_columns(filters):
-    view = filters.get("view_by", "Daily")
-    period_label = {"Daily": _("Date"), "Weekly": _("Week"), "Monthly": _("Month")}[view]
-
-    # Without the Student filter a terminal row covers many students: the student columns show the one who
-    # swiped there most. With it, each row is one student, so they are plain student columns.
-    if _parse_multiselect(filters.get("student")):
-        student_cols = [
-            {"fieldname": "student",       "label": _("Student ID"),    "fieldtype": "Link",
-             "options": "Student Master",                                                       "width": 145},
-            {"fieldname": "student_name",  "label": _("Student Name"),  "fieldtype": "Data",  "width": 175},
-            {"fieldname": "programme",     "label": _("Programme"),     "fieldtype": "Data",  "width": 230},
-            {"fieldname": "academic_year", "label": _("Academic Year"), "fieldtype": "Data",  "width": 120},
-        ]
-    else:
-        student_cols = [
-            {"fieldname": "student",       "label": _("Most Swipes: Student ID"),    "fieldtype": "Link",
-             "options": "Student Master",                                                                 "width": 190},
-            {"fieldname": "student_name",  "label": _("Most Swipes: Student Name"),  "fieldtype": "Data", "width": 210},
-            {"fieldname": "student_swipes","label": _("Most Swipes: Their Swipes"),  "fieldtype": "Int",  "width": 190},
-            {"fieldname": "programme",     "label": _("Most Swipes: Programme"),     "fieldtype": "Data", "width": 230},
-            {"fieldname": "academic_year", "label": _("Most Swipes: Academic Year"), "fieldtype": "Data", "width": 200},
-        ]
-
-    return [
-        {"fieldname": "period_label",    "label": period_label,               "fieldtype": "Data",     "width": 185},
-        {"fieldname": "terminal_alias",  "label": _("Terminal / Room"),       "fieldtype": "Data",     "width": 165},
-        {"fieldname": "area_alias",      "label": _("Area"),                  "fieldtype": "Data",     "width": 130},
-        {"fieldname": "total_swipes",    "label": _("Total Swipes"),          "fieldtype": "Int",      "width": 110},
-        {"fieldname": "unique_students", "label": _("Unique Students"),       "fieldtype": "Int",      "width": 130},
-        {"fieldname": "known_students",  "label": _("Known Students"),        "fieldtype": "Int",      "width": 130},
-        {"fieldname": "unknown_swipes",  "label": _("Unknown Swipes"),        "fieldtype": "Int",      "width": 130},
-        *student_cols,
-        {"fieldname": "first_swipe",     "label": _("First Swipe (Period)"),  "fieldtype": "Datetime", "width": 175},
-        {"fieldname": "last_swipe",      "label": _("Last Swipe (Period)"),   "fieldtype": "Datetime", "width": 175},
-    ]
+	view = filters.get("view_by") or "Daily"
+	period_label = {"Hourly": _("Hour"), "Daily": _("Date"), "Weekly": _("Week"), "Monthly": _("Month")}[view]
+	return [
+		{"fieldname": "period_label",    "label": period_label,              "fieldtype": "Data",     "width": 230},
+		{"fieldname": "terminal_alias",  "label": _("Terminal / Room"),      "fieldtype": "Data",     "width": 165},
+		{"fieldname": "venue",           "label": _("Venue"),                "fieldtype": "Data",     "width": 170},
+		{"fieldname": "total_swipes",    "label": _("Total Swipes"),         "fieldtype": "Int",      "width": 115},
+		{"fieldname": "unique_students", "label": _("Unique Students"),      "fieldtype": "Int",      "width": 130},
+		{"fieldname": "unknown_swipes",  "label": _("Unknown Swipes"),       "fieldtype": "Int",      "width": 130},
+		{"fieldname": "first_swipe",     "label": _("First Swipe"),          "fieldtype": "Datetime", "width": 175},
+		{"fieldname": "last_swipe",      "label": _("Last Swipe"),           "fieldtype": "Datetime", "width": 175},
+	]
 
 
-# ── WHERE builder ──────────────────────────────────────────────────────────────
+# ── Base query: every filtered swipe, with terminal + venue resolved ──────────
 
 def _parse_multiselect(raw):
-    if not raw:
-        return []
-    if isinstance(raw, list):
-        return [v for v in raw if v]
-    if isinstance(raw, str):
-        raw = raw.strip()
-        if raw.startswith("["):
-            try:
-                return [v for v in _json.loads(raw) if v]
-            except Exception:
-                pass
-        return [v.strip() for v in raw.split(",") if v.strip()]
-    return []
+	if not raw:
+		return []
+	if isinstance(raw, (list, tuple)):
+		return [v for v in raw if v]
+	if isinstance(raw, str):
+		raw = raw.strip()
+		if raw.startswith("["):
+			try:
+				return [v for v in _json.loads(raw) if v]
+			except ValueError:
+				pass
+		return [v.strip() for v in raw.split(",") if v.strip()]
+	return []
 
 
-def _build_where(filters):
-    from_date = filters.get("from_date")
-    to_date   = filters.get("to_date")
+def _base_query(filters):
+	"""(sql, params): a derived table `b` of the filtered swipes with columns
+	swipe_time, student, terminal, venue. Every query in this report reads it,
+	so the screen, the cards, the chart and the Excel all agree."""
+	conditions = ["al.swipe_time >= %(from_dt)s", "al.swipe_time < %(to_dt)s"]
+	params = {"from_dt": filters.from_dt, "to_dt": filters.to_dt}
 
-    conditions = [
-        "al.swipe_time >= %(from_dt)s",
-        "al.swipe_time <= %(to_dt)s",
-    ]
-    params = {
-        "from_dt": f"{from_date} 00:00:00",
-        "to_dt":   f"{to_date} 23:59:59",
-    }
+	def add_in(expr, values, prefix):
+		keys = []
+		for i, v in enumerate(values):
+			params[f"{prefix}_{i}"] = v
+			keys.append(f"%({prefix}_{i})s")
+		conditions.append(f"{expr} IN ({', '.join(keys)})")
 
-    def _add_in(field_expr, values, key_prefix):
-        ph = ", ".join([f"%({key_prefix}_{i})s" for i in range(len(values))])
-        conditions.append(f"{field_expr} IN ({ph})")
-        for i, v in enumerate(values):
-            params[f"{key_prefix}_{i}"] = v
+	for fieldname, expr, prefix in (
+		("terminal_alias", TERMINAL_EXPR, "t"),
+		("venue", VENUE_EXPR, "v"),
+		("student", "al.student", "s"),
+		("academic_year", "sm.academic_year", "y"),
+		("programme", "sm.programme_of_study", "p"),
+	):
+		values = _parse_multiselect(filters.get(fieldname))
+		if values:
+			add_in(expr, values, prefix)
 
-    terminals  = _parse_multiselect(filters.get("terminal_alias"))
-    areas      = _parse_multiselect(filters.get("area_alias"))
-    students   = _parse_multiselect(filters.get("student"))
-    acad_years = _parse_multiselect(filters.get("academic_year"))
-    programmes = _parse_multiselect(filters.get("programme"))
+	if filters.get("known_only"):
+		conditions.append("(al.student IS NOT NULL AND al.student != '')")
 
-    if terminals:  _add_in("al.terminal_alias", terminals,  "t")
-    if areas:      _add_in("al.location",        areas,      "a")
-    if students:   _add_in("al.student",         students,   "s")
-    if acad_years: _add_in("sm.academic_year",   acad_years, "y")
-    if programmes: _add_in("sm.programme_of_study",        programmes, "p")
-
-    if filters.get("known_only"):
-        conditions.append("(al.student IS NOT NULL AND al.student != '')")
-
-    return conditions, params
-
-
-# ── Data — two-level hierarchy ─────────────────────────────────────────────────
-
-def _get_data(filters):
-    view = filters.get("view_by", "Daily")
-    conditions, params = _build_where(filters)
-    where = " AND ".join(conditions)
-
-    period_expr = {
-        "Daily":   "DATE(al.swipe_time)",
-        "Weekly":  "YEARWEEK(al.swipe_time, 3)",
-        "Monthly": "DATE_FORMAT(al.swipe_time, '%%Y-%%m')",
-    }[view]
-
-    # ── Detail rows: grouped by period + terminal + area ───────────────────────
-    # A terminal row covers every student who swiped there, so it has no single student to show. With the
-    # Student filter set, rows are split per student as well, so each row is one student at one terminal.
-    per_student = bool(_parse_multiselect(filters.get("student")))
-    student_group = ", al.student" if per_student else ""
-    detail_sql = f"""
-        SELECT
-            {period_expr}                                           AS period_key,
-            COALESCE(al.terminal_alias, 'Unknown Terminal')         AS terminal_alias,
-            COALESCE(al.location,       'Unknown Area')             AS area_alias,
-            COUNT(*)                                                 AS total_swipes,
-            COUNT(DISTINCT CASE
-                WHEN al.student IS NOT NULL AND al.student != ''
-                THEN al.student END)                                 AS unique_students,
-            COUNT(DISTINCT CASE
-                WHEN al.student IS NOT NULL AND al.student != ''
-                THEN al.student END)                                 AS known_students,
-            SUM(CASE
-                WHEN al.student IS NULL OR al.student = ''
-                THEN 1 ELSE 0 END)                                   AS unknown_swipes,
-            MAX(CASE
-                WHEN al.student IS NOT NULL AND al.student != ''
-                THEN al.student END)                                 AS student,
-            MAX(CASE
-                WHEN al.student IS NOT NULL AND al.student != ''
-                THEN sm.first_name END)                              AS student_name,
-            MAX(sm.programme_of_study)                                        AS programme,
-            MAX(sm.academic_year)                                    AS academic_year,
-            MIN(al.swipe_time)                                       AS first_swipe,
-            MAX(al.swipe_time)                                       AS last_swipe
-        FROM `tabAttendance Log` al
-        LEFT JOIN `tabStudent Master` sm ON sm.name = al.student
-        WHERE {where}
-        GROUP BY period_key, al.terminal_alias, al.location{student_group}
-        ORDER BY period_key ASC, total_swipes DESC
-    """
-    detail_rows = frappe.db.sql(detail_sql, params, as_dict=True)
-    top = {} if per_student else _top_students(period_expr, where, params)
-
-    # ── True unique-student counts per period (avoids double-counting
-    #    students who swipe at multiple terminals in the same period) ────────────
-    unique_sql = f"""
-        SELECT
-            {period_expr}                                        AS period_key,
-            COUNT(DISTINCT CASE
-                WHEN al.student IS NOT NULL AND al.student != ''
-                THEN al.student END)                             AS unique_students
-        FROM `tabAttendance Log` al
-        LEFT JOIN `tabStudent Master` sm ON sm.name = al.student
-        WHERE {where}
-        GROUP BY period_key
-    """
-    unique_by_period = {
-        str(r.period_key): int(r.unique_students or 0)
-        for r in frappe.db.sql(unique_sql, params, as_dict=True)
-    }
-
-    # ── Group detail rows by period to build summary rows ──────────────────────
-    from collections import OrderedDict
-    period_groups = OrderedDict()  # period_key → [detail_row, ...]
-
-    for r in detail_rows:
-        key = str(r.period_key)
-        if key not in period_groups:
-            period_groups[key] = []
-        period_groups[key].append(r)
-
-    # ── Build flat list: summary row then its detail rows ─────────────────────
-    data = []
-
-    for period_key, rows in period_groups.items():
-        label = _period_label(period_key, view)
-        # For Daily view, embed the weekday name inside the date label
-        if view == "Daily":
-            label = f"{label}  ({_weekday_name(period_key)})"
-
-        # Summary aggregates — use true period-level unique student count
-        sum_swipes    = sum(r.total_swipes    or 0 for r in rows)
-        sum_unique    = unique_by_period.get(period_key, 0)
-        sum_known     = sum_unique  # known = students identified by RFID
-        sum_unknown   = sum(r.unknown_swipes  or 0 for r in rows)
-        period_first  = min((r.first_swipe for r in rows if r.first_swipe), default=None)
-        period_last   = max((r.last_swipe  for r in rows if r.last_swipe),  default=None)
-
-        # ── Summary row ───────────────────────────────────────────────────────────
-        data.append({
-            "period_label":    label,
-            "terminal_alias":  f"All terminals  ({len({(r.terminal_alias, r.area_alias) for r in rows})})",
-            "area_alias":      "",
-            "total_swipes":    sum_swipes,
-            "unique_students": sum_unique,
-            "known_students":  sum_known,
-            "unknown_swipes":  sum_unknown,
-            "student":         "",
-            "student_name":    "",
-            "student_swipes":  None,
-            "programme":       "",
-            "academic_year":   "",
-            "first_swipe":     period_first,
-            "last_swipe":      period_last,
-        })
-
-        # ── Detail rows ────────────────────────────────────────────────────────
-        for r in rows:
-            # Without the Student filter: the student who swiped most at this terminal in this period.
-            swipes = None
-            if not per_student:
-                t = top.get((str(r.period_key), r.terminal_alias, r.area_alias)) or {}
-                r.student, r.student_name = t.get("student"), t.get("student_name")
-                r.programme, r.academic_year, swipes = t.get("programme"), t.get("academic_year"), t.get("swipes")
-            data.append({
-                "period_label":    "",
-                "terminal_alias":  r.terminal_alias,
-                "area_alias":      r.area_alias,
-                "total_swipes":    int(r.total_swipes    or 0),
-                "unique_students": int(r.unique_students or 0),
-                "known_students":  int(r.known_students  or 0),
-                "unknown_swipes":  int(r.unknown_swipes  or 0),
-                "student":         r.student       or "",
-                "student_name":    r.student_name  or "",
-                "student_swipes":  swipes,
-                "programme":       r.programme     or "",
-                "academic_year":   r.academic_year or "",
-                "first_swipe":     r.first_swipe,
-                "last_swipe":      r.last_swipe,
-            })
-
-    return data
+	sql = f"""
+		SELECT al.swipe_time AS swipe_time, al.student AS student,
+			{TERMINAL_EXPR} AS terminal, {VENUE_EXPR} AS venue
+		FROM `tabAttendance Log` al
+		LEFT JOIN `tabStudent Master` sm ON sm.name = al.student
+		WHERE {' AND '.join(conditions)}
+	"""
+	return sql, params
 
 
-def _top_students(period_expr, where, params):
-    """{(period, terminal, area): {student, student_name, programme, academic_year, swipes}} — the known student
-    with the most swipes at each terminal in each period (a tie goes to the lower Student ID)."""
-    term = "COALESCE(al.terminal_alias, 'Unknown Terminal')"
-    area = "COALESCE(al.location, 'Unknown Area')"
-    rows = frappe.db.sql(f"""
-        SELECT period_key, terminal_alias, area_alias, student, swipes FROM (
-            SELECT {period_expr} AS period_key, {term} AS terminal_alias, {area} AS area_alias,
-                al.student AS student, COUNT(*) AS swipes,
-                ROW_NUMBER() OVER (PARTITION BY {period_expr}, {term}, {area}
-                                   ORDER BY COUNT(*) DESC, al.student ASC) AS rn
-            FROM `tabAttendance Log` al
-            LEFT JOIN `tabStudent Master` sm ON sm.name = al.student
-            WHERE {where} AND al.student IS NOT NULL AND al.student != ''
-            GROUP BY {period_expr}, {term}, {area}, al.student
-        ) ranked
-        WHERE rn = 1
-    """, params, as_dict=True)
-    if not rows:
-        return {}
-    info = {
-        s.name: s for s in frappe.get_all(
-            "Student Master", filters={"name": ["in", list({r.student for r in rows})]},
-            fields=["name", "first_name", "programme_of_study", "academic_year"],
-        )
-    }
-    out = {}
-    for r in rows:
-        sm = info.get(r.student) or frappe._dict()
-        out[(str(r.period_key), r.terminal_alias, r.area_alias)] = {
-            "student": r.student, "student_name": sm.first_name, "programme": sm.programme_of_study,
-            "academic_year": sm.academic_year, "swipes": int(r.swipes or 0),
-        }
-    return out
+def _period_expr(view):
+	return {
+		"Hourly": "DATE_FORMAT(b.swipe_time, '%%Y-%%m-%%d %%H:00')",
+		"Daily": "DATE(b.swipe_time)",
+		"Weekly": "YEARWEEK(b.swipe_time, 3)",
+		"Monthly": "DATE_FORMAT(b.swipe_time, '%%Y-%%m')",
+	}[view]
+
+
+# ── On-screen data ─────────────────────────────────────────────────────────────
+
+def _get_data(filters, base, params):
+	view = filters.get("view_by") or "Daily"
+	period = _period_expr(view)
+
+	detail_rows = frappe.db.sql(f"""
+		SELECT {period} AS period_key, b.terminal, b.venue,
+			COUNT(*) AS total_swipes,
+			COUNT(DISTINCT CASE WHEN {KNOWN} THEN b.student END) AS unique_students,
+			SUM(CASE WHEN {KNOWN} THEN 0 ELSE 1 END) AS unknown_swipes,
+			MIN(b.swipe_time) AS first_swipe,
+			MAX(b.swipe_time) AS last_swipe
+		FROM ({base}) b
+		GROUP BY period_key, b.terminal, b.venue
+		ORDER BY period_key ASC, total_swipes DESC, b.terminal ASC
+	""", params, as_dict=True)
+
+	# Students who swiped at several terminals count once per period.
+	unique_by_period = {
+		str(r.period_key): int(r.unique_students or 0)
+		for r in frappe.db.sql(f"""
+			SELECT {period} AS period_key,
+				COUNT(DISTINCT CASE WHEN {KNOWN} THEN b.student END) AS unique_students
+			FROM ({base}) b
+			GROUP BY period_key
+		""", params, as_dict=True)
+	}
+
+	groups = OrderedDict()
+	for r in detail_rows:
+		groups.setdefault(str(r.period_key), []).append(r)
+
+	data = []
+	for period_key, rows in groups.items():
+		data.append({
+			"period_label": _period_label(period_key, view),
+			"period_key": period_key,
+			"terminal_alias": _("All terminals ({0})").format(len(rows)),
+			"venue": "",
+			"total_swipes": sum(int(r.total_swipes or 0) for r in rows),
+			"unique_students": unique_by_period.get(period_key, 0),
+			"unknown_swipes": sum(int(r.unknown_swipes or 0) for r in rows),
+			"first_swipe": min((r.first_swipe for r in rows if r.first_swipe), default=None),
+			"last_swipe": max((r.last_swipe for r in rows if r.last_swipe), default=None),
+			"bold": 1,
+			"is_period_row": 1,
+		})
+		for r in rows:
+			data.append({
+				"period_label": "",
+				"period_key": period_key,
+				"terminal_alias": r.terminal,
+				"venue": r.venue,
+				"total_swipes": int(r.total_swipes or 0),
+				"unique_students": int(r.unique_students or 0),
+				"unknown_swipes": int(r.unknown_swipes or 0),
+				"first_swipe": r.first_swipe,
+				"last_swipe": r.last_swipe,
+			})
+	return data
 
 
 # ── Summary cards ──────────────────────────────────────────────────────────────
 
-def _get_summary(filters):
-    conditions, params = _build_where(filters)
-    where = " AND ".join(conditions)
+def _get_summary(base, params):
+	agg = frappe.db.sql(f"""
+		SELECT COUNT(*) AS total_swipes,
+			COUNT(DISTINCT CASE WHEN {KNOWN} THEN b.student END) AS unique_known,
+			COUNT(DISTINCT b.terminal) AS terminals,
+			SUM(CASE WHEN {KNOWN} THEN 0 ELSE 1 END) AS unknown_swipes
+		FROM ({base}) b
+	""", params, as_dict=True)[0]
 
-    agg = frappe.db.sql(f"""
-        SELECT
-            COUNT(*)                                                    AS total_swipes,
-            COUNT(DISTINCT CASE
-                WHEN al.student IS NOT NULL AND al.student != ''
-                THEN al.student END)                                    AS unique_known,
-            COUNT(DISTINCT al.terminal_alias)                           AS terminals,
-            SUM(CASE
-                WHEN al.student IS NULL OR al.student = ''
-                THEN 1 ELSE 0 END)                                      AS unknown_swipes
-        FROM `tabAttendance Log` al
-        LEFT JOIN `tabStudent Master` sm ON sm.name = al.student
-        WHERE {where}
-    """, params, as_dict=True)[0]
+	total_students = frappe.db.count("Student Master")
+	cards_assigned = frappe.db.count("Student Master", {"rfid_uid": ["is", "set"]})
 
-    total_students = frappe.db.count("Student Master") or 1
-    cards_assigned = frappe.db.sql(
-        "SELECT COUNT(*) FROM `tabStudent Master` "
-        "WHERE rfid_uid IS NOT NULL AND rfid_uid != ''",
-        as_list=True
-    )[0][0]
-
-    return [
-        {"label": _("Total Swipes"),        "value": int(agg.total_swipes  or 0), "datatype": "Int", "indicator": "blue"},
-        {"label": _("Unique Students"),     "value": int(agg.unique_known  or 0), "datatype": "Int", "indicator": "green"},
-        {"label": _("Terminals Active"),    "value": int(agg.terminals     or 0), "datatype": "Int", "indicator": "blue"},
-        {"label": _("Unknown Swipes"),      "value": int(agg.unknown_swipes or 0),"datatype": "Int", "indicator": "red"},
-        {"label": _("Cards Assigned"),      "value": int(cards_assigned),          "datatype": "Int", "indicator": "green"},
-        {"label": _("No Card Assigned Yet"),"value": int(total_students - cards_assigned), "datatype": "Int", "indicator": "orange"},
-    ]
+	return [
+		{"label": _("Total Swipes"),         "value": int(agg.total_swipes or 0),   "datatype": "Int", "indicator": "blue"},
+		{"label": _("Unique Students"),      "value": int(agg.unique_known or 0),   "datatype": "Int", "indicator": "green"},
+		{"label": _("Terminals Active"),     "value": int(agg.terminals or 0),      "datatype": "Int", "indicator": "blue"},
+		{"label": _("Unknown Swipes"),       "value": int(agg.unknown_swipes or 0), "datatype": "Int", "indicator": "red"},
+		{"label": _("Cards Assigned"),       "value": int(cards_assigned),          "datatype": "Int", "indicator": "green"},
+		{"label": _("No Card Assigned Yet"), "value": max(int(total_students) - int(cards_assigned), 0),
+		 "datatype": "Int", "indicator": "orange"},
+	]
 
 
 # ── Chart ──────────────────────────────────────────────────────────────────────
 
 def _get_chart(data, filters):
-    # Use only summary rows (bold=1) for the chart
-    period_known   = {}
-    period_unknown = {}
+	period_rows = [r for r in data if r.get("is_period_row")]
+	if not period_rows:
+		return None
+	cap = 72 if (filters.get("view_by") == "Hourly") else 31
+	period_rows = period_rows[-cap:]
 
-    for row in data:
-        if not str(row.get("terminal_alias", "")).startswith("All terminals"):
-            continue
-        lbl = row["period_label"]
-        period_known[lbl]   = period_known.get(lbl, 0)   + (row["known_students"] or 0)
-        period_unknown[lbl] = period_unknown.get(lbl, 0) + (row["unknown_swipes"] or 0)
-
-    labels = list(period_known.keys())
-    if not labels:
-        return None
-    if len(labels) > 31:
-        labels = labels[-31:]
-
-    return {
-        "data": {
-            "labels": labels,
-            "datasets": [
-                {"name": _("Known Students"), "values": [period_known.get(l, 0)   for l in labels], "chartType": "bar"},
-                {"name": _("Unknown Swipes"), "values": [period_unknown.get(l, 0) for l in labels], "chartType": "bar"},
-            ],
-        },
-        "type":       "bar",
-        "colors":     ["#2b2e4a", "#8b1a1a"],
-        "barOptions": {"stacked": True},
-        "title":      _("Swipe Activity — ") + filters.get("view_by", "Daily"),
-        "height":     280,
-    }
+	return {
+		"data": {
+			"labels": [r["period_label"] for r in period_rows],
+			"datasets": [
+				{"name": _("Known Students"), "values": [r["unique_students"] for r in period_rows], "chartType": "bar"},
+				{"name": _("Unknown Swipes"), "values": [r["unknown_swipes"] for r in period_rows], "chartType": "bar"},
+			],
+		},
+		"type": "bar",
+		"colors": ["#2b2e4a", "#8b1a1a"],
+		"barOptions": {"stacked": True},
+		"title": _("Swipe Activity — {0}").format(filters.get("view_by") or "Daily"),
+		"height": 280,
+	}
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# ── Excel download ─────────────────────────────────────────────────────────────
+
+@frappe.whitelist()
+def download_excel(filters):
+	"""Multi-sheet workbook for the current filters (see module docstring)."""
+	if not frappe.get_doc("Report", REPORT_NAME).is_permitted():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	filters = frappe._dict(frappe.parse_json(filters) if isinstance(filters, str) else (filters or {}))
+	filters.setdefault("view_by", "Daily")
+	_validate(filters)
+	base, params = _base_query(filters)
+
+	student_daily = _student_daily_rows(base, params)
+	if len(student_daily) > MAX_EXCEL_ROWS:
+		frappe.throw(_("Too many rows ({0}) for one download. Narrow the date range or filters.").format(len(student_daily)))
+
+	report_rows = _get_data(filters, base, params)
+	totals = _student_total_rows(base, params)
+	top = {view: _most_swiped_rows(view, base, params) for view in ("Daily", "Weekly", "Monthly")}
+
+	info = _student_info({r.student for r in student_daily})
+
+	from openpyxl import Workbook
+	from openpyxl.cell import WriteOnlyCell
+	from openpyxl.styles import Alignment, Font, PatternFill
+
+	wb = Workbook(write_only=True)
+	header_font = Font(bold=True, color="FFFFFF")
+	header_fill = PatternFill("solid", fgColor="2B2E4A")
+	bold = Font(bold=True)
+
+	def sheet(title, headers, widths, rows, note=None, bold_rows=None):
+		ws = wb.create_sheet(title=title)
+		for idx, width in enumerate(widths, start=1):
+			ws.column_dimensions[_col_letter(idx)].width = width
+		ws.freeze_panes = "A3" if note else "A2"
+		if note:
+			cell = WriteOnlyCell(ws, value=note)
+			cell.font = Font(italic=True, color="555555")
+			ws.append([cell])
+		head = []
+		for h in headers:
+			c = WriteOnlyCell(ws, value=h)
+			c.font, c.fill = header_font, header_fill
+			c.alignment = Alignment(vertical="center")
+			head.append(c)
+		ws.append(head)
+		for i, row in enumerate(rows):
+			if bold_rows and bold_rows(i):
+				cells = []
+				for v in row:
+					c = WriteOnlyCell(ws, value=v)
+					c.font = bold
+					cells.append(c)
+				ws.append(cells)
+			else:
+				ws.append(row)
+
+	scope = _scope_note(filters)
+
+	# 1. Report (as on screen)
+	sheet(
+		_("Report"),
+		[_("Period"), _("Terminal / Room"), _("Venue"), _("Total Swipes"), _("Unique Students"),
+		 _("Unknown Swipes"), _("First Swipe"), _("Last Swipe")],
+		[30, 22, 26, 13, 15, 15, 20, 20],
+		[[_period_label(r["period_key"], filters.view_by) if r.get("is_period_row") else "",
+		  r["terminal_alias"], r["venue"], r["total_swipes"], r["unique_students"], r["unknown_swipes"],
+		  _naive(r["first_swipe"]), _naive(r["last_swipe"])] for r in report_rows],
+		note=scope,
+		bold_rows=lambda i: bool(report_rows[i].get("is_period_row")),
+	)
+
+	# 2. Student-wise (Daily)
+	sheet(
+		_("Student-wise (Daily)"),
+		[_("Date"), _("Day"), _("Student ID"), _("Student Name"), _("Programme"), _("Academic Year"),
+		 _("Swipes"), _("First Swipe"), _("Last Swipe"), _("Terminals"), _("Venues")],
+		[12, 11, 22, 28, 34, 14, 9, 12, 12, 40, 40],
+		[[r.day, _WEEKDAYS[r.day.weekday()], r.student, *_student_cols(info, r.student),
+		  int(r.swipes), _time_only(r.first_swipe), _time_only(r.last_swipe), r.terminals, r.venues]
+		 for r in student_daily],
+		note=scope,
+	)
+
+	# 3. Student Totals
+	info.update(_student_info({r.student for r in totals} - set(info)))
+	sheet(
+		_("Student Totals"),
+		[_("Student ID"), _("Student Name"), _("Programme"), _("Academic Year"), _("Total Swipes"),
+		 _("Days With Swipes"), _("Terminals Used"), _("First Swipe"), _("Last Swipe")],
+		[22, 28, 34, 14, 13, 16, 15, 20, 20],
+		[[r.student, *_student_cols(info, r.student), int(r.swipes), int(r.days), int(r.terminals),
+		  _naive(r.first_swipe), _naive(r.last_swipe)] for r in totals],
+		note=scope,
+	)
+
+	# 4-6. Most swiped per period
+	for view, rows in top.items():
+		info.update(_student_info({r["student"] for r in rows} - set(info)))
+		sheet(
+			_("Most Swiped - {0}").format(view),
+			[_("Period"), _("Terminal / Room"), _("Venue"), _("Student ID"), _("Student Name"), _("Programme"),
+			 _("Academic Year"), _("Their Swipes"), _("Known-Student Swipes There"), _("Share %"), _("Students Tied")],
+			[30, 22, 26, 22, 28, 34, 14, 13, 24, 9, 13],
+			[[_period_label(r["period_key"], view), r["terminal"], r["venue"], r["student"],
+			  *_student_cols(info, r["student"]), r["swipes"], r["group_swipes"],
+			  round(100.0 * r["swipes"] / r["group_swipes"], 1) if r["group_swipes"] else 0, r["ties"]]
+			 for r in rows],
+			note=scope + " · " + _("Top known student per period: first the period overall, then each terminal. "
+			                       "Ties go to the lower Student ID; 'Students Tied' shows how many share the top count."),
+			bold_rows=lambda i, rows=rows: rows[i]["terminal"] == _("All terminals"),
+		)
+
+	buf = io.BytesIO()
+	wb.save(buf)
+	frappe.response.filename = "RFID_Swipes_{0}_to_{1}.xlsx".format(
+		filters.from_dt.strftime("%Y-%m-%d_%H%M"), _last_second(filters).strftime("%Y-%m-%d_%H%M"))
+	frappe.response.filecontent = buf.getvalue()
+	frappe.response.type = "binary"
+
+
+def _student_daily_rows(base, params):
+	return frappe.db.sql(f"""
+		SELECT DATE(b.swipe_time) AS day, b.student,
+			COUNT(*) AS swipes, MIN(b.swipe_time) AS first_swipe, MAX(b.swipe_time) AS last_swipe,
+			GROUP_CONCAT(DISTINCT b.terminal ORDER BY b.terminal SEPARATOR ', ') AS terminals,
+			GROUP_CONCAT(DISTINCT b.venue ORDER BY b.venue SEPARATOR ', ') AS venues
+		FROM ({base}) b
+		WHERE {KNOWN}
+		GROUP BY day, b.student
+		ORDER BY day ASC, swipes DESC, b.student ASC
+	""", params, as_dict=True)
+
+
+def _student_total_rows(base, params):
+	return frappe.db.sql(f"""
+		SELECT b.student, COUNT(*) AS swipes, COUNT(DISTINCT DATE(b.swipe_time)) AS days,
+			COUNT(DISTINCT b.terminal) AS terminals,
+			MIN(b.swipe_time) AS first_swipe, MAX(b.swipe_time) AS last_swipe
+		FROM ({base}) b
+		WHERE {KNOWN}
+		GROUP BY b.student
+		ORDER BY swipes DESC, b.student ASC
+	""", params, as_dict=True)
+
+
+def _most_swiped_rows(view, base, params):
+	"""Per period: the overall top student, then the top student at each
+	terminal + venue (terminals ordered by known-student swipes)."""
+	period = _period_expr(view)
+
+	def ranked(partition_cols, select_cols):
+		part = ", ".join(["period_key", *partition_cols])
+		return frappe.db.sql(f"""
+			SELECT * FROM (
+				SELECT r2.*,
+					SUM(CASE WHEN r2.cnt = r2.mx THEN 1 ELSE 0 END) OVER (PARTITION BY {part}) AS ties
+				FROM (
+					SELECT r1.*,
+						MAX(r1.cnt) OVER (PARTITION BY {part}) AS mx,
+						SUM(r1.cnt) OVER (PARTITION BY {part}) AS group_swipes,
+						ROW_NUMBER() OVER (PARTITION BY {part} ORDER BY r1.cnt DESC, r1.student ASC) AS rn
+					FROM (
+						SELECT {period} AS period_key, {select_cols} b.student, COUNT(*) AS cnt
+						FROM ({base}) b
+						WHERE {KNOWN}
+						GROUP BY {part}, b.student
+					) r1
+				) r2
+			) r3
+			WHERE r3.rn = 1
+			ORDER BY period_key ASC, group_swipes DESC
+		""", params, as_dict=True)
+
+	overall = ranked([], "")
+	per_terminal = ranked(["terminal", "venue"], "b.terminal AS terminal, b.venue AS venue,")
+
+	by_period = OrderedDict()
+	for r in overall:
+		by_period.setdefault(str(r.period_key), []).append({
+			"period_key": str(r.period_key), "terminal": _("All terminals"), "venue": "",
+			"student": r.student, "swipes": int(r.cnt), "group_swipes": int(r.group_swipes), "ties": int(r.ties),
+		})
+	for r in per_terminal:
+		by_period.setdefault(str(r.period_key), []).append({
+			"period_key": str(r.period_key), "terminal": r.terminal, "venue": r.venue,
+			"student": r.student, "swipes": int(r.cnt), "group_swipes": int(r.group_swipes), "ties": int(r.ties),
+		})
+	return [row for rows in by_period.values() for row in rows]
+
+
+def _student_info(student_ids):
+	info = {}
+	ids = [s for s in student_ids if s]
+	for i in range(0, len(ids), 1000):
+		for s in frappe.get_all(
+			"Student Master",
+			filters={"name": ["in", ids[i:i + 1000]]},
+			fields=["name", "first_name", "programme_of_study", "academic_year"],
+		):
+			info[s.name] = s
+	return info
+
+
+def _student_cols(info, student):
+	s = info.get(student) or frappe._dict()
+	return [s.first_name or "", s.programme_of_study or "", s.academic_year or ""]
+
+
+def _scope_note(filters):
+	parts = [_("{0} to {1}").format(
+		filters.from_dt.strftime("%Y-%m-%d %H:%M:%S"), _last_second(filters).strftime("%Y-%m-%d %H:%M:%S"))]
+	for key, label in (("programme", _("Programme")), ("academic_year", _("Academic Year")),
+	                   ("terminal_alias", _("Terminal")), ("venue", _("Venue")), ("student", _("Student"))):
+		values = _parse_multiselect(filters.get(key))
+		if values:
+			parts.append(f"{label}: {', '.join(values)}")
+	if filters.get("known_only"):
+		parts.append(_("known students only"))
+	return _("RFID swipes") + " · " + " · ".join(parts)
+
+
+def _last_second(filters):
+	"""Inclusive end of the range, for labels (to_dt itself is exclusive)."""
+	return add_to_date(filters.to_dt, seconds=-1)
+
+
+def _naive(value):
+	"""openpyxl can't write tz-aware datetimes; DB values are naive already."""
+	if isinstance(value, _dt.datetime) and value.tzinfo:
+		return value.replace(tzinfo=None)
+	return value
+
+
+def _time_only(value):
+	return value.time().replace(microsecond=0) if isinstance(value, _dt.datetime) else value
+
+
+def _col_letter(idx):
+	from openpyxl.utils import get_column_letter
+	return get_column_letter(idx)
+
+
+# ── Labels ─────────────────────────────────────────────────────────────────────
 
 _WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
-def _weekday_name(date_str):
-    try:
-        return _WEEKDAYS[getdate(date_str).weekday()]
-    except Exception:
-        return ""
-
-
 def _period_label(key, view):
-    if view == "Daily":
-        return key
-    if view == "Weekly":
-        return _week_label(key)
-    # Monthly: YYYY-MM → Month YYYY
-    parts = key.split("-")
-    return f"{_calendar.month_name[int(parts[1])]} {parts[0]}"
-
-
-def _week_label(yearweek_str):
-    try:
-        import datetime
-        yw   = str(yearweek_str)
-        year = int(yw[:4])
-        week = int(yw[4:])
-        monday = datetime.datetime.strptime(f"{year}-W{week:02d}-1", "%G-W%V-%u").date()
-        sunday = monday + datetime.timedelta(days=6)
-        return f"Wk {week}, {year}  ({monday.strftime('%d %b')}–{sunday.strftime('%d %b')})"
-    except Exception:
-        return str(yearweek_str)
+	key = str(key)
+	try:
+		if view == "Hourly":
+			day, hour = key.split(" ")
+			start = int(hour[:2])
+			return f"{day} {start:02d}:00–{(start + 1) % 24:02d}:00  ({_WEEKDAYS[getdate(day).weekday()]})"
+		if view == "Daily":
+			return f"{key}  ({_WEEKDAYS[getdate(key).weekday()]})"
+		if view == "Weekly":
+			year, week = int(key[:4]), int(key[4:])
+			monday = _dt.datetime.strptime(f"{year}-W{week:02d}-1", "%G-W%V-%u").date()
+			sunday = monday + _dt.timedelta(days=6)
+			return f"Wk {week}, {year}  ({monday.strftime('%d %b')}–{sunday.strftime('%d %b')})"
+		year, month = key.split("-")
+		return f"{_calendar.month_name[int(month)]} {year}"
+	except (ValueError, IndexError):
+		return key
