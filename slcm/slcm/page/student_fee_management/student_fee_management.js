@@ -1184,13 +1184,7 @@ class StudentFeeManagement {
 
 		switch (act) {
 			case "create":
-				frappe.new_doc("Fee Demand", {
-					student: p.name,
-					program: p.programme_of_study,
-					programme: p.batch,
-					academic_year: p.academic_year,
-					demand_date: frappe.datetime.get_today(),
-				});
+				this.create_due_dialog();
 				break;
 
 			case "refund":
@@ -1221,6 +1215,7 @@ class StudentFeeManagement {
 
 			case "excess":
 				if (!(d = this.single_selected())) return;
+				if (d.status === "Cancelled") return frappe.msgprint(__("{0} is cancelled and can no longer be changed.", [d.name]));
 				this.excess_dialog(d);
 				break;
 
@@ -1232,6 +1227,7 @@ class StudentFeeManagement {
 
 			case "refund-demand":
 				if (!(d = this.single_selected())) return;
+				if (d.status === "Cancelled") return frappe.msgprint(__("{0} is cancelled and can no longer be changed.", [d.name]));
 				if (!(flt(d.paid_amount) > 0)) return frappe.msgprint(__("Nothing has been paid against {0} yet.", [d.name]));
 				frappe.new_doc("Fee Refund", { student: p.name, fee_demand: d.name, refund_date: frappe.datetime.get_today() });
 				break;
@@ -1243,11 +1239,13 @@ class StudentFeeManagement {
 
 			case "move-excess":
 				if (!(d = this.single_selected())) return;
+				if (d.status === "Cancelled") return frappe.msgprint(__("{0} is cancelled and can no longer be changed.", [d.name]));
 				this.move_to_excess_dialog(d);
 				break;
 
 			case "cancel":
 				if (!(d = this.single_selected())) return;
+				if (d.status === "Cancelled") return frappe.msgprint(__("{0} is cancelled and can no longer be changed.", [d.name]));
 				this.cancel_dialog(d);
 				break;
 		}
@@ -1383,6 +1381,56 @@ class StudentFeeManagement {
 				dialog.hide();
 				frappe.show_alert({ message: __("Adjusted {0} against {1}", [sfm_money(amount), d.name]), indicator: "green" });
 				this.show_student(this.detail.profile.name);
+			},
+		});
+		dialog.$wrapper.addClass("sfm-dialog");
+		dialog.show();
+	}
+
+	// "Create a due" — raise a Fee Demand from a dialog on this page instead of opening the form.
+	create_due_dialog() {
+		const p = this.detail.profile;
+		const today = frappe.datetime.get_today();
+		const dialog = new frappe.ui.Dialog({
+			title: __("Create a Due for {0}", [p.first_name || p.name]),
+			fields: [
+				{ fieldtype: "Link", fieldname: "fee_component", label: __("Fee Component"), options: "Fee Component", reqd: 1 },
+				{ fieldtype: "Link", fieldname: "academic_year", label: __("Academic Year"), options: "Academic Year", default: p.academic_year },
+				{ fieldtype: "Column Break" },
+				{ fieldtype: "Date", fieldname: "demand_date", label: __("Date of Creation"), reqd: 1, default: today },
+				{ fieldtype: "Date", fieldname: "due_date", label: __("Due Date"), reqd: 1 },
+				{ fieldtype: "Section Break" },
+				{ fieldtype: "Currency", fieldname: "original_amount", label: __("Amount"), options: "INR", reqd: 1 },
+				{ fieldtype: "Column Break" },
+				{ fieldtype: "Currency", fieldname: "penalty_amount", label: __("Penalty"), options: "INR", default: 0 },
+				{ fieldtype: "Column Break" },
+				{ fieldtype: "Currency", fieldname: "waiver_amount", label: __("Scholarship / Waiver"), options: "INR", default: 0 },
+				{ fieldtype: "Section Break" },
+				{ fieldtype: "Data", fieldname: "description", label: __("Description"), description: __("Defaults to the fee component name") },
+				{ fieldtype: "Check", fieldname: "is_refundable", label: __("Refundable") },
+				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Remarks") },
+			],
+			primary_action_label: __("Create Due"),
+			primary_action: async (v) => {
+				if (flt(v.original_amount) <= 0) return frappe.msgprint(__("Amount must be greater than zero."));
+				if (flt(v.waiver_amount) > flt(v.original_amount)) return frappe.msgprint(__("Waiver cannot exceed the amount."));
+				if (v.due_date < v.demand_date) return frappe.msgprint(__("Due Date cannot be before the Date of Creation."));
+				dialog.disable_primary_action();
+				try {
+					const doc = await frappe.db.insert({
+						doctype: "Fee Demand",
+						student: p.name,
+						program: p.programme_of_study,
+						programme: p.batch,
+						...v,
+						description: (v.description || "").trim() || v.fee_component,
+					});
+					dialog.hide();
+					frappe.show_alert({ message: __("Due {0} created", [doc.name]), indicator: "green" });
+					this.show_student(p.name);
+				} finally {
+					dialog.enable_primary_action();
+				}
 			},
 		});
 		dialog.$wrapper.addClass("sfm-dialog");

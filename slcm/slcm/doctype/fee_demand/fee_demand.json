@@ -9,6 +9,7 @@
   "tab_details",
   "section_demand",
   "student",
+  "registration_id",
   "student_email",
   "student_name",
   "academic_year",
@@ -71,11 +72,20 @@
   {
    "fieldname": "student",
    "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Student ID",
+   "label": "Student",
    "options": "Student Master",
    "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "registration_id",
+   "fieldtype": "Data",
+   "label": "Registration ID",
+   "fetch_from": "student.registration_id",
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "in_global_search": 1,
    "search_index": 1
   },
   {
@@ -389,7 +399,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-16 10:37:36.923984",
+ "modified": "2026-11-16 11:39:21.001833",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Fee Demand",
