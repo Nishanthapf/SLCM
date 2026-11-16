@@ -222,8 +222,32 @@ class TimeTable(Document):
         # values - re-saving it would only add a redundant "updated" toast.
         if self.flags.in_insert:
             return
+        self.sync_venue_to_sessions()
         self.update_attendance_session()
         self.log_edit()
+
+    def sync_venue_to_sessions(self):
+        """Carry a venue change onto this entry's Attendance Session(s) and
+        their Student Attendance rows. Done even after attendance is marked:
+        the venue doesn't affect hours, but RFID matching and Bulk Sync read
+        it, so it must follow the Time Table."""
+        venue = self.venue or None
+        sessions = frappe.get_all(
+            "Attendance Session",
+            filters={"class_schedule": self.name, "docstatus": ["<", 2]},
+            fields=["name", "room"],
+        )
+        changed = [s.name for s in sessions if (s.room or None) != venue]
+        if not changed:
+            return
+        frappe.db.sql(
+            "UPDATE `tabAttendance Session` SET room = %s WHERE name IN %s",
+            (venue, tuple(changed)),
+        )
+        frappe.db.sql(
+            "UPDATE `tabStudent Attendance` SET room = %s WHERE attendance_session IN %s",
+            (venue, tuple(changed)),
+        )
 
     # Fields whose change is worth a Class Schedule Log row
     LOGGED_FIELDS = (("schedule_date", "Date"), ("from_time", "From"), ("to_time", "To"),
@@ -553,6 +577,7 @@ class TimeTable(Document):
             "section": self.section,
             "course": self.course,
             "instructor": self.instructor,
+            "room": self.venue,
             "session_date": self.schedule_date,
             "session_start_time": self.from_time,
             "session_end_time": self.to_time,

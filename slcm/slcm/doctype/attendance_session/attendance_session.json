@@ -132,10 +132,11 @@
    "options": "Faculty"
   },
   {
+   "description": "Filled from the Time Table venue. RFID taps are matched against this venue.",
    "fieldname": "room",
    "fieldtype": "Link",
-   "label": "Room",
-   "options": "Room"
+   "label": "Venue",
+   "options": "Venue Master"
   },
   {
    "fieldname": "column_break_details",
@@ -292,7 +293,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-02 14:26:53.094048",
+ "modified": "2026-11-16 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Attendance Session",

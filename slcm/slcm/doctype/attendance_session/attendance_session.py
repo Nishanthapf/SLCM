@@ -33,8 +33,16 @@ class AttendanceSession(Document):
 	def validate(self):
 		"""Validate session details"""
 		self.validate_attendance_lock()
+		self.set_venue_from_schedule()
 		self.calculate_duration()
 		self.validate_times()
+
+	def set_venue_from_schedule(self):
+		"""Venue (Venue Master) comes from the Time Table entry, so every
+		creation path — Time Table, RFID auto-create, bulk attendance — gets
+		it. RFID taps are matched against this venue."""
+		if self.class_schedule and not self.room:
+			self.room = frappe.db.get_value("Time Table", self.class_schedule, "venue")
 
 	def validate_attendance_lock(self):
 		"""A locked session's date/times/status can't be changed either - they

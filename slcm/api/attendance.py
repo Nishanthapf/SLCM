@@ -131,7 +131,7 @@ def create_attendance_log():
 	attendance_log.insert(ignore_permissions=True)
 	frappe.db.commit()
 
-	# Reload to get updates from after_insert hook (rfid_processor)
+	# Reload to pick up values set during insert
 	attendance_log.reload()
 
 	# --------------------------------------------------

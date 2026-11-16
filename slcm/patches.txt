@@ -106,3 +106,4 @@ slcm.patches.v2_0.group_rfid_uid_change_logs
 slcm.patches.v2_0.fix_invalid_payment_status_values
 slcm.patches.v2_0.seed_international_portal_config
 slcm.patches.v2_0.merge_state_orissa_into_odisha
+slcm.patches.v2_0.rfid_venue_master_mapping

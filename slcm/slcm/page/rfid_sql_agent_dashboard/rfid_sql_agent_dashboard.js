@@ -111,8 +111,8 @@ const OUTCOME_TEXT = {
 	"Pending": __("Waiting for the next matching run"),
 	"Early Tap - Awaiting Activation": __("Swiped before the faculty opened RFID for the class"),
 	"Unmatched - Unknown Card": __("Card number is not linked to any student"),
-	"Unmatched - No Device Mapping": __("Terminal is not registered or not mapped to a room"),
-	"Unmatched - No Session": __("No class in that room at that time"),
+	"Unmatched - No Device Mapping": __("Terminal is not registered or not mapped to a venue"),
+	"Unmatched - No Session": __("No class in that venue at that time"),
 };
 
 const DT_COLUMNS = [

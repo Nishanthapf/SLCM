@@ -98,8 +98,8 @@ DRILL = {
 	"Attendance Log": ("terminal_alias", "match_status", ("Terminal", "terminals")),
 	"Student Master": ("programme_of_study", None, ("Programme", "programmes")),
 	"Student RFID Card": ("card_status", None, ("Card status", "card statuses")),
-	"RFID Device": ("location", None, ("Location", "locations")),
-	"RFID Device Room Mapping": ("room", None, ("Room", "rooms")),
+	"RFID Device": ("device_type", None, ("Device type", "device types")),
+	"RFID Device Room Mapping": ("room", None, ("Venue", "venues")),
 }
 
 
@@ -247,15 +247,15 @@ def get_dashboard(period="all", programme=None, academic_term=None, class_name=N
 			_card(_("Swipe logs"), "Attendance Log", log(), _("copied in for matching")),
 			_card(_("Matched to a class"), "Attendance Log", log(match_status=["in", MATCHED]), _("became attendance")),
 			_card(_("Unknown card"), "Attendance Log", log(match_status="Unmatched - Unknown Card"), _("card not linked to a student")),
-			_card(_("No device mapping"), "Attendance Log", log(match_status="Unmatched - No Device Mapping"), _("device not mapped to a room")),
-			_card(_("No session found"), "Attendance Log", log(match_status="Unmatched - No Session"), _("no class in that room then")),
+			_card(_("No device mapping"), "Attendance Log", log(match_status="Unmatched - No Device Mapping"), _("device not mapped to a venue")),
+			_card(_("No session found"), "Attendance Log", log(match_status="Unmatched - No Session"), _("no class in that venue then")),
 		], _("all programmes and classes") if filtered else ""),
 		_group(_("RFID setup"), [
 			_card(_("Students with a card"), "Student Master", {"rfid_uid": ["is", "set"], "student_status": "Active"}, _("active students")),
 			_card(_("Students without a card"), "Student Master", {"rfid_uid": ["is", "not set"], "student_status": "Active"}, _("their swipes can't match")),
 			_card(_("RFID cards"), "Student RFID Card", {"is_active": 1}, _("active cards")),
 			_card(_("RFID devices"), "RFID Device", {"is_active": 1}, _("active readers")),
-			_card(_("Device room mappings"), "RFID Device Room Mapping", {}, _("reader → room")),
+			_card(_("Device venue mappings"), "RFID Device Room Mapping", {}, _("reader → venue")),
 		], _("not affected by the filters")),
 		_group(_("Applications & approvals"), [
 			_card(_("Condonation pending"), "Student Attendance Condonation", dict(cond, final_status=["in", ["Pending", "May Be Approved"]], docstatus=["<", 2])),

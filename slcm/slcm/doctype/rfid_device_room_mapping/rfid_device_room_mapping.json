@@ -26,12 +26,13 @@
    "reqd": 1
   },
   {
+   "description": "Venue (from Venue Master, as used in the Time Table) where this reader is installed.",
    "fieldname": "room",
    "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Room",
-   "options": "Room",
+   "label": "Venue",
+   "options": "Venue Master",
    "reqd": 1
   },
   {
@@ -53,14 +54,14 @@
   },
   {
    "default": "Today",
-   "description": "Date from which this device is considered installed in this room.",
+   "description": "Date from which this device is considered installed in this venue.",
    "fieldname": "effective_from",
    "fieldtype": "Date",
    "in_list_view": 1,
    "label": "Effective From"
   },
   {
-   "description": "Leave blank if the device is still active in this room.",
+   "description": "Leave blank if the device is still active in this venue.",
    "fieldname": "effective_to",
    "fieldtype": "Date",
    "in_list_view": 1,
@@ -77,7 +78,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-02 14:26:53.094048",
+ "modified": "2026-11-16 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "RFID Device Room Mapping",
