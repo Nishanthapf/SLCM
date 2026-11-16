@@ -14,6 +14,7 @@ frappe.ui.form.on("Fee Refund", {
 	student(frm) {
 		frm.set_value("fee_demand", "");
 		_show_available_excess(frm);
+		_fill_bank_details(frm);
 		if (frm.doc.student) {
 			frm.set_query("fee_demand", () => ({
 				filters: {
@@ -37,7 +38,7 @@ frappe.ui.form.on("Fee Refund", {
 			if (r.paid_amount === 0) {
 				frappe.msgprint({
 					title: "No Payment Found",
-					message: `This demand has ₹0 paid. A refund can only be issued for paid amounts.`,
+					message: `This demand has nothing paid. A refund can only be issued for paid amounts.`,
 					indicator: "orange",
 				});
 			}
@@ -49,9 +50,8 @@ frappe.ui.form.on("Fee Refund", {
 	},
 
 	refund_mode(frm) {
-		const bank_fields = ["bank_name", "account_number", "ifsc_code", "utr_number"];
-		const needs_bank = ["NEFT", "Cheque", "Online"].includes(frm.doc.refund_mode);
-		bank_fields.forEach((f) => frm.toggle_reqd(f, needs_bank));
+		// bank details are mandatory for these modes through mandatory_depends_on; the UTR is asked for here
+		frm.toggle_reqd("utr_number", ["NEFT", "Cheque", "Online"].includes(frm.doc.refund_mode));
 	},
 });
 
@@ -64,20 +64,46 @@ function _show_refund_preview(frm) {
 	if (remaining_paid < 0) {
 		frappe.msgprint({
 			title: "Invalid Refund Amount",
-			message: `Refund (₹${format_currency(refund)}) exceeds amount paid (₹${format_currency(paid)}).`,
+			message: `Refund (${_fr_money(refund)}) exceeds amount paid (${_fr_money(paid)}).`,
 			indicator: "red",
 		});
 		return;
 	}
 
 	frm.dashboard.set_headline(
-		`<b>Refund:</b> ₹${format_currency(refund)} &nbsp;|&nbsp; ` +
-		`<b>Remaining Paid Balance:</b> ₹${format_currency(remaining_paid)}`
+		`<b>Refund:</b> ${_fr_money(refund)} &nbsp;|&nbsp; ` +
+		`<b>Remaining Paid Balance:</b> ${_fr_money(remaining_paid)}`
 	);
 }
 
-function format_currency(val) {
-	return frappe.format(val, { fieldtype: "Currency" });
+// Own name: form scripts run in the global scope, so a function called format_currency here replaced Frappe's
+// global format_currency(value, currency) for the whole session once a Fee Refund was opened.
+function _fr_money(val) {
+	return frappe.format(val, { fieldtype: "Currency", options: "INR" });
+}
+
+// The student's savings account, for NEFT / Cheque / Online refunds. Fills only empty fields.
+function _fill_bank_details(frm) {
+	if (!frm.doc.student || frm.doc.docstatus !== 0) return;
+	frappe.db
+		.get_value("Student Master", frm.doc.student, [
+			"savings_account_holder_name",
+			"savings_bank_name",
+			"savings_account_number",
+			"savings_ifsc_code",
+		])
+		.then(({ message: r }) => {
+			if (!r) return;
+			const map = {
+				account_holder_name: r.savings_account_holder_name,
+				bank_name: r.savings_bank_name,
+				account_number: r.savings_account_number,
+				ifsc_code: r.savings_ifsc_code,
+			};
+			Object.entries(map).forEach(([f, v]) => {
+				if (v && !frm.doc[f]) frm.set_value(f, v);
+			});
+		});
 }
 
 // Excess refunds: show what the student can be refunded (unused active credit notes).

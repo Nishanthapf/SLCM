@@ -28,9 +28,11 @@ class FeeRefund(Document):
 			frappe.throw("Refund Amount must be greater than zero.")
 		# money paid out to an account needs the account (bulk uploads come through here, not the page dialog)
 		if self.docstatus == 0 and self.refund_mode in ("NEFT", "Cheque", "Online") and not (
-			self.bank_name and self.account_number and self.ifsc_code
+			self.account_holder_name and self.bank_name and self.account_number and self.ifsc_code
 		):
-			frappe.throw(f"Bank Name, Account Number and IFSC Code are required for {self.refund_mode} refunds.")
+			frappe.throw(
+				f"Account Holder Name, Bank Name, Account Number and IFSC Code are required for {self.refund_mode} refunds."
+			)
 		if self.refund_source == EXCESS:
 			self._validate_excess_refund()
 		else:

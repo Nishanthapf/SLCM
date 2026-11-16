@@ -1747,96 +1747,13 @@ body {{
 
 
 def _generate_orphan_receipt_pdf(receipt_name):
-    """Generate a receipt PDF from Fee Receipt fields for receipts with no Fee Payment link."""
-    from frappe.utils.pdf import get_pdf
-    from frappe.utils import formatdate, fmt_money
+    """Receipt PDF for a Fee Receipt with no Fee Payment link: the same "Fee Receipt" print format (and design) as
+    every other fee receipt, rendered from the receipt's own fields."""
+    return _generate_demand_receipt_pdf(receipt_name)
 
-    r = frappe.db.get_value(
-        "Fee Receipt", receipt_name,
-        ["student", "student_name", "registration_id", "programme",
-         "academic_year", "receipt_date", "amount", "payment_mode",
-         "reference_number", "bank_name", "transaction_date", "received_by"],
-        as_dict=True,
-    ) or {}
 
-    def _esc(v):
-        return frappe.utils.escape_html(str(v or "—"))
-
-    amount_fmt = "₹ {:,.2f}".format(frappe.utils.flt(r.get("amount") or 0))
-    date_fmt   = formatdate(r.get("receipt_date"), "dd MMM yyyy") if r.get("receipt_date") else "—"
-    txn_date   = formatdate(r.get("transaction_date"), "dd MMM yyyy") if r.get("transaction_date") else "—"
-
-    # Resolve institution name
-    try:
-        inst_name = frappe.db.get_single_value("System Settings", "site_name") or "Institution"
-    except Exception:
-        inst_name = "Institution"
-
-    html = f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-  body {{ font-family: Arial, sans-serif; font-size: 13px; color: #1e293b; margin: 0; padding: 32px; }}
-  .hdr {{ display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f2a5c; padding-bottom: 16px; margin-bottom: 24px; }}
-  .hdr-title {{ font-size: 22px; font-weight: 700; color: #0f2a5c; }}
-  .hdr-sub {{ font-size: 12px; color: #64748b; margin-top: 2px; }}
-  .receipt-no {{ text-align: right; }}
-  .receipt-no .label {{ font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }}
-  .receipt-no .val {{ font-size: 16px; font-weight: 700; color: #0f2a5c; }}
-  .section {{ margin-bottom: 20px; }}
-  .section-title {{ font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-bottom: 10px; }}
-  .row {{ display: flex; margin-bottom: 6px; }}
-  .row .lbl {{ width: 180px; color: #64748b; flex-shrink: 0; }}
-  .row .val {{ font-weight: 600; color: #1e293b; }}
-  .amount-box {{ background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 8px; padding: 14px 20px; display: flex; justify-content: space-between; align-items: center; margin: 20px 0; }}
-  .amount-label {{ font-size: 13px; font-weight: 700; color: #166534; text-transform: uppercase; letter-spacing: 0.06em; }}
-  .amount-val {{ font-size: 22px; font-weight: 800; color: #14532d; }}
-  .footer {{ margin-top: 40px; border-top: 1px solid #e2e8f0; padding-top: 12px; font-size: 11px; color: #94a3b8; display: flex; justify-content: space-between; }}
-</style>
-</head>
-<body>
-<div class="hdr">
-  <div>
-    <div class="hdr-title">{_esc(inst_name)}</div>
-    <div class="hdr-sub">Fee Payment Receipt</div>
-  </div>
-  <div class="receipt-no">
-    <div class="label">Receipt No.</div>
-    <div class="val">{_esc(receipt_name)}</div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title">Student Details</div>
-  <div class="row"><span class="lbl">Student Name</span><span class="val">{_esc(r.get("student_name"))}</span></div>
-  <div class="row"><span class="lbl">Student ID</span><span class="val">{_esc(r.get("registration_id"))}</span></div>
-  <div class="row"><span class="lbl">Programme</span><span class="val">{_esc(r.get("programme"))}</span></div>
-  <div class="row"><span class="lbl">Academic Year</span><span class="val">{_esc(r.get("academic_year"))}</span></div>
-</div>
-
-<div class="amount-box">
-  <span class="amount-label">Amount Paid</span>
-  <span class="amount-val">{_esc(amount_fmt)}</span>
-</div>
-
-<div class="section">
-  <div class="section-title">Payment Details</div>
-  <div class="row"><span class="lbl">Receipt Date</span><span class="val">{_esc(date_fmt)}</span></div>
-  <div class="row"><span class="lbl">Payment Mode</span><span class="val">{_esc(r.get("payment_mode"))}</span></div>
-  {f'<div class="row"><span class="lbl">Reference / TXN No.</span><span class="val">{_esc(r.get("reference_number"))}</span></div>' if r.get("reference_number") else ""}
-  {f'<div class="row"><span class="lbl">Transaction Date</span><span class="val">{_esc(txn_date)}</span></div>' if r.get("transaction_date") else ""}
-  {f'<div class="row"><span class="lbl">Bank</span><span class="val">{_esc(r.get("bank_name"))}</span></div>' if r.get("bank_name") else ""}
-</div>
-
-<div class="footer">
-  <span>This is a computer-generated receipt and does not require a physical signature.</span>
-  <span>Generated: {formatdate(frappe.utils.today(), "dd MMM yyyy")}</span>
-</div>
-</body>
-</html>"""
-
-    return get_pdf(html)
+# Present in every print format that includes templates/print/nls_receipt_style.html (its web-font fallback family).
+NLS_PRINT_STYLE_MARKER = "'Merriweather Web'"
 
 
 def _generate_pdf(doctype, name, print_format):
@@ -1865,6 +1782,11 @@ def _generate_pdf(doctype, name, print_format):
             as_pdf=False,
             no_letterhead=0,
         )
+        # NLS receipts / invoices (templates/print/nls_receipt_style.html) already pick the installed Merriweather
+        # system font, so their PDF text stays selectable. Embedding the web font would force every element onto it,
+        # and wkhtmltopdf draws web fonts as outlines (text can't be copied). Other documents keep the embedding.
+        if NLS_PRINT_STYLE_MARKER in html:
+            return get_pdf(html)
         from slcm.admission.utils.jinja import embed_merriweather_for_pdf
         return get_pdf(embed_merriweather_for_pdf(html))
     except Exception:
@@ -2521,7 +2443,7 @@ def submit_bank_details(**kwargs):
     if values["availed_education_loan"] == "Yes":
         required.update({
             "education_loan_scheme": _("Loan Scheme"),
-            "loan_account_number": _("Loan Account Number"),
+            "loan_account_number": _("Education Loan Account Number"),
             "loan_account_holder_name": _("Loan Account Holder Name"),
             "loan_bank_name": _("Loan Bank Name"),
             "loan_branch_name": _("Loan Branch Name"),

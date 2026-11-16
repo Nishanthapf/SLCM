@@ -14,6 +14,16 @@
   /* tighter rows so a payment covering many dues still fits */
   .print-format .nls-doc .nls-table th, .print-format .nls-doc .nls-table td { padding: 4px 10px !important; }
   .print-format .nls-doc .nls-meta td { padding: 3px 6px !important; }
+  /* Fully ruled tables, as on the fee receipts */
+  .print-format .nls-doc .nls-table.nls-grid, .nls-table.nls-grid { border: 1px solid #000; }
+  .print-format .nls-doc .nls-table.nls-grid th, .print-format .nls-doc .nls-table.nls-grid td,
+  .nls-table.nls-grid th, .nls-table.nls-grid td { border: 1px solid #000 !important; }
+  .print-format .nls-doc .nls-table.nls-grid tfoot tr:first-child td, .nls-table.nls-grid tfoot tr:first-child td { border-top: 2px solid #000 !important; }
+  /* Footer note: set apart from the details */
+  .print-format .nls-doc .nls-note, .nls-doc .nls-note {
+    margin-top: 40px !important; padding-top: 10px !important; border-top: 1px dashed #000;
+    text-align: center; font-style: italic; font-size: 10.5pt;
+  }
 </style>
 <div class="nls-doc">
 <div class="nls-copy is-page">
@@ -34,9 +44,9 @@
     </tr>
     <tr>
       <td class="lbl">Invoice Number:</td>
-      <td class="val"><span class="nls-boxed">{{ doc.name }}</span></td>
+      <td class="val" style="font-weight:600;">{{ doc.name }}</td>
       <td class="lbl">Invoice Date:</td>
-      <td class="val">{{ frappe.utils.formatdate(doc.invoice_date, "dd-MM-yyyy") if doc.invoice_date else "—" }}</td>
+      <td class="val">{{ frappe.utils.formatdate(doc.invoice_date, "dd/MM/yyyy") if doc.invoice_date else "—" }}</td>
     </tr>
   </table>
 
@@ -53,18 +63,18 @@
       <td class="lbl">Programme:</td>
       <td class="val">{{ doc.program or "—" }}</td>
       <td class="lbl">Due Date:</td>
-      <td class="val">{{ frappe.utils.formatdate(doc.due_date, "dd-MM-yyyy") if doc.due_date else "—" }}</td>
+      <td class="val">{{ frappe.utils.formatdate(doc.due_date, "dd/MM/yyyy") if doc.due_date else "—" }}</td>
     </tr>
   </table>
 
-  <table class="nls-table">
+  <table class="nls-table nls-grid">
     <thead>
       <tr>
         <th style="width:9%">Sl No.</th>
         <th>Particulars</th>
-        <th class="r" style="width:17%">Amount</th>
+        <th class="r" style="width:18%">Amount (INR)</th>
         <th class="r" style="width:10%">Tax</th>
-        <th style="width:19%">Total</th>
+        <th style="width:19%">Total (INR)</th>
       </tr>
     </thead>
     <tbody>
@@ -72,9 +82,9 @@
       <tr>
         <td>{{ loop.index }}</td>
         <td>{{ comp.component_name or comp.fee_component or "—" }}</td>
-        <td class="r">INR {{ "{:,.2f}".format(frappe.utils.flt(comp.amount or 0)) }}</td>
+        <td class="r">{{ "{:,.2f}".format(frappe.utils.flt(comp.amount or 0)) }}</td>
         <td class="r">{{ (comp.tax_rate or 0) | int }}%</td>
-        <td>INR {{ "{:,.2f}".format(frappe.utils.flt(comp.total_amount or comp.amount or 0)) }}</td>
+        <td>{{ "{:,.2f}".format(frappe.utils.flt(comp.total_amount or comp.amount or 0)) }}</td>
       </tr>
       {% else %}
       <tr><td colspan="5" style="text-align:center;">No fee components.</td></tr>
@@ -84,16 +94,16 @@
       {% if doc.scholarship_amount and doc.scholarship_amount > 0 %}
       <tr>
         <td colspan="4">Gross Total</td>
-        <td>INR {{ "{:,.2f}".format(frappe.utils.flt(doc.total_amount or 0)) }}</td>
+        <td>{{ "{:,.2f}".format(frappe.utils.flt(doc.total_amount or 0)) }}</td>
       </tr>
       <tr class="muted-row">
         <td colspan="4">Scholarship / Discount</td>
-        <td>− INR {{ "{:,.2f}".format(frappe.utils.flt(doc.scholarship_amount)) }}</td>
+        <td>− {{ "{:,.2f}".format(frappe.utils.flt(doc.scholarship_amount)) }}</td>
       </tr>
       {% endif %}
       <tr>
         <td colspan="4">Net Payable</td>
-        <td>INR {{ "{:,.2f}".format(net_payable) }}</td>
+        <td>{{ "{:,.2f}".format(net_payable) }}</td>
       </tr>
     </tfoot>
   </table>
@@ -121,14 +131,14 @@
 
   {% if doc.payments %}
   <div class="nls-section">Payment History</div>
-  <table class="nls-table" style="margin-top:4px;">
+  <table class="nls-table nls-grid" style="margin-top:4px;">
     <thead>
       <tr>
         <th style="width:9%">Sl No.</th>
         <th>Payment Reference</th>
         <th style="width:18%">Date</th>
         <th style="width:18%">Mode</th>
-        <th style="width:19%">Amount</th>
+        <th style="width:19%">Amount (INR)</th>
       </tr>
     </thead>
     <tbody>
@@ -136,9 +146,9 @@
       <tr>
         <td>{{ loop.index }}</td>
         <td>{{ p.payment or "—" }}</td>
-        <td>{{ frappe.utils.formatdate(p.payment_date, "dd-MM-yyyy") if p.payment_date else "—" }}</td>
+        <td>{{ frappe.utils.formatdate(p.payment_date, "dd/MM/yyyy") if p.payment_date else "—" }}</td>
         <td>{{ p.payment_mode or "—" }}</td>
-        <td>INR {{ "{:,.2f}".format(frappe.utils.flt(p.amount or 0)) }}</td>
+        <td>{{ "{:,.2f}".format(frappe.utils.flt(p.amount or 0)) }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -146,7 +156,7 @@
   {% endif %}
 
   <div class="nls-note">
-    This is a computer generated invoice, hence it does not require signature/seal.
+    This is a computer-generated invoice and does not require a signature or seal.
   </div>
 
 </div>

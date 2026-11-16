@@ -6,6 +6,13 @@
 const SFM_PAGE = "student-fee-management";
 const SFM_API = "slcm.slcm.page.student_fee_management.student_fee_management.";
 const SFM_BULK_API = "slcm.slcm.fee.bulk_history.";
+// Remarks / reasons on every action: at least 15 characters (server: _require_remarks).
+const SFM_REMARKS_MIN = 15;
+const SFM_REMARKS_HINT = __("Minimum {0} characters.", [SFM_REMARKS_MIN]);
+const sfm_remarks_error = (text, label) => {
+	const n = (text || "").trim().length;
+	return n >= SFM_REMARKS_MIN ? null : __("{0} must be at least {1} characters (currently {2}).", [label || __("Remarks"), SFM_REMARKS_MIN, n]);
+};
 // Offline (staff-recorded) payments can be edited or deleted; gateway payments cannot. Mirrors FeePayment.is_offline.
 const SFM_OFFLINE_EDITABLE = (p) => p.docstatus === 1 && !p.payment_gateway && p.payment_mode !== "Online Payment";
 const SFM_PAGE_SIZES = [10, 25, 50, 100];
@@ -608,11 +615,11 @@ class StudentFeeManagement {
 						[imp.active, sfm_esc(__(imp.reference_doctype))]
 					)}</p>`,
 				},
-				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Reason for deleting"), reqd: 1 },
+				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Reason for deleting"), reqd: 1, description: SFM_REMARKS_HINT },
 			],
 			primary_action_label: __("Delete Upload"),
 			primary_action: async ({ remarks }) => {
-				if (!(remarks || "").trim()) return frappe.msgprint(__("Remarks are mandatory."));
+				if (sfm_remarks_error(remarks)) return frappe.msgprint(sfm_remarks_error(remarks));
 				const r = await frappe.call({
 					method: SFM_BULK_API + "delete_import",
 					args: { data_import: imp.name, remarks },
@@ -1034,8 +1041,6 @@ class StudentFeeManagement {
 					<!-- Issue Refund hidden for now
 					<button type="button" class="sfm-btn sfm-btn-secondary" data-act="refund">${sfm_icon("undo", 15)}<span>${__("Issue Refund")}</span></button>
 					-->
-					<button type="button" class="sfm-btn sfm-btn-secondary" data-act="refund-excess"
-						title="${sfm_esc(__("Available excess: {0}", [sfm_money(this.detail.summary.excess_amount)]))}">${sfm_icon("wallet", 15)}<span>${__("Refund from Excess")}</span></button>
 					<button type="button" class="sfm-btn sfm-btn-primary" data-act="create">${sfm_icon("plus", 15)}<span>${__("Create a due")}</span></button>
 				</div>
 			</div>
@@ -1348,10 +1353,6 @@ class StudentFeeManagement {
 				frappe.new_doc("Fee Refund", { student: p.name, refund_date: frappe.datetime.get_today() });
 				break;
 
-			case "refund-excess":
-				this.refund_excess_dialog();
-				break;
-
 			case "multi-pay": {
 				const payable = (sel.length ? sel : this.detail.demands).filter(SFM_PAYABLE);
 				if (!payable.length) {
@@ -1485,13 +1486,14 @@ class StudentFeeManagement {
 					fieldname: "remarks",
 					label: editing ? __("Reason for the change") : __("Remarks"),
 					reqd: 1,
+					description: SFM_REMARKS_HINT,
 				},
 			],
 			primary_action_label: editing ? __("Save Changes") : __("Record Payment"),
 			primary_action: (values) => {
 				if (!values.university_bank_account) return frappe.msgprint(__("University bank account is mandatory."));
 				if (!(values.reference_number || "").trim()) return frappe.msgprint(__("Reference / UTR No. is mandatory."));
-				if (!(values.remarks || "").trim()) return frappe.msgprint(__("Remarks are mandatory."));
+				if (sfm_remarks_error(values.remarks)) return frappe.msgprint(sfm_remarks_error(values.remarks));
 				values.reference_number = values.reference_number.trim();
 				const allocations = [];
 				let invalid = null;
@@ -1574,11 +1576,11 @@ class StudentFeeManagement {
 						[sfm_esc(payment.payment_mode || ""), sfm_money(payment.amount), sfm_esc(payment.reference_number || "—"), sfm_esc(payment.receipt || "—")]
 					)}</p>`,
 				},
-				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Reason for deleting"), reqd: 1 },
+				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Reason for deleting"), reqd: 1, description: SFM_REMARKS_HINT },
 			],
 			primary_action_label: __("Delete Payment"),
 			primary_action: async ({ remarks }) => {
-				if (!(remarks || "").trim()) return frappe.msgprint(__("Remarks are mandatory."));
+				if (sfm_remarks_error(remarks)) return frappe.msgprint(sfm_remarks_error(remarks));
 				await frappe.call({
 					method: SFM_API + "delete_payment",
 					args: { student, payment: payment.name, remarks },
@@ -1610,12 +1612,12 @@ class StudentFeeManagement {
 					options: `<p class="sfm-muted">${__("Due {0}: pending {1}. Available excess: {2}.", [sfm_esc(d.name), sfm_money(d.outstanding_amount), sfm_money(excess)])}</p>`,
 				},
 				{ fieldtype: "Currency", fieldname: "amount", label: __("Amount to Adjust"), reqd: 1, default: max, options: "INR" },
-				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Remarks"), reqd: 1 },
+				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Remarks"), reqd: 1, description: SFM_REMARKS_HINT },
 			],
 			primary_action_label: __("Adjust"),
 			primary_action: async ({ amount, remarks }) => {
 				if (flt(amount) <= 0 || flt(amount) > max) return frappe.msgprint(__("Amount must be between 0 and {0}.", [sfm_money(max)]));
-				if (!(remarks || "").trim()) return frappe.msgprint(__("Remarks are mandatory."));
+				if (sfm_remarks_error(remarks)) return frappe.msgprint(sfm_remarks_error(remarks));
 				await frappe.call({
 					method: SFM_API + "apply_excess_credit",
 					args: { student: this.detail.profile.name, fee_demand: d.name, amount, remarks },
@@ -1651,10 +1653,11 @@ class StudentFeeManagement {
 				{ fieldtype: "Section Break" },
 				{ fieldtype: "Data", fieldname: "description", label: __("Description"), description: __("Defaults to the fee component name") },
 				{ fieldtype: "Check", fieldname: "is_refundable", label: __("Refundable") },
-				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Remarks") },
+				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Remarks"), reqd: 1, description: SFM_REMARKS_HINT },
 			],
 			primary_action_label: __("Create Due"),
 			primary_action: async (v) => {
+				if (sfm_remarks_error(v.remarks)) return frappe.msgprint(sfm_remarks_error(v.remarks));
 				if (flt(v.original_amount) <= 0) return frappe.msgprint(__("Amount must be greater than zero."));
 				if (flt(v.waiver_amount) > flt(v.original_amount)) return frappe.msgprint(__("Waiver cannot exceed the amount."));
 				if (v.due_date < v.demand_date) return frappe.msgprint(__("Due Date cannot be before the Date of Creation."));
@@ -1692,11 +1695,11 @@ class StudentFeeManagement {
 					fieldname: "info",
 					options: `<p class="sfm-muted">${__("{0} · {1}. This cannot be undone.", [sfm_esc(d.fee_component || d.name), sfm_money(d.net_payable)])}</p>`,
 				},
-				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Reason / Remarks"), reqd: 1 },
+				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Reason / Remarks"), reqd: 1, description: SFM_REMARKS_HINT },
 			],
 			primary_action_label: __("Cancel Due"),
 			primary_action: async ({ remarks }) => {
-				if (!(remarks || "").trim()) return frappe.msgprint(__("Remarks are mandatory."));
+				if (sfm_remarks_error(remarks)) return frappe.msgprint(sfm_remarks_error(remarks));
 				await frappe.call({ method: SFM_API + "cancel_demand", args: { fee_demand: d.name, remarks }, freeze: true });
 				dialog.hide();
 				frappe.show_alert({ message: __("Due {0} cancelled", [d.name]), indicator: "green" });
@@ -1741,23 +1744,24 @@ class StudentFeeManagement {
 					default: "NEFT",
 					onchange: () => {
 						const req = needs_bank(dialog.get_value("refund_mode"));
-						["bank_name", "account_number", "ifsc_code"].forEach((f) => dialog.set_df_property(f, "reqd", req));
+						["account_holder_name", "bank_name", "account_number", "ifsc_code"].forEach((f) => dialog.set_df_property(f, "reqd", req));
 					},
 				},
 				{ fieldtype: "Column Break" },
+				{ fieldtype: "Data", fieldname: "account_holder_name", label: __("Account Holder Name"), default: bank.account_holder_name, reqd: 1 },
 				{ fieldtype: "Data", fieldname: "bank_name", label: __("Bank Name"), default: bank.bank_name, reqd: 1 },
 				{ fieldtype: "Data", fieldname: "account_number", label: __("Account Number"), default: bank.account_number, reqd: 1 },
 				{ fieldtype: "Data", fieldname: "ifsc_code", label: __("IFSC Code"), default: bank.ifsc_code, reqd: 1 },
 				{ fieldtype: "Data", fieldname: "utr_number", label: __("UTR / Reference No.") },
 				{ fieldtype: "Date", fieldname: "transaction_date", label: __("Transaction Date") },
 				{ fieldtype: "Section Break" },
-				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Remarks"), reqd: 1 },
+				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Reason for Refund"), reqd: 1, description: SFM_REMARKS_HINT },
 			],
 			primary_action_label: __("Refund"),
 			primary_action: (v) => {
 				const amount = flt(v.amount);
 				if (amount <= 0 || amount > excess) return frappe.msgprint(__("Amount must be between 0 and {0}.", [sfm_money(excess)]));
-				if (!(v.remarks || "").trim()) return frappe.msgprint(__("Remarks are mandatory."));
+				if (sfm_remarks_error(v.remarks, __("Reason for Refund"))) return frappe.msgprint(sfm_remarks_error(v.remarks, __("Reason for Refund")));
 				frappe.confirm(__("Refund <b>{0}</b> from {1}'s excess?", [sfm_money(amount), sfm_esc(p.first_name || p.name)]), async () => {
 					const r = await frappe.call({
 						method: SFM_API + "refund_from_excess",
@@ -1812,14 +1816,14 @@ class StudentFeeManagement {
 					description: __("Only when the full paid amount is moved."),
 				},
 				{ fieldtype: "Section Break" },
-				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Remarks"), reqd: 1 },
+				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Remarks"), reqd: 1, description: SFM_REMARKS_HINT },
 			],
 			primary_action_label: __("Move to Excess"),
 			primary_action: (v) => {
 				const amount = flt(v.amount);
 				if (amount <= 0 || amount > paid) return frappe.msgprint(__("Amount must be between 0 and {0}.", [sfm_money(paid)]));
 				if (v.cancel_due && amount < paid) return frappe.msgprint(__("To cancel the due, move the full paid amount ({0}).", [sfm_money(paid)]));
-				if (!(v.remarks || "").trim()) return frappe.msgprint(__("Remarks are mandatory."));
+				if (sfm_remarks_error(v.remarks)) return frappe.msgprint(sfm_remarks_error(v.remarks));
 				frappe.confirm(
 					__("Move <b>{0}</b> from {1} to the student's excess?", [sfm_money(amount), sfm_esc(d.name)]) +
 						(v.cancel_due ? "<br>" + __("The due will then be cancelled.") : ""),
@@ -1914,26 +1918,43 @@ class StudentFeeManagement {
 	render_excess($body) {
 		const { credit_notes, refunds } = this.detail;
 		const total = credit_notes.reduce((a, c) => a + flt(c.credit_amount), 0);
-		const used = credit_notes.reduce((a, c) => a + flt(c.used_credit), 0);
+		// "used" on a credit note covers both dues adjusted and excess refunded; the KPI shows only the dues part
+		const adjusted_to_dues = credit_notes.reduce(
+			(a, c) => a + (c.adjustments || []).filter((x) => x.fee_demand).reduce((t, x) => t + flt(x.amount_adjusted), 0),
+			0
+		);
+		// one column grid for both tables so Status, amounts and dates line up
+		const cols = `<colgroup><col style="width:13%"><col style="width:15%"><col style="width:12%"><col style="width:10%">
+			<col style="width:9%"><col style="width:11%"><col style="width:20%"><col style="width:10%"></colgroup>`;
+		const adj_line = (a) =>
+			`<div class="sfm-adj-line">${
+				a.fee_demand
+					? `<a class="sfm-link" href="${frappe.utils.get_form_link("Fee Demand", a.fee_demand)}">${sfm_esc(a.fee_demand)}</a>`
+					: `<span>${sfm_esc(a.fee_component || __("Refund"))}</span>`
+			}<span class="sfm-sub">${sfm_money(a.amount_adjusted)} · ${sfm_date(a.adjusted_on)}</span></div>`;
 		const kpi = (icon, label, value, tone) =>
 			`<div class="sfm-kpi sfm-kpi-${tone}"><span class="sfm-kpi-icon">${sfm_icon(icon, 18)}</span><div class="sfm-kpi-body"><div class="sfm-kpi-label">${label}</div><div class="sfm-kpi-value">${value}</div></div></div>`;
 
 		$body.html(`
 			<div class="sfm-section-head"><h2 class="sfm-section-title sfm-sr-only">${__("Excess Breakdown")}</h2>
-				<button type="button" class="sfm-btn sfm-btn-secondary" data-act="new-credit">${sfm_icon("plus", 15)}<span>${__("Add Excess / Credit")}</span></button>
+				<div class="sfm-actions">
+					<button type="button" class="sfm-btn sfm-btn-secondary" data-act="refund-excess" ${flt(this.detail.summary.excess_amount) > 0 ? "" : "disabled"}
+						title="${sfm_esc(flt(this.detail.summary.excess_amount) > 0 ? __("Available excess: {0}", [sfm_money(this.detail.summary.excess_amount)]) : __("No excess available to refund"))}">${sfm_icon("undo", 15)}<span>${__("Refund from Excess")}</span></button>
+					<button type="button" class="sfm-btn sfm-btn-secondary" data-act="new-credit">${sfm_icon("plus", 15)}<span>${__("Add Excess / Credit")}</span></button>
+				</div>
 			</div>
 			<div class="sfm-kpi-grid sfm-kpi-grid-4">
 				${kpi("wallet", __("Total Excess Received"), sfm_money(total), "primary")}
-				${kpi("check", __("Adjusted Against Dues"), sfm_money(used), "neutral")}
+				${kpi("check", __("Adjusted Against Dues"), sfm_money(adjusted_to_dues), "neutral")}
 				${kpi("rupee", __("Available Excess"), sfm_money(this.detail.summary.excess_amount), "success")}
 				${kpi("undo", __("Refunded"), sfm_money(this.detail.summary.refunded_amount), "neutral")}
 			</div>
 			<div class="sfm-panel sfm-table-panel"><div class="sfm-table-scroll">
-				<table class="sfm-table">
+				<table class="sfm-table sfm-table-fixed">${cols}
 					<thead><tr>
 						<th scope="col">${__("Credit Note")}</th><th scope="col">${__("Type")}</th><th scope="col">${__("Academic Year")}</th>
 						<th scope="col" class="num">${__("Credit")}</th><th scope="col" class="num">${__("Used")}</th><th scope="col" class="num">${__("Available")}</th>
-						<th scope="col">${__("Adjusted Against")}</th><th scope="col">${__("Status")}</th>
+						<th scope="col">${__("Adjusted / Refunded")}</th><th scope="col">${__("Status")}</th>
 					</tr></thead>
 					<tbody>
 						${
@@ -1947,7 +1968,7 @@ class StudentFeeManagement {
 							<td class="num">${sfm_money(c.credit_amount)}</td>
 							<td class="num">${sfm_money(c.used_credit)}</td>
 							<td class="num sfm-amount-strong">${sfm_money(c.available_credit)}</td>
-							<td>${(c.adjustments || []).map((a) => `<div>${sfm_esc(a.fee_demand)} <span class="sfm-sub">· ${sfm_money(a.amount_adjusted)} · ${sfm_date(a.adjusted_on)}</span></div>`).join("") || "—"}</td>
+							<td>${(c.adjustments || []).map(adj_line).join("") || "—"}</td>
 							<td>${sfm_badge(c.status)}</td>
 						</tr>`
 										)
@@ -1960,10 +1981,11 @@ class StudentFeeManagement {
 
 			<div class="sfm-section-head"><h2 class="sfm-section-title">${__("Refunds")}</h2></div>
 			<div class="sfm-panel sfm-table-panel"><div class="sfm-table-scroll">
-				<table class="sfm-table">
+				<table class="sfm-table sfm-table-fixed">${cols}
 					<thead><tr>
-						<th scope="col">${__("Refund No.")}</th><th scope="col">${__("Due")}</th><th scope="col">${__("Type")}</th><th scope="col">${__("Date")}</th>
-						<th scope="col">${__("Mode")}</th><th scope="col">${__("UTR")}</th><th scope="col" class="num">${__("Amount")}</th><th scope="col">${__("Status")}</th>
+						<th scope="col">${__("Refund No.")}</th><th scope="col">${__("Refunded From")}</th><th scope="col">${__("Type")}</th>
+						<th scope="col" class="num">${__("Date")}</th><th scope="col">${__("Mode")}</th><th scope="col" class="num">${__("Amount")}</th>
+						<th scope="col">${__("UTR")}</th><th scope="col">${__("Status")}</th>
 					</tr></thead>
 					<tbody>
 						${
@@ -1972,12 +1994,16 @@ class StudentFeeManagement {
 										.map(
 											(r) => `<tr>
 							<td><a class="sfm-link" href="${frappe.utils.get_form_link("Fee Refund", r.name)}">${sfm_esc(r.name)}</a></td>
-							<td>${sfm_esc(r.fee_demand || "—")}<div class="sfm-sub">${sfm_esc(r.fee_component || "")}</div></td>
+							<td>${
+								r.fee_demand
+									? `<a class="sfm-link" href="${frappe.utils.get_form_link("Fee Demand", r.fee_demand)}">${sfm_esc(r.fee_demand)}</a><div class="sfm-sub">${sfm_esc(r.fee_component || "")}</div>`
+									: sfm_esc(r.refund_source === "Excess Amount" ? __("Excess") : r.refund_source || "—")
+							}</td>
 							<td>${sfm_esc(r.refund_type || "—")}</td>
-							<td>${sfm_date(r.refund_date)}</td>
+							<td class="num">${sfm_date(r.refund_date)}</td>
 							<td>${sfm_esc(r.refund_mode || "—")}</td>
-							<td>${sfm_esc(r.utr_number || "—")}</td>
 							<td class="num sfm-amount-strong">${sfm_money(r.refund_amount)}</td>
+							<td class="sfm-wrap">${sfm_esc(r.utr_number || "—")}</td>
 							<td>${sfm_badge(r.status)}</td>
 						</tr>`
 										)
@@ -1988,6 +2014,7 @@ class StudentFeeManagement {
 				</table>
 			</div></div>
 		`);
+		$body.find('[data-act="refund-excess"]').on("click", () => this.refund_excess_dialog());
 		$body.find('[data-act="new-credit"]').on("click", () =>
 			frappe.new_doc("Student Credit Note", {
 				student: this.detail.profile.name,
@@ -2209,12 +2236,12 @@ class StudentFeeManagement {
 				{ fieldtype: "Link", fieldname: "academic_year", label: __("Academic Year"), options: "Academic Year", default: editing ? x.academic_year : p.academic_year },
 				{ fieldtype: "Link", fieldname: "academic_term", label: __("Academic Term"), options: "Academic Term", default: editing ? x.academic_term : "" },
 				{ fieldtype: "Section Break" },
-				{ fieldtype: "Small Text", fieldname: "remarks", label: editing ? __("Reason for the change") : __("Remarks"), reqd: 1 },
+				{ fieldtype: "Small Text", fieldname: "remarks", label: editing ? __("Reason for the change") : __("Remarks"), reqd: 1, description: SFM_REMARKS_HINT },
 			],
 			primary_action_label: editing ? __("Save Changes") : __("Record Stipend Payment"),
 			primary_action: (v) => {
 				if (flt(v.amount) <= 0) return frappe.msgprint(__("Amount must be greater than zero."));
-				if (!(v.remarks || "").trim()) return frappe.msgprint(__("Remarks are mandatory."));
+				if (sfm_remarks_error(v.remarks)) return frappe.msgprint(sfm_remarks_error(v.remarks));
 				delete v.note;
 				const question = editing
 					? __("Save changes to {0}? It will be cancelled and replaced by an amended stipend payment of <b>{1}</b>.", [x.name, sfm_money(v.amount)])
@@ -2270,12 +2297,13 @@ class StudentFeeManagement {
 				{ fieldtype: "Date", fieldname: "concession_date", label: __("Date of concession"), default: c.concession_date },
 				{ fieldtype: "Small Text", fieldname: "reason", label: __("Reason"), reqd: 1, default: c.reason },
 				{ fieldtype: "Section Break" },
-				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Reason for the change"), reqd: 1 },
+				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Reason for the change"), reqd: 1, description: SFM_REMARKS_HINT },
 			],
 			primary_action_label: __("Save Changes"),
 			primary_action: (v) => {
 				if (flt(v.waiver_value) <= 0) return frappe.msgprint(__("Waiver Value must be greater than zero."));
-				if (!(v.reason || "").trim() || !(v.remarks || "").trim()) return frappe.msgprint(__("Reason and Reason for the change are mandatory."));
+				if (!(v.reason || "").trim()) return frappe.msgprint(__("Reason is mandatory."));
+				if (sfm_remarks_error(v.remarks, __("Reason for the change"))) return frappe.msgprint(sfm_remarks_error(v.remarks, __("Reason for the change")));
 				frappe.confirm(__("Save changes to {0}? It will be cancelled and replaced by an amended concession of <b>{1}</b>.", [c.name, sfm_money(v.waiver_value)]), async () => {
 					const r = await frappe.call({
 						method: SFM_API + "edit_concession",
@@ -2307,11 +2335,11 @@ class StudentFeeManagement {
 						sfm_esc(c.fee_demand),
 					])}</p>`,
 				},
-				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Reason for deleting"), reqd: 1 },
+				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Reason for deleting"), reqd: 1, description: SFM_REMARKS_HINT },
 			],
 			primary_action_label: __("Delete Concession"),
 			primary_action: async ({ remarks }) => {
-				if (!(remarks || "").trim()) return frappe.msgprint(__("Remarks are mandatory."));
+				if (sfm_remarks_error(remarks)) return frappe.msgprint(sfm_remarks_error(remarks));
 				await frappe.call({
 					method: SFM_API + "delete_concession",
 					args: { student: p.name, concession: c.name, remarks },
@@ -2342,11 +2370,11 @@ class StudentFeeManagement {
 						sfm_date(x.payment_date),
 					])}</p>`,
 				},
-				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Reason for deleting"), reqd: 1 },
+				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Reason for deleting"), reqd: 1, description: SFM_REMARKS_HINT },
 			],
 			primary_action_label: __("Delete Stipend Payment"),
 			primary_action: async ({ remarks }) => {
-				if (!(remarks || "").trim()) return frappe.msgprint(__("Remarks are mandatory."));
+				if (sfm_remarks_error(remarks)) return frappe.msgprint(sfm_remarks_error(remarks));
 				await frappe.call({
 					method: SFM_API + "delete_stipend",
 					args: { student: p.name, stipend_payment: x.name, remarks },

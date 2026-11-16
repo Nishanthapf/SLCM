@@ -32,10 +32,18 @@ def _check_access():
 	frappe.only_for(ALLOWED_ROLES)
 
 
-def _require_remarks(remarks):
+REMARKS_MIN_LENGTH = 15
+
+
+def _require_remarks(remarks, label=None):
+	"""Remarks / reasons on every Student Due Details action: mandatory, at least REMARKS_MIN_LENGTH characters."""
 	remarks = (remarks or "").strip()
-	if not remarks:
-		frappe.throw(_("Remarks are mandatory."))
+	if len(remarks) < REMARKS_MIN_LENGTH:
+		frappe.throw(
+			_("{0} must be at least {1} characters (currently {2}).").format(
+				label or _("Remarks"), REMARKS_MIN_LENGTH, len(remarks)
+			)
+		)
 	return remarks
 
 
@@ -406,7 +414,7 @@ def get_student_dues(student):
 		"Fee Refund",
 		filters={"student": student},
 		fields=[
-			"name", "fee_demand", "fee_component", "refund_type", "refund_amount",
+			"name", "refund_source", "fee_demand", "fee_component", "refund_type", "refund_amount",
 			"refund_date", "refund_mode", "utr_number", "status", "docstatus", "reason",
 		],
 		order_by="refund_date desc, creation desc",
@@ -968,10 +976,11 @@ def get_refund_bank_details(student):
 	bank = frappe.db.get_value(
 		"Student Master",
 		student,
-		["savings_bank_name", "savings_account_number", "savings_ifsc_code"],
+		["savings_account_holder_name", "savings_bank_name", "savings_account_number", "savings_ifsc_code"],
 		as_dict=True,
 	) or {}
 	return {
+		"account_holder_name": bank.get("savings_account_holder_name"),
 		"bank_name": bank.get("savings_bank_name"),
 		"account_number": bank.get("savings_account_number"),
 		"ifsc_code": bank.get("savings_ifsc_code"),
@@ -990,15 +999,18 @@ def refund_from_excess(
 	utr_number=None,
 	transaction_date=None,
 	remarks=None,
+	account_holder_name=None,
 ):
 	"""Refund part or all of the student's excess: a submitted Fee Refund (source Excess Amount)
 	that draws down their active Student Credit Notes, oldest first."""
 	_check_access()
-	remarks = _require_remarks(remarks)
+	remarks = _require_remarks(remarks, _("Reason for Refund"))
 	if flt(amount) <= 0:
 		frappe.throw(_("Amount must be greater than zero."))
-	if refund_mode in ("NEFT", "Cheque", "Online") and not (bank_name and account_number and ifsc_code):
-		frappe.throw(_("Bank Name, Account Number and IFSC Code are required for {0} refunds.").format(refund_mode))
+	if refund_mode in ("NEFT", "Cheque", "Online") and not (account_holder_name and bank_name and account_number and ifsc_code):
+		frappe.throw(
+			_("Account Holder Name, Bank Name, Account Number and IFSC Code are required for {0} refunds.").format(refund_mode)
+		)
 
 	doc = frappe.new_doc("Fee Refund")
 	doc.update({
@@ -1009,6 +1021,7 @@ def refund_from_excess(
 		"refund_amount": flt(amount),
 		"refund_date": refund_date or today(),
 		"refund_mode": refund_mode,
+		"account_holder_name": account_holder_name,
 		"bank_name": bank_name,
 		"account_number": account_number,
 		"ifsc_code": ifsc_code,

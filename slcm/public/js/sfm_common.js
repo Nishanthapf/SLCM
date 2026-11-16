@@ -516,6 +516,11 @@ function sfm_inject_styles() {
 	.sfm-icon-btn-danger { color: #b42318; }
 	.sfm-icon-btn-danger:hover:not(:disabled) { background: #fef3f2; border-color: #b42318; }
 	.sfm-row-actions { display: inline-flex; gap: 6px; }
+	/* fixed column grid (colgroup widths) so stacked tables line up; long values wrap inside their column */
+	.sfm-table.sfm-table-fixed { table-layout: fixed; min-width: 900px; }
+	.sfm-table.sfm-table-fixed td, .sfm-table.sfm-table-fixed th { overflow-wrap: anywhere; }
+	.sfm-adj-line { display: flex; flex-direction: column; line-height: 1.45; }
+	.sfm-adj-line + .sfm-adj-line { margin-top: 4px; }
 	[data-theme="dark"] .sfm-icon-btn-danger { color: #fda29b; }
 	[data-theme="dark"] .sfm-icon-btn-danger:hover:not(:disabled) { background: rgba(180, 35, 24, .18); }
 	.sfm-disabled-wrap { display: inline-block; cursor: not-allowed; }

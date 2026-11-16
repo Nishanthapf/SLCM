@@ -134,9 +134,9 @@ def _reverse(doctype, name, remarks):
 def delete_import(data_import, remarks=None):
 	"""Reverse every record a fee bulk upload created that is still active. All or nothing."""
 	_check_access()
-	remarks = (remarks or "").strip()
-	if not remarks:
-		frappe.throw(_("Remarks are mandatory."))
+	from slcm.slcm.page.student_fee_management.student_fee_management import _require_remarks
+
+	remarks = _require_remarks(remarks)
 	doctype = frappe.db.get_value("Data Import", data_import, "reference_doctype")
 	if doctype not in BULK_DOCTYPES:
 		frappe.throw(_("{0} is not a fee bulk upload.").format(data_import))

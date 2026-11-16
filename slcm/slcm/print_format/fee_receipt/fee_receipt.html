@@ -1,14 +1,40 @@
-{% set student = frappe.get_doc("Student Master", doc.student) %}
-{% set nls_logo = "/files/nlsiu-logo.jpg" %}
+{#- Fee Receipt (doctype Fee Receipt). Same design as "Fee Payment Receipt - Admin Copy": used by the Download Receipt
+    buttons on Student Master / Fee Demand (slcm.api.student_portal.download_fee_demand_receipt_admin), where `doc` may
+    be filtered to one due's row of demands_paid. -#}
+{% set org_name = "NATIONAL LAW SCHOOL OF INDIA UNIVERSITY" %}
+{% set logo     = "/files/nlsiu-logo.jpg" %}
+
+{% set sm = frappe.get_doc("Student Master", doc.student, ignore_permissions=True) if doc.student else None %}
+{% set fp = frappe.get_doc("Fee Payment", doc.fee_payment, ignore_permissions=True) if doc.fee_payment and frappe.db.exists("Fee Payment", doc.fee_payment) else None %}
+
+{% set student_full    = ([sm.first_name or "", sm.middle_name or "", sm.last_name or ""] | select | join(" ")) if sm else (doc.student_name or "—") %}
+{% set registration_id = doc.registration_id or (sm.registration_id if sm and sm.registration_id else "Not Available") %}
+{% set programme       = doc.programme or (frappe.db.get_value("Programme", sm.programme_of_study, "program_name") if sm and sm.programme_of_study else None) or "—" %}
+{% set payment_date    = (fp.payment_date if fp and fp.payment_date else doc.receipt_date) %}
+{% set txn_date        = (fp.transaction_date if fp and fp.transaction_date else (doc.transaction_date or payment_date)) %}
+{% set amount_paid     = frappe.utils.flt(doc.amount or 0) %}
+
+{# Academic Year in progress on the payment date (latest year started on or before it), so a reprint never
+   changes; falls back to the year marked current, then to what the receipt stored. #}
+{% set ay_on_date  = frappe.get_all("Academic Year", filters=[["year_start_date", "<=", payment_date]], fields=["name"], order_by="year_start_date desc", limit_page_length=1) if payment_date else [] %}
+{% set academic_yr = (ay_on_date[0].name if ay_on_date else (frappe.db.get_value("Academic Year", {"is_current_year": 1}, "name") or doc.academic_year or "—")) %}
 
 {% include "slcm/templates/print/nls_receipt_style.html" %}
 <style>
-  /* One A4 page in every renderer (PDF download and browser print): the shared style's 355mm minimum height is
-     taller than A4, so the box sizes to its content and is never split across pages. */
+  /* Fully ruled particulars table (local to this format; shared style untouched) */
+  .print-format .nls-doc .nls-table.nls-grid, .nls-table.nls-grid { border: 1px solid #000; }
+  .print-format .nls-doc .nls-table.nls-grid th, .print-format .nls-doc .nls-table.nls-grid td,
+  .nls-table.nls-grid th, .nls-table.nls-grid td { border: 1px solid #000 !important; }
+  .print-format .nls-doc .nls-table.nls-grid tfoot td, .nls-table.nls-grid tfoot td { border-top: 2px solid #000 !important; }
+  /* Footer note: set apart from the payment details */
+  .print-format .nls-doc .nls-note, .nls-doc .nls-note {
+    margin-top: 40px !important; padding-top: 10px !important; border-top: 1px dashed #000;
+    text-align: center; font-style: italic; font-size: 10.5pt;
+  }
+  /* One A4 page in every renderer (PDF download and browser print) */
   .print-format .nls-doc .nls-copy.is-page, .nls-copy.is-page { min-height: 0 !important; }
   .nls-copy { page-break-inside: avoid; break-inside: avoid; }
   @page { size: A4; margin: 10mm; }
-  /* tighter rows so a payment covering many dues still fits */
   .print-format .nls-doc .nls-table th, .print-format .nls-doc .nls-table td { padding: 4px 10px !important; }
   .print-format .nls-doc .nls-meta td { padding: 3px 6px !important; }
 </style>
@@ -16,60 +42,45 @@
 
 <div class="nls-copy is-page">
 
-  <!-- Header -->
   <div class="nls-head">
-    <img src="{{ nls_logo }}" alt="NLS Logo">
-    <div class="nls-inst">National Law School of India University</div>
+    <img src="{{ logo }}" alt="NLS Logo">
+    <div class="nls-inst">{{ org_name }}</div>
   </div>
 
-  <!-- Title -->
-  <div class="nls-title">Receipt (Admin Copy)</div>
+  <div class="nls-title">Receipt</div>
 
-  <!-- Meta row 1: Registration ID + Student Name, Receipt Number + Date -->
   <table class="nls-meta">
     <tr>
       <td class="lbl">Registration ID:</td>
-      <td class="val">{{ doc.registration_id or student.registration_id or "Not Available" }}</td>
+      <td class="val">{{ registration_id }}</td>
       <td class="lbl">Student Name:</td>
-      <td class="val">{{ student.first_name }} {{ student.last_name or "" }}</td>
+      <td class="val">{{ student_full }}</td>
     </tr>
     <tr>
       <td class="lbl">Receipt Number:</td>
-      <td style="padding: 4px 6px; font-size: 11.5pt;">
-        <span class="nls-boxed">{{ doc.name }}</span>
-      </td>
-      <td class="lbl">Date:</td>
-      <td class="val">{{ frappe.utils.formatdate(doc.receipt_date, "dd-MM-yyyy") }}</td>
-    </tr>
-  </table>
-
-  
-
-  <!-- Meta row 2: Academic Year + Application Number, Programme + Year -->
-  <table class="nls-meta">
-    <tr>
-      <td class="lbl">Academic Year:</td>
-      <td class="val">{{ doc.academic_year or student.academic_year or "—" }}</td>
-      <td class="lbl">Application Number:</td>
-      <td class="val">{{ student.application_number or "Not Available" }}</td>
-    </tr>
-    <tr>
-      <td class="lbl">Programme:</td>
-      <td class="val">{{ doc.programme or student.programme or "—" }}</td>
-      <td class="lbl">Year:</td>
-      <td class="val">{{ doc.year_of_study or student.year_of_study or "—" }}</td>
+      <td class="val" style="font-weight:600;">{{ doc.name }}</td>
+      <td class="lbl">Payment Date:</td>
+      <td class="val">{{ frappe.utils.formatdate(payment_date, "dd/MM/yyyy") if payment_date else "—" }}</td>
     </tr>
   </table>
 
   <hr class="nls-divider">
 
-  <!-- Particulars Table -->
-  <table class="nls-table">
+  <table class="nls-meta">
+    <tr>
+      <td class="lbl">Academic Year:</td>
+      <td class="val">{{ academic_yr }}</td>
+      <td class="lbl">Programme:</td>
+      <td class="val">{{ programme }}</td>
+    </tr>
+  </table>
+
+  <table class="nls-table nls-grid">
     <thead>
       <tr>
         <th style="width:10%">Sl No.</th>
         <th>Particulars</th>
-        <th style="width:25%">Amount</th>
+        <th style="width:26%">Amount (INR)</th>
       </tr>
     </thead>
     <tbody>
@@ -77,52 +88,49 @@
         {% for row in doc.demands_paid %}
         <tr>
           <td>{{ loop.index }}</td>
-          <td>{{ row.description or row.fee_demand }}</td>
-          <td>INR {{ "{:,.1f}".format(row.amount) }}</td>
+          <td>{{ row.description or row.fee_demand or "—" }}</td>
+          <td>{{ "{:,.2f}".format(frappe.utils.flt(row.amount or 0)) }}</td>
         </tr>
         {% endfor %}
       {% else %}
         <tr>
           <td>1</td>
           <td>Fee Payment</td>
-          <td>INR {{ "{:,.1f}".format(doc.amount) }}</td>
+          <td>{{ "{:,.2f}".format(amount_paid) }}</td>
         </tr>
       {% endif %}
     </tbody>
     <tfoot>
       <tr>
         <td colspan="2">Total Paid</td>
-        <td>INR {{ "{:,.1f}".format(doc.amount) }}</td>
+        <td>{{ "{:,.2f}".format(amount_paid) }}</td>
       </tr>
     </tfoot>
   </table>
 
-  <!-- Amount in words -->
   <div class="nls-words">
-    {{ frappe.utils.money_in_words(doc.amount, "INR") }}
+    {{ frappe.utils.money_in_words(amount_paid, "INR") | replace("INR ", "Rupees ") }}
   </div>
 
   <hr class="nls-divider">
 
-  <!-- Payment Details -->
   <table class="nls-meta">
     <tr>
       <td class="lbl">Payment Mode:</td>
-      <td class="val">{{ doc.payment_mode or "—" }}</td>
-      <td class="lbl">Transaction Id:</td>
-      <td class="val">{{ doc.reference_number or "—" }}</td>
+      <td class="val">{{ (fp.payment_mode if fp else None) or doc.payment_mode or "—" }}</td>
+      <td class="lbl">Transaction ID:</td>
+      <td class="val">{{ (fp.reference_number if fp else None) or doc.reference_number or "N/A" }}</td>
     </tr>
     <tr>
       <td class="lbl">Transaction Date:</td>
-      <td class="val">{{ frappe.utils.formatdate(doc.receipt_date, "yyyy-MM-dd") }}</td>
-      <td class="lbl">Amount:</td>
-      <td class="val">INR {{ "{:,.0f}".format(doc.amount) }}</td>
+      <td class="val">{{ frappe.utils.formatdate(txn_date, "dd/MM/yyyy") if txn_date else "—" }}</td>
+      <td class="lbl">Amount Paid:</td>
+      <td class="val">INR {{ "{:,.0f}".format(amount_paid) }}</td>
     </tr>
   </table>
 
-  <!-- Footer -->
   <div class="nls-note">
-    This is a computer generated receipt, hence it does not require signature/seal.
+    This is a computer-generated receipt and does not require a signature or seal.
   </div>
 
 </div>

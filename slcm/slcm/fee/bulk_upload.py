@@ -101,12 +101,12 @@ REFUND_COLUMNS = [  # same order as the Fee Refund form
 	("Refund Amount", 15, None, "money"),
 	("Refund Date", 14, None, "date"),
 	("Refund Mode", 16, None, "select:refund_mode"),
+	("Account Holder Name", 26, "account_holder_name", "text"),
 	("Bank Name", 24, "bank_name", "text"),
 	("Account Number", 20, "account_number", "text"),
 	("IFSC Code", 14, "ifsc_code", "text"),
 	("UTR / Reference Number", 24, None, "text"),
 	("Reason for Refund", 36, None, "text"),
-	("Remarks", 30, None, "text"),
 	("Transaction Date", 15, None, "date"),
 ]
 REFUND_SOURCES = ("Excess Amount", "Fee Demand")
@@ -352,7 +352,8 @@ def get_refund_rows(refund_source="Excess Amount", academic_year=None, programme
 		frappe.throw(_("Refund Source must be Excess Amount or Fee Demand."))
 	conditions, values = _student_conditions(academic_year, programme)
 	extra = "".join(f" AND {c}" for c in conditions)
-	bank = """sm.savings_bank_name AS bank_name, sm.savings_account_number AS account_number,
+	bank = """sm.savings_account_holder_name AS account_holder_name, sm.savings_bank_name AS bank_name,
+		sm.savings_account_number AS account_number,
 		sm.savings_ifsc_code AS ifsc_code"""
 	reg = "IFNULL(NULLIF(sm.registration_id, ''), sm.application_number) AS registration_id"
 	if refund_source == "Excess Amount":
@@ -402,7 +403,10 @@ def _refund_template(refund_source, academic_year, programme, csv):
 	ws[f"{col['Refund Amount']}1"].comment = Comment(
 		_("Delete the rows you are not refunding. Excess: up to Available Excess. Fee Demand: up to Amount Paid."), "SLCM"
 	)
-	ws[f"{col['Bank Name']}1"].comment = Comment(_("Pre-filled from the student's bank details; correct if needed."), "SLCM")
+	ws[f"{col['Account Holder Name']}1"].comment = Comment(
+		_("Pre-filled from the student's bank details; correct if needed. Account holder, bank, account number and IFSC are required for NEFT / Cheque / Online."),
+		"SLCM",
+	)
 	for row in rows:
 		ws.append(row)
 	last = max(ws.max_row, 2)
