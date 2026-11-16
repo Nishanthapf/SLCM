@@ -95,7 +95,8 @@
    "fieldtype": "Datetime",
    "in_list_view": 1,
    "label": "Swipe Time",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "device_id",
@@ -189,7 +190,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-02 14:26:53.094048",
+ "modified": "2026-11-16 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Attendance Log",

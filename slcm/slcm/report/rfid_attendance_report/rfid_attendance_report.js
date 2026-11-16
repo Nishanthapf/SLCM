@@ -71,23 +71,29 @@ function rfid_multiselect_get_data(filter_name) {
 	document.head.appendChild(style);
 })();
 
-// Default range: the last 7 days, start of the first day to end of today.
+// Default range: the last 7 days (times blank = start / end of day).
 function rfid_default_from() {
-	return frappe.datetime.add_days(frappe.datetime.get_today(), -6) + " 00:00:00";
+	return frappe.datetime.add_days(frappe.datetime.get_today(), -6);
 }
 function rfid_default_to() {
-	return frappe.datetime.get_today() + " 23:59:59";
+	return frappe.datetime.get_today();
+}
+
+function rfid_pct_colour(pct) {
+	if (pct >= 75) return "#1d7347";
+	if (pct >= 50) return "#9a5b00";
+	return "#8b1a1a";
 }
 
 const RFID_REPORT_API = "slcm.slcm.report.rfid_attendance_report.rfid_attendance_report";
-const RFID_MULTISELECTS = ["academic_year", "programme", "terminal_alias", "venue", "student"];
+const RFID_MULTISELECTS = ["academic_year", "programme", "terminal_alias", "venue", "student", "class_name", "course"];
+const RFID_CLASS_NUMBERS = ["enrolled", "swiped", "marked_present"];
 
 frappe.query_reports["RFID Attendance Report"] = {
 
 	onload: function (report) {
-		// ── Reset Filters button ─────────────────────────────────────────────
-		// ── Excel download: report + student-wise + most-swiped sheets ──────
-		report.page.add_inner_button(__("Download Excel"), function () {
+		// ── Download menu: Excel (all sheets) / CSV (this report) / CSV (all sheets, .zip) ──
+		const rfid_download = function (method, extra) {
 			let filters;
 			try {
 				filters = report.get_filter_values(true);
@@ -95,9 +101,12 @@ frappe.query_reports["RFID Attendance Report"] = {
 				return; // a required filter is missing; Frappe already shows "Please set filters"
 			}
 			if (!filters) return;
-			open_url_post(`/api/method/${RFID_REPORT_API}.download_excel`, { filters: filters });
-			frappe.show_alert({ message: __("Preparing Excel — the download starts in a moment."), indicator: "blue" });
-		}).css({ "font-weight": "600" });
+			open_url_post(`/api/method/${RFID_REPORT_API}.${method}`, Object.assign({ filters: filters }, extra || {}));
+			frappe.show_alert({ message: __("Preparing the file — the download starts in a moment."), indicator: "blue" });
+		};
+		report.page.add_inner_button(__("Excel (.xlsx)"), () => rfid_download("download_excel"), __("Download"));
+		report.page.add_inner_button(__("CSV – this report"), () => rfid_download("download_csv", { scope: "report" }), __("Download"));
+		report.page.add_inner_button(__("CSV – all sheets (.zip)"), () => rfid_download("download_csv", { scope: "all" }), __("Download"));
 
 		report.page.add_inner_button(__("Reset Filters"), function () {
 
@@ -108,9 +117,12 @@ frappe.query_reports["RFID Attendance Report"] = {
 			});
 
 			// Reset scalar filters to defaults
+			report.get_filter("report_type").set_input("Terminal-wise");
 			report.get_filter("view_by").set_input("Daily");
 			report.get_filter("from_date").set_input(rfid_default_from());
 			report.get_filter("to_date").set_input(rfid_default_to());
+			report.get_filter("from_time").set_input("");
+			report.get_filter("to_time").set_input("");
 			report.get_filter("known_only").set_input(0);
 
 			// Clear the URL params so stale values don't re-apply on refresh
@@ -136,6 +148,15 @@ frappe.query_reports["RFID Attendance Report"] = {
 
 	filters: [
 		{
+			fieldname: "report_type",
+			label: __("Report"),
+			fieldtype: "Select",
+			options: "Terminal-wise\nClass-wise",
+			default: "Terminal-wise",
+			reqd: 1,
+			on_change: function () { frappe.query_report.refresh(); }
+		},
+		{
 			fieldname: "view_by",
 			label: __("View By"),
 			fieldtype: "Select",
@@ -146,17 +167,29 @@ frappe.query_reports["RFID Attendance Report"] = {
 		},
 		{
 			fieldname: "from_date",
-			label: __("From"),
-			fieldtype: "Datetime",
+			label: __("From Date"),
+			fieldtype: "Date",
 			default: rfid_default_from(),
 			reqd: 1
 		},
 		{
+			fieldname: "from_time",
+			label: __("From Time"),
+			fieldtype: "Time",
+			description: __("Blank = 00:00")
+		},
+		{
 			fieldname: "to_date",
-			label: __("To"),
-			fieldtype: "Datetime",
+			label: __("To Date"),
+			fieldtype: "Date",
 			default: rfid_default_to(),
 			reqd: 1
+		},
+		{
+			fieldname: "to_time",
+			label: __("To Time"),
+			fieldtype: "Time",
+			description: __("Blank = end of day")
 		},
 		{
 			fieldname: "academic_year",
@@ -189,10 +222,23 @@ frappe.query_reports["RFID Attendance Report"] = {
 			get_data: rfid_multiselect_get_data("student")
 		},
 		{
+			fieldname: "class_name",
+			label: __("Class"),
+			fieldtype: "MultiSelectList",
+			get_data: rfid_multiselect_get_data("class_name")
+		},
+		{
+			fieldname: "course",
+			label: __("Course"),
+			fieldtype: "MultiSelectList",
+			get_data: rfid_multiselect_get_data("course")
+		},
+		{
 			fieldname: "known_only",
 			label: __("Known Students Only"),
 			fieldtype: "Check",
-			default: 0
+			default: 0,
+			depends_on: "eval:doc.report_type !== 'Class-wise'"
 		}
 	],
 
@@ -210,10 +256,19 @@ frappe.query_reports["RFID Attendance Report"] = {
 					? `<span style="color:#2b2e4a;font-weight:700">${esc(m[1])}</span><span style="color:#6b7280;font-size:.85em;margin-left:6px">(${esc(m[2])})</span>`
 					: `<span style="color:#2b2e4a;font-weight:700">${esc(raw)}</span>`;
 			}
-			if (column.fieldname === "terminal_alias") {
-				return `<span style="color:#2b2e4a;font-style:italic;font-size:.85em">${esc(data.terminal_alias || "")}</span>`;
+			if (column.fieldname === "terminal_alias" || column.fieldname === "course") {
+				return `<span style="color:#2b2e4a;font-style:italic;font-size:.85em">${esc(data[column.fieldname] || "")}</span>`;
 			}
-			if (["total_swipes", "unique_students"].includes(column.fieldname)) {
+			if (column.fieldname === "at_venue" && data.at_venue == null) {
+				return `<span style="color:#9ca3af">—</span>`;
+			}
+			if (column.fieldname === "swipe_pct") {
+				return `<b style="color:${rfid_pct_colour(data.swipe_pct)}">${data.swipe_pct}%</b>`;
+			}
+			if (column.fieldname === "not_swiped" && data.not_swiped > 0) {
+				return `<b style="color:#8b1a1a">${data.not_swiped}</b>`;
+			}
+			if (["total_swipes", "unique_students", ...RFID_CLASS_NUMBERS, "at_venue"].includes(column.fieldname)) {
 				return `<b style="color:#2b2e4a">${data[column.fieldname] || 0}</b>`;
 			}
 			if (column.fieldname === "unknown_swipes" && data.unknown_swipes > 0) {
@@ -232,6 +287,21 @@ frappe.query_reports["RFID Attendance Report"] = {
 		}
 		if (column.fieldname === "unknown_swipes" && data.unknown_swipes > 0) {
 			return `<span style="color:#8b1a1a;font-weight:600">${data.unknown_swipes}</span>`;
+		}
+
+		// ── Class row (Class-wise) ─────────────────────────────────────────
+		if (column.fieldname === "swipe_pct" && data.enrolled) {
+			return `<span style="color:${rfid_pct_colour(data.swipe_pct)};font-weight:600">${data.swipe_pct}%</span>`;
+		}
+		if (column.fieldname === "not_swiped" && data.not_swiped > 0) {
+			return `<span style="color:#8b1a1a;font-weight:600">${data.not_swiped}</span>`;
+		}
+		if (column.fieldname === "at_venue" && data.at_venue == null && data.time_table) {
+			return `<span style="color:#9ca3af" title="${esc(__("No reader is mapped to this venue on this date"))}">—</span>`;
+		}
+		if (column.fieldname === "rfid_activated" && data.rfid_activated) {
+			const yes = data.rfid_activated === __("Yes");
+			return `<span style="color:${yes ? "#1d7347" : "#9a5b00"};font-weight:600">${esc(data.rfid_activated)}</span>`;
 		}
 		return value;
 	},

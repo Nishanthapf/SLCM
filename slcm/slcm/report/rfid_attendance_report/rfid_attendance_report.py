@@ -4,25 +4,35 @@
 """
 RFID Attendance Report
 ======================
-Swipe activity per period, broken down by terminal and venue.
+Two report types, picked with the "Report" filter:
 
-On screen (two levels):
+Terminal-wise (default) — swipe activity per period by terminal and venue.
   Period row  : totals across all terminals for the Hour / Day / Week / Month
   Detail rows : one per terminal (reader) + venue in that period
 
-Filters: View By, From / To (datetime; a date alone means start of day for
-From and end of day for To), academic year, programme, terminal, venue,
-student, known students only.
+Class-wise — one row per class (Time Table entry) in the range: enrolled vs
+  swiped, at the class venue, marked present, RFID activated. See class_wise.py.
+
+Filters: Report, View By, From Date + From Time, To Date + To Time (one
+continuous range; blank times mean start / end of day), academic year,
+programme, terminal, venue, student, class, course, known students only.
+In Terminal-wise, Class / Course keep the swipes of students enrolled there.
 
 Venue comes from RFID Device Room Mapping (device -> Venue Master on the
 swipe date), falling back to the log's own location text.
 
-Excel download (same filters) — student-level detail lives here, not on screen:
+Excel download (same filters) — student-level detail lives here, not on screen.
+Terminal-wise:
   Report                  the on-screen table
   Student-wise (Daily)    one row per student per day
   Student Totals          one row per student for the whole range
   Most Swiped - Daily / Weekly / Monthly
                           top student per period, overall and per terminal
+Class-wise:
+  Class-wise              the on-screen table
+  Class Students          one row per class per enrolled student
+  Not Swiped              the Class Students rows with no swipe
+  Student Summary         one row per student: classes, swiped, present
 """
 
 import calendar as _calendar
@@ -33,15 +43,24 @@ from collections import OrderedDict
 
 import frappe
 from frappe import _
-from frappe.utils import add_to_date, get_datetime, getdate
+from frappe.utils import add_to_date, get_datetime, get_time, getdate
 
 from slcm.permissions import AAD_ROLES
+from slcm.slcm.report.rfid_attendance_report import class_wise
 
 REPORT_NAME = "RFID Attendance Report"
 VIEWS = ("Hourly", "Daily", "Weekly", "Monthly")
-MULTISELECT_FILTERS = ("academic_year", "programme", "terminal_alias", "venue", "student")
+REPORT_TYPES = ("Terminal-wise", "Class-wise")
+MULTISELECT_FILTERS = ("academic_year", "programme", "terminal_alias", "venue", "student", "class_name", "course")
 NOT_MAPPED = "Not mapped"
 MAX_EXCEL_ROWS = 300000
+MAX_SPLIT_SHEETS = 40
+# Filters whose selected values each get their own sheet in the Excel, in this order.
+SPLIT_FILTERS = (
+	("class_name", "Class"), ("course", "Course"), ("programme", "Programme"),
+	("academic_year", "Academic Year"), ("venue", "Venue"), ("terminal_alias", "Terminal"),
+	("student", "Student"),
+)
 
 # Venue of the reader on the swipe date (Venue Master via RFID Device Room
 # Mapping); falls back to the log's location text, then NOT_MAPPED.
@@ -77,18 +96,40 @@ def get_filter_options(filter_name, txt=""):
 		""", {"like": like}, as_dict=True)
 		return [{"label": f"{r.first_name or r.name}  ({r.name})", "value": r.name, "description": ""} for r in rows]
 
+	if filter_name == "class_name":
+		rows = frappe.db.sql("""
+			SELECT name, course_name, section FROM `tabClasses`
+			WHERE name LIKE %(like)s OR course_name LIKE %(like)s OR course LIKE %(like)s
+			ORDER BY modified DESC LIMIT 50
+		""", {"like": like}, as_dict=True)
+		return [{"label": r.name, "value": r.name,
+		         "description": " · ".join(x for x in (r.course_name, r.section) if x)} for r in rows]
+
+	if filter_name == "course":
+		rows = frappe.db.sql("""
+			SELECT DISTINCT c.course, c.course_name FROM `tabClasses` c
+			WHERE IFNULL(c.course, '') != '' AND (c.course LIKE %(like)s OR c.course_name LIKE %(like)s)
+			ORDER BY c.course_name LIMIT 50
+		""", {"like": like}, as_dict=True)
+		return [{"label": r.course_name or r.course, "value": r.course, "description": r.course} for r in rows]
+
 	if filter_name == "academic_year":
-		sql = """SELECT DISTINCT academic_year FROM `tabStudent Master`
-			WHERE IFNULL(academic_year, '') != '' AND academic_year LIKE %(like)s ORDER BY academic_year DESC"""
+		sql = """SELECT v FROM (
+				SELECT DISTINCT academic_year AS v FROM `tabStudent Master` WHERE IFNULL(academic_year, '') != ''
+				UNION SELECT DISTINCT academic_year FROM `tabTime Table` WHERE IFNULL(academic_year, '') != ''
+			) x WHERE v LIKE %(like)s ORDER BY v DESC"""
 	elif filter_name == "programme":
-		sql = """SELECT DISTINCT programme_of_study FROM `tabStudent Master`
-			WHERE IFNULL(programme_of_study, '') != '' AND programme_of_study LIKE %(like)s ORDER BY programme_of_study"""
+		sql = """SELECT v FROM (
+				SELECT DISTINCT programme_of_study AS v FROM `tabStudent Master` WHERE IFNULL(programme_of_study, '') != ''
+				UNION SELECT DISTINCT programme FROM `tabTime Table` WHERE IFNULL(programme, '') != ''
+			) x WHERE v LIKE %(like)s ORDER BY v"""
 	elif filter_name == "terminal_alias":
 		sql = """SELECT DISTINCT terminal_alias FROM `tabAttendance Log`
 			WHERE IFNULL(terminal_alias, '') != '' AND terminal_alias LIKE %(like)s ORDER BY terminal_alias"""
 	elif filter_name == "venue":
 		sql = """SELECT v FROM (
 				SELECT DISTINCT room AS v FROM `tabRFID Device Room Mapping` WHERE is_active = 1
+				UNION SELECT name FROM `tabVenue Master` WHERE is_active = 1
 				UNION SELECT DISTINCT location FROM `tabAttendance Log` WHERE IFNULL(location, '') != ''
 			) x WHERE v LIKE %(like)s ORDER BY v"""
 	else:
@@ -105,8 +146,14 @@ def get_filter_options(filter_name, txt=""):
 def execute(filters=None):
 	filters = frappe._dict(filters or {})
 	_validate(filters)
-	base, params = _base_query(filters)
 
+	if _is_class_wise(filters):
+		ctx = class_wise.collect(filters, _parse_multiselect, VENUE_EXPR, TERMINAL_EXPR)
+		data = class_wise.get_data(filters, ctx, _period_label)
+		return (class_wise.get_columns(filters), data, None,
+		        class_wise.get_chart(data, filters), class_wise.get_summary(data))
+
+	base, params = _base_query(filters)
 	columns = _get_columns(filters)
 	data = _get_data(filters, base, params)
 	summary = _get_summary(base, params)
@@ -117,38 +164,56 @@ def execute(filters=None):
 # ── Validation ─────────────────────────────────────────────────────────────────
 
 def _validate(filters):
-	"""Normalise From / To into filters.from_dt (inclusive) and filters.to_dt
-	(exclusive). A To value with no time part covers that whole day; a To
-	with a time includes that whole second."""
-	if not filters.get("from_date") or not filters.get("to_date"):
-		frappe.throw(_("From and To are required."))
-	try:
-		from_dt = get_datetime(filters.from_date)
-		to_dt = get_datetime(filters.to_date)
-	except Exception:
-		frappe.throw(_("From and To must be valid dates/times."))
-	if not from_dt or not to_dt:
-		frappe.throw(_("From and To must be valid dates/times."))
+	"""Combine From Date + From Time and To Date + To Time into one continuous
+	range: filters.from_dt (inclusive) and filters.to_dt (exclusive).
 
-	from_dt = from_dt.replace(microsecond=0)
-	to_dt = to_dt.replace(microsecond=0)
-	if _has_no_time(filters.to_date):
-		to_dt = add_to_date(to_dt, days=1)
-	else:
+	A blank From Time means 00:00:00; a blank To Time means the end of To Date;
+	a To Time includes that whole second. A date filter that already carries a
+	time (older links from the datetime version) keeps it unless a separate
+	time is given."""
+	if not filters.get("from_date") or not filters.get("to_date"):
+		frappe.throw(_("From Date and To Date are required."))
+
+	from_dt = _combine(filters.from_date, filters.get("from_time"), _("From"))
+	to_dt = _combine(filters.to_date, filters.get("to_time"), _("To"))
+
+	if filters.get("to_time") or not _has_no_time(filters.to_date):
 		to_dt = add_to_date(to_dt, seconds=1)
+	else:
+		to_dt = add_to_date(to_dt, days=1)
 
 	if from_dt >= to_dt:
-		frappe.throw(_("From must be before To."))
+		frappe.throw(_("From Date / Time must be before To Date / Time."))
 	if (filters.get("view_by") or "Daily") not in VIEWS:
 		frappe.throw(_("View By must be one of: {0}").format(", ".join(VIEWS)))
+	if (filters.get("report_type") or REPORT_TYPES[0]) not in REPORT_TYPES:
+		frappe.throw(_("Report must be one of: {0}").format(", ".join(REPORT_TYPES)))
 
 	filters.from_dt, filters.to_dt = from_dt, to_dt
 
 
+def _is_class_wise(filters):
+	return filters.get("report_type") == "Class-wise"
+
+
+def _combine(date_value, time_value, label):
+	try:
+		value = get_datetime(date_value)
+		if value and time_value:
+			value = _dt.datetime.combine(value.date(), get_time(time_value))
+	except Exception:
+		value = None
+	if not value:
+		frappe.throw(_("{0} Date / Time is not valid.").format(label))
+	return value.replace(microsecond=0)
+
+
 def _has_no_time(value):
-	return isinstance(value, _dt.date) and not isinstance(value, _dt.datetime) or (
-		isinstance(value, str) and len(value.strip()) <= 10
-	)
+	if isinstance(value, _dt.datetime):
+		return False
+	if isinstance(value, _dt.date):
+		return True
+	return isinstance(value, str) and len(value.strip()) <= 10
 
 
 # ── Columns ────────────────────────────────────────────────────────────────────
@@ -213,6 +278,23 @@ def _base_query(filters):
 
 	if filters.get("known_only"):
 		conditions.append("(al.student IS NOT NULL AND al.student != '')")
+
+	# Class / Course: keep swipes of students currently enrolled in those classes.
+	class_conds = []
+	for fieldname, expr, prefix in (("class_name", "c.name", "c"), ("course", "c.course", "o")):
+		values = _parse_multiselect(filters.get(fieldname))
+		if values:
+			keys = []
+			for i, v in enumerate(values):
+				params[f"{prefix}_{i}"] = v
+				keys.append(f"%({prefix}_{i})s")
+			class_conds.append(f"{expr} IN ({', '.join(keys)})")
+	if class_conds:
+		conditions.append(f"""al.student IN (
+			SELECT se.student FROM `tabClasses` c
+			JOIN `tabClass Enrolled Student` ces ON ces.parent = c.name AND ces.parenttype = 'Classes'
+			JOIN `tabStudent Enrollment` se ON se.name = ces.student_enrollment
+			WHERE ces.status = 'Enrolled' AND se.status = 'Enrolled' AND {' AND '.join(class_conds)})""")
 
 	sql = f"""
 		SELECT al.swipe_time AS swipe_time, al.student AS student,
@@ -351,23 +433,7 @@ def _get_chart(data, filters):
 @frappe.whitelist()
 def download_excel(filters):
 	"""Multi-sheet workbook for the current filters (see module docstring)."""
-	if not frappe.get_doc("Report", REPORT_NAME).is_permitted():
-		frappe.throw(_("Not permitted"), frappe.PermissionError)
-
-	filters = frappe._dict(frappe.parse_json(filters) if isinstance(filters, str) else (filters or {}))
-	filters.setdefault("view_by", "Daily")
-	_validate(filters)
-	base, params = _base_query(filters)
-
-	student_daily = _student_daily_rows(base, params)
-	if len(student_daily) > MAX_EXCEL_ROWS:
-		frappe.throw(_("Too many rows ({0}) for one download. Narrow the date range or filters.").format(len(student_daily)))
-
-	report_rows = _get_data(filters, base, params)
-	totals = _student_total_rows(base, params)
-	top = {view: _most_swiped_rows(view, base, params) for view in ("Daily", "Weekly", "Monthly")}
-
-	info = _student_info({r.student for r in student_daily})
+	filters = _download_filters(filters)
 
 	from openpyxl import Workbook
 	from openpyxl.cell import WriteOnlyCell
@@ -378,11 +444,18 @@ def download_excel(filters):
 	header_fill = PatternFill("solid", fgColor="2B2E4A")
 	bold = Font(bold=True)
 
+	used_titles = set()
+
 	def sheet(title, headers, widths, rows, note=None, bold_rows=None):
-		ws = wb.create_sheet(title=title)
+		ws = wb.create_sheet(title=_sheet_title(title, used_titles))
 		for idx, width in enumerate(widths, start=1):
 			ws.column_dimensions[_col_letter(idx)].width = width
-		ws.freeze_panes = "A3" if note else "A2"
+		first_data = "A3" if note else "A2"
+		ws.freeze_panes = first_data
+		# Put the cursor on the first data row; a cursor inside the frozen header
+		# makes some spreadsheet apps open the sheet scrolled past the data.
+		ws.sheet_view.selection[-1].activeCell = first_data
+		ws.sheet_view.selection[-1].sqref = first_data
 		if note:
 			cell = WriteOnlyCell(ws, value=note)
 			cell.font = Font(italic=True, color="555555")
@@ -405,20 +478,176 @@ def download_excel(filters):
 			else:
 				ws.append(row)
 
-	scope = _scope_note(filters)
+	_write_sheets(filters, sheet)
 
-	# 1. Report (as on screen)
+	buf = io.BytesIO()
+	wb.save(buf)
+	_send_file(_download_name(filters, "xlsx"), buf.getvalue())
+
+
+@frappe.whitelist()
+def download_csv(filters, scope="report"):
+	"""CSV export. scope="report": one .csv of the on-screen table (the overall
+	sheet). scope="all": a .zip with one .csv per Excel sheet + README.txt
+	listing the filters behind each file. UTF-8 with BOM so Excel opens it."""
+	import csv
+	import zipfile
+
+	if scope not in ("report", "all"):
+		frappe.throw(_("Unknown CSV scope."))
+	filters = _download_filters(filters)
+
+	tables = []  # (title, note, headers, rows)
+	used_titles = set()
+
+	def sheet(title, headers, widths, rows, note=None, bold_rows=None):
+		tables.append((_sheet_title(title, used_titles), note or "", headers, rows))
+
+	_write_sheets(filters, sheet, main_only=(scope == "report"))
+
+	def to_csv(headers, rows):
+		out = io.StringIO()
+		writer = csv.writer(out)
+		writer.writerow(headers)
+		for row in rows:
+			writer.writerow([_csv_value(v) for v in row])
+		return ("\ufeff" + out.getvalue()).encode("utf-8")
+
+	if scope == "report":
+		title, note, headers, rows = tables[0]
+		_send_file(_download_name(filters, "csv"), to_csv(headers, rows))
+		return
+
+	buf = io.BytesIO()
+	readme = [_("RFID Attendance Report — CSV export"), ""]
+	with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+		for i, (title, note, headers, rows) in enumerate(tables, start=1):
+			name = f"{i:02d} {_file_safe(title)}.csv"
+			zf.writestr(name, to_csv(headers, rows))
+			readme.append(f"{name}  ({len(rows)} rows)")
+			readme.append(f"    {note}")
+		zf.writestr("README.txt", "\n".join(readme) + "\n")
+	_send_file(_download_name(filters, "zip"), buf.getvalue())
+
+
+def _download_filters(filters):
+	if not frappe.get_doc("Report", REPORT_NAME).is_permitted():
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	filters = frappe._dict(frappe.parse_json(filters) if isinstance(filters, str) else (filters or {}))
+	filters.setdefault("view_by", "Daily")
+	_validate(filters)
+	return filters
+
+
+def _write_sheets(filters, sheet, main_only=False):
+	"""Feed every table of the download to `sheet` (Excel or CSV writer)."""
+	scope = _scope_note(filters)
+	if _is_class_wise(filters):
+		_class_wise_sheets(filters, sheet, scope, main_only)
+	else:
+		_terminal_sheets(filters, sheet, scope, main_only)
+
+
+def _download_name(filters, ext):
+	kind = "Class" if _is_class_wise(filters) else "Swipes"
+	return "RFID_{0}_{1}_to_{2}.{3}".format(
+		kind, filters.from_dt.strftime("%Y-%m-%d_%H%M"), _last_second(filters).strftime("%Y-%m-%d_%H%M"), ext)
+
+
+def _send_file(filename, content):
+	frappe.response.filename = filename
+	frappe.response.filecontent = content
+	frappe.response.type = "binary"
+
+
+def _csv_value(value):
+	if value is None:
+		return ""
+	if isinstance(value, _dt.datetime):
+		return value.strftime("%Y-%m-%d %H:%M:%S")
+	if isinstance(value, _dt.date):
+		return value.isoformat()
+	if isinstance(value, _dt.time):
+		return value.strftime("%H:%M:%S")
+	return value
+
+
+def _file_safe(name):
+	return "".join("-" if ch in '<>:"/\\|?*' else ch for ch in name).strip() or "sheet"
+
+
+def _class_wise_sheets(filters, sheet, scope, main_only=False):
+	ctx = class_wise.collect(filters, _parse_multiselect, VENUE_EXPR, TERMINAL_EXPR)
+	rows = class_wise.get_data(filters, ctx, _period_label)
+	if main_only:
+		_class_table(sheet, _("Class-wise"), filters, rows, scope)
+		return
+	students = class_wise.student_rows(ctx)
+	if len(students) > MAX_EXCEL_ROWS:
+		frappe.throw(_("Too many rows ({0}) for one download. Narrow the date range or filters.").format(len(students)))
+	note = scope + " · " + _("Swiped = a tap from {0} min before the class start to its end; "
+	                         "Enrolled = students currently enrolled in the class.").format(class_wise.SWIPE_GRACE_MINUTES)
+
+	splits = _split_values(filters)
+	class_note = " · " + _("Swiped = a tap from {0} min before the class start to its end; "
+	                       "Enrolled = students currently enrolled in the class.").format(class_wise.SWIPE_GRACE_MINUTES)
+	_class_table(sheet, _("Overall Class-wise") if splits else _("Class-wise"), filters, rows,
+	             note + _split_note(splits))
+	for fieldname, label, value in splits:
+		sub = _single_value_filters(filters, fieldname, value)
+		sub_ctx = class_wise.collect(sub, _parse_multiselect, VENUE_EXPR, TERMINAL_EXPR)
+		_class_table(sheet, value, sub, class_wise.get_data(sub, sub_ctx, _period_label),
+		             _scope_note(sub) + class_note)
+
+	headers = [_("Date"), _("Day"), _("Time"), _("Course"), _("Class"), _("Section"), _("Faculty"), _("Venue"),
+	           _("Student ID"), _("Student Name"), _("Programme"), _("Academic Year"), _("Swiped"), _("Swipes"),
+	           _("First Swipe"), _("Last Swipe"), _("Terminals"), _("At Venue"), _("Attendance"), _("Time Table")]
+	widths = [12, 11, 13, 34, 26, 10, 24, 20, 22, 28, 34, 14, 9, 9, 12, 12, 30, 10, 14, 20]
+
+	def as_row(r):
+		return [r.date, _WEEKDAYS[r.date.weekday()], r.time, r.course, r.class_name, r.section, r.faculty, r.venue,
+		        r.student, r.student_name, r.programme, r.academic_year, _("Yes") if r.swiped else _("No"),
+		        r.swipes, _time_only(r.first_swipe), _time_only(r.last_swipe), r.terminals, r.at_venue,
+		        r.attendance, r.time_table]
+
+	sheet(_("Class Students"), headers, widths, [as_row(r) for r in students], note=note)
+	sheet(_("Not Swiped"), headers, widths, [as_row(r) for r in students if not r.swiped], note=note)
+
+	summary = class_wise.student_summary(students)
 	sheet(
-		_("Report"),
-		[_("Period"), _("Terminal / Room"), _("Venue"), _("Total Swipes"), _("Unique Students"),
-		 _("Unknown Swipes"), _("First Swipe"), _("Last Swipe")],
-		[30, 22, 26, 13, 15, 15, 20, 20],
-		[[_period_label(r["period_key"], filters.view_by) if r.get("is_period_row") else "",
-		  r["terminal_alias"], r["venue"], r["total_swipes"], r["unique_students"], r["unknown_swipes"],
-		  _naive(r["first_swipe"]), _naive(r["last_swipe"])] for r in report_rows],
-		note=scope,
-		bold_rows=lambda i: bool(report_rows[i].get("is_period_row")),
+		_("Student Summary"),
+		[_("Student ID"), _("Student Name"), _("Programme"), _("Academic Year"), _("Classes"), _("Swiped"),
+		 _("Not Swiped"), _("Swiped %"), _("Marked Present")],
+		[22, 28, 34, 14, 10, 10, 11, 10, 15],
+		[[a.student, a.student_name, a.programme, a.academic_year, a.classes, a.swiped, a.not_swiped,
+		  a.swipe_pct, a.present] for a in summary],
+		note=note + " · " + _("Lowest swipe rate first."),
 	)
+
+
+def _terminal_sheets(filters, sheet, scope, main_only=False):
+	base, params = _base_query(filters)
+	if main_only:
+		_terminal_table(sheet, _("Report"), filters, _get_data(filters, base, params), scope)
+		return
+
+	student_daily = _student_daily_rows(base, params)
+	if len(student_daily) > MAX_EXCEL_ROWS:
+		frappe.throw(_("Too many rows ({0}) for one download. Narrow the date range or filters.").format(len(student_daily)))
+
+	report_rows = _get_data(filters, base, params)
+	totals = _student_total_rows(base, params)
+	top = {view: _most_swiped_rows(view, base, params) for view in ("Daily", "Weekly", "Monthly")}
+	info = _student_info({r.student for r in student_daily})
+
+	# 1. Overall report (as on screen), then one sheet per selected filter value
+	splits = _split_values(filters)
+	_terminal_table(sheet, _("Overall Report") if splits else _("Report"), filters, report_rows,
+	                scope + _split_note(splits))
+	for fieldname, label, value in splits:
+		sub = _single_value_filters(filters, fieldname, value)
+		sub_base, sub_params = _base_query(sub)
+		_terminal_table(sheet, value, sub, _get_data(sub, sub_base, sub_params), _scope_note(sub))
 
 	# 2. Student-wise (Daily)
 	sheet(
@@ -461,12 +690,76 @@ def download_excel(filters):
 			bold_rows=lambda i, rows=rows: rows[i]["terminal"] == _("All terminals"),
 		)
 
-	buf = io.BytesIO()
-	wb.save(buf)
-	frappe.response.filename = "RFID_Swipes_{0}_to_{1}.xlsx".format(
-		filters.from_dt.strftime("%Y-%m-%d_%H%M"), _last_second(filters).strftime("%Y-%m-%d_%H%M"))
-	frappe.response.filecontent = buf.getvalue()
-	frappe.response.type = "binary"
+
+def _terminal_table(sheet, title, filters, rows, note):
+	sheet(
+		title,
+		[_("Period"), _("Terminal / Room"), _("Venue"), _("Total Swipes"), _("Unique Students"),
+		 _("Unknown Swipes"), _("First Swipe"), _("Last Swipe")],
+		[30, 22, 26, 13, 15, 15, 20, 20],
+		[[_period_label(r["period_key"], filters.view_by) if r.get("is_period_row") else "",
+		  r["terminal_alias"], r["venue"], r["total_swipes"], r["unique_students"], r["unknown_swipes"],
+		  _naive(r["first_swipe"]), _naive(r["last_swipe"])] for r in rows],
+		note=note,
+		bold_rows=lambda i: bool(rows[i].get("is_period_row")),
+	)
+
+
+def _class_table(sheet, title, filters, rows, note):
+	sheet(
+		title,
+		[_("Period"), _("Time"), _("Course"), _("Class"), _("Section"), _("Faculty"), _("Venue"), _("Enrolled"),
+		 _("Swiped"), _("Swiped %"), _("Not Swiped"), _("At Venue"), _("Marked Present"), _("RFID Activated"),
+		 _("Time Table")],
+		[30, 13, 34, 26, 10, 24, 20, 10, 9, 10, 11, 10, 15, 14, 20],
+		[[_period_label(r["period_key"], filters.view_by) if r.get("is_period_row") else "", r["class_time"],
+		  r["course"], r["class_name"], r["section"], r["faculty"], r["venue"], r["enrolled"], r["swiped"],
+		  r["swipe_pct"], r["not_swiped"], "—" if r["at_venue"] is None else r["at_venue"], r["marked_present"],
+		  r["rfid_activated"], r["time_table"]] for r in rows],
+		note=note,
+		bold_rows=lambda i: bool(rows[i].get("is_period_row")),
+	)
+
+
+def _split_values(filters):
+	"""[(fieldname, label, value)] for every filter with 2+ values selected —
+	each value gets its own sheet after the overall one. Capped so a huge
+	selection doesn't produce hundreds of sheets."""
+	out = []
+	for fieldname, label in SPLIT_FILTERS:
+		values = _parse_multiselect(filters.get(fieldname))
+		if len(values) >= 2:
+			out.extend((fieldname, label, v) for v in values)
+	return out[:MAX_SPLIT_SHEETS]
+
+
+def _split_note(splits):
+	if not splits:
+		return ""
+	labels = OrderedDict((label, None) for _f, label, _v in splits)
+	return " · " + _("Separate sheet per {0} follows").format(" / ".join(_(lbl) for lbl in labels))
+
+
+def _single_value_filters(filters, fieldname, value):
+	sub = frappe._dict(filters)
+	sub[fieldname] = [value]
+	return sub
+
+
+_INVALID_TITLE_CHARS = set('[]:*?/\\')
+
+
+def _sheet_title(title, used):
+	"""Excel sheet names: max 31 chars, no []:*?/\\, no edge apostrophes, unique (case-insensitive)."""
+	clean = "".join("-" if ch in _INVALID_TITLE_CHARS else ch for ch in str(title or "")).strip().strip("'") or "Sheet"
+	base = clean[:31]
+	candidate, n = base, 2
+	while candidate.lower() in used or candidate.lower() == "history":
+		suffix = f" ({n})"
+		candidate = base[:31 - len(suffix)] + suffix
+		n += 1
+	used.add(candidate.lower())
+	return candidate
 
 
 def _student_daily_rows(base, params):
@@ -558,14 +851,15 @@ def _student_cols(info, student):
 
 
 def _scope_note(filters):
-	parts = [_("{0} to {1}").format(
+	parts = [filters.get("report_type") or REPORT_TYPES[0], _("{0} to {1}").format(
 		filters.from_dt.strftime("%Y-%m-%d %H:%M:%S"), _last_second(filters).strftime("%Y-%m-%d %H:%M:%S"))]
 	for key, label in (("programme", _("Programme")), ("academic_year", _("Academic Year")),
-	                   ("terminal_alias", _("Terminal")), ("venue", _("Venue")), ("student", _("Student"))):
+	                   ("terminal_alias", _("Terminal")), ("venue", _("Venue")), ("student", _("Student")),
+	                   ("class_name", _("Class")), ("course", _("Course"))):
 		values = _parse_multiselect(filters.get(key))
 		if values:
 			parts.append(f"{label}: {', '.join(values)}")
-	if filters.get("known_only"):
+	if filters.get("known_only") and not _is_class_wise(filters):
 		parts.append(_("known students only"))
 	return _("RFID swipes") + " · " + " · ".join(parts)
 
