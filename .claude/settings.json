@@ -110,10 +110,31 @@
       "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && head -4 /tmp/ut.sql > /tmp/ut2.sql && bench --site slcm.com mariadb -t < /tmp/ut2.sql 2>&1 | head -30; echo; bench --site slcm.com mariadb -t -e \"select count\\(*\\) total, sum\\(state=\\\\\"Union Territory\\\\\"\\) ut from \\\\`tabStudent Master\\\\`; select name, state, district, city, country from \\\\`tabStudent Master\\\\` where name=\\\\\"STUD-2026-03698\\\\\";\" 2>&1')",
       "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && bench --site slcm.com mariadb -t < /tmp/ut3.sql 2>&1')",
       "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd /tmp && python3 -I /tmp/find_ut.py 2>&1 | head -60')",
-      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd /tmp && ~/frappe-bench/env/bin/python -I /tmp/find_ut.py 2>&1 | head -60')"
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd /tmp && ~/frappe-bench/env/bin/python -I /tmp/find_ut.py 2>&1 | head -60')",
+      "Bash(rm \"//wsl.localhost/Ubuntu-24.04/home/n_l_s_i_u/frappe-bench/apps/slcm/slcm/scratch/dash_probe.py\")",
+      "Bash(cd \"//wsl.localhost/Ubuntu-24.04/home/n_l_s_i_u/frappe-bench/apps/helpdesk/desk\" && cat tailwind.config.js postcss.config.js; cat vite-helpers.* | head -60; sed -n 1,30p src/main.* ; grep -rn \"@import\\\\|@tailwind\" src/index.css 2>/dev/null | head)",
+      "Read(///wsl.localhost/Ubuntu-24.04/home/n_l_s_i_u/frappe-bench/apps/helpdesk/**)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8000/assets/slcm/frontend/admission_dashboard/manifest.json)",
+      "PowerShell($out = \"$env:TEMP\\\\claude\\\\e5ceb92a86c8925a\\\\8c4d351c-72d7-4123-a063-2ed7a15b628b\\\\scratchpad\"; $prof = \"$out\\\\chrome-prof\"; & \"C:\\\\Program Files\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe\" --headless=new --disable-gpu --user-data-dir=\"$prof\" --window-size=1500,1000 --virtual-time-budget=20000 --screenshot=\"$out\\\\list.png\" \"http://localhost:8000/app/admission-dashboard?sid=ca82fc71bbd28483d764dcd1fd55cee875e83ecf57faa9b402c962b7\" 2>$null | Out-Null; Start-Sleep -Seconds 2; Get-Item \"$out\\\\list.png\" | Select-Object Length)",
+      "PowerShell($out = \"$env:TEMP\\\\claude\\\\e5ceb92a86c8925a\\\\8c4d351c-72d7-4123-a063-2ed7a15b628b\\\\scratchpad\"; & \"$out\\\\cdp.ps1\" -Sid \"ca82fc71bbd28483d764dcd1fd55cee875e83ecf57faa9b402c962b7\" -Out $out)",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && bench --site slcm.com mariadb -t < /tmp/sb.sql 2>&1')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && bench --site slcm.com mariadb -t < /tmp/di.sql 2>&1')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && bench --site slcm.com mariadb -t < /tmp/sbx.sql 2>&1; ls apps/slcm/slcm/sidebar 2>/dev/null; find apps/slcm/slcm -path \"*/sidebar/*\" -name \"*.json\" | head -20')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench/apps/frappe/frappe && sed -n 50,75p model/sync.py; grep -n \"Sidebar\\\\|standard\\\\|modified\" modules/import_file.py | head -40; ls desk/doctype/sidebar/; grep -n \"def \\\\|standard\" desk/doctype/sidebar/sidebar.py | head -40')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench/apps/frappe/frappe && sed -n 185,330p desk/doctype/sidebar/sidebar.py')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench/apps/frappe/frappe && ls public/icons/ 2>/dev/null; ls public/icons/lucide 2>/dev/null | head; grep -rl \"id=\\\\\"icon-calendar-clock\\\\\"\\\\|id=\\\\\"calendar-clock\\\\\"\" public/icons 2>/dev/null | head')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && bench --site slcm.com execute slcm.scratch.gen_fee_sidebar.run 2>&1 | tail -8')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && bench --site slcm.com mariadb -t < /tmp/md.sql 2>&1; grep -o \"id=\\\\\"[a-z-]*\\\\\\(warning\\\\|alert\\\\|x\\\\\\)[a-z-]*\\\\\"\" apps/frappe/frappe/public/icons/lucide/icons.svg | grep -i file | sort -u | tr \"\\\\n\" \" \"; echo; grep -rln \"Easebuzz Settings\" apps/*/*/*/doctype/*/ 2>/dev/null | head -3')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench/apps/frappe/frappe && sed -n 95,180p desk/doctype/sidebar/sidebar.py; grep -n \"def get_sidebar_bases\" -A40 desk/doctype/sidebar/*.py desk/*.py 2>/dev/null | head -60')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && bench --site slcm.com mariadb -t < /tmp/md2.sql 2>&1')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && bench --site slcm.com mariadb -t < /tmp/verify.sql 2>&1')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && bench --site slcm.com execute frappe.db.set_value --args \"[\\\\\"Dock Item\\\\\", {\\\\\"parent\\\\\": \\\\\"f3ks4g8mtf\\\\\", \\\\\"link_to\\\\\": \\\\\"Fee Management\\\\\"}, {\\\\\"link_to\\\\\": \\\\\"Fees Management\\\\\", \\\\\"title\\\\\": \\\\\"Fees Management\\\\\"}]\" && bench --site slcm.com execute frappe.db.commit && bench --site slcm.com clear-cache && bench --site slcm.com mariadb -t < /tmp/dk.sql 2>&1 | grep f3ks')",
+      "PowerShell($out = \"$env:TEMP\\\\claude\\\\e5ceb92a86c8925a\\\\8c4d351c-72d7-4123-a063-2ed7a15b628b\\\\scratchpad\"; & \"$out\\\\cdp2.ps1\" -Sid \"61dd0a74c8e11e5b07dc4db44014255fa5b4521c554d59d386f7a809\" -Out $out)"
     ],
     "additionalDirectories": [
-      "\\tmp"
+      "\\tmp",
+      "\\\\wsl.localhost\\Ubuntu-24.04\\home\\n_l_s_i_u\\frappe-bench\\apps\\slcm\\slcm\\scratch",
+      "\\\\wsl.localhost\\Ubuntu-24.04\\home\\n_l_s_i_u\\frappe-bench\\apps\\slcm\\src"
     ]
   }
 }

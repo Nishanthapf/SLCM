@@ -1,4 +1,9 @@
 {
+  "scripts": {
+    "postinstall": "cd frontend && yarn install --frozen-lockfile",
+    "build": "cd frontend && yarn install --frozen-lockfile && yarn build",
+    "dev": "cd frontend && yarn dev"
+  },
   "dependencies": {
     "country-state-city": "^3.2.1"
   },

@@ -1,0 +1,50 @@
+{
+ "actions": [],
+ "creation": "2026-11-16 18:00:00.000000",
+ "description": "Layout of the Admission Dashboard page (which number cards and charts are shown, and in what order). Edited from the Settings button on the dashboard.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "layout"
+ ],
+ "fields": [
+  {
+   "description": "Managed by the dashboard's Settings dialog.",
+   "fieldname": "layout",
+   "fieldtype": "JSON",
+   "label": "Layout"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-11-16 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Admission",
+ "name": "Admission Dashboard Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Admission Admin",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
