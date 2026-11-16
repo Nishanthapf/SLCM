@@ -102,7 +102,15 @@
       "Bash(sed -i 's/f\"{fmeta\\\\[fn\\\\]\\\\.label} \\({fn}\\)\"/f\"{fmeta[fn].label.strip\\(\\)} \\({fn}\\)\"/g' admissions_mapping.py)",
       "Bash(cd \"//wsl.localhost/Ubuntu-24.04/home/n_l_s_i_u/frappe-bench/apps/slcm/slcm/scratch\" *)",
       "Bash(cd \"//wsl.localhost/Ubuntu-24.04/home/n_l_s_i_u/frappe-bench/apps/slcm/slcm\" && grep -n -B2 -A8 '\"fieldname\": \"annual_income\"' slcm/doctype/student_master/student_master.json | grep -E 'fieldname|length|fieldtype'; grep -n -A8 '\"fieldname\": \"city\"' slcm/doctype/student_master/student_master.json | grep -E 'fieldname|length|fieldtype')",
-      "PowerShell(git fetch --all -q; git log --all --oneline -S \"Student Map card list\" | Select-Object -First 5; git log --all --oneline -S \"Try --cards again\" | Select-Object -First 5; git branch -a --contains \\(git log --all --format=%H -S \"Try --cards again\" | Select-Object -First 1\\))"
+      "PowerShell(git fetch --all -q; git log --all --oneline -S \"Student Map card list\" | Select-Object -First 5; git log --all --oneline -S \"Try --cards again\" | Select-Object -First 5; git branch -a --contains \\(git log --all --format=%H -S \"Try --cards again\" | Select-Object -First 1\\))",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 python3 -I /tmp/map_failures.py)",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && ls sites && cat sites/currentsite.txt 2>/dev/null; echo; grep -o \"\\\\\"default_site\\\\\"[^,]*\" sites/common_site_config.json')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && bench --site slcm.com mariadb < /tmp/ut.sql 2>&1 | tail -40')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && sed -i \"s/student_name, //\" /tmp/ut.sql && echo \"show columns from \\\\`tabStudent Master\\\\` like \\\\\"%name%\\\\\";\" >> /tmp/ut.sql && bench --site slcm.com mariadb < /tmp/ut.sql 2>&1 | tail -40')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && head -4 /tmp/ut.sql > /tmp/ut2.sql && bench --site slcm.com mariadb -t < /tmp/ut2.sql 2>&1 | head -30; echo; bench --site slcm.com mariadb -t -e \"select count\\(*\\) total, sum\\(state=\\\\\"Union Territory\\\\\"\\) ut from \\\\`tabStudent Master\\\\`; select name, state, district, city, country from \\\\`tabStudent Master\\\\` where name=\\\\\"STUD-2026-03698\\\\\";\" 2>&1')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && bench --site slcm.com mariadb -t < /tmp/ut3.sql 2>&1')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd /tmp && python3 -I /tmp/find_ut.py 2>&1 | head -60')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd /tmp && ~/frappe-bench/env/bin/python -I /tmp/find_ut.py 2>&1 | head -60')"
     ],
     "additionalDirectories": [
       "\\tmp"

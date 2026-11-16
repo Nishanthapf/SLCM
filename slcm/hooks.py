@@ -256,11 +256,6 @@ fixtures = [
             ]]
         ]
     },
-    # --- Student Portal Settings (single doctype — ships with defaults) ---
-    {
-        "doctype": "Student Portal Settings",
-        "filters": [["name", "=", "Student Portal Settings"]]
-    },
     # --- Attendance Settings (single doctype — ships with defaults) ---
     {
         "doctype": "Attendance Settings",
