@@ -166,6 +166,7 @@
   "loan_passbook",
   "tab_education",
   "class_x_details_section",
+  "class_x_exam_name",
   "class_x_completion_year",
   "class_x_school",
   "class_x_max_cgpa",
@@ -739,9 +740,8 @@
   {
    "depends_on": "eval:doc.state",
    "fieldname": "district",
-   "fieldtype": "Link",
-   "label": "District",
-   "options": "City"
+   "fieldtype": "Data",
+   "label": "District"
   },
   {
    "fieldname": "passport_available",
@@ -927,6 +927,11 @@
    "fieldname": "class_x_details_section",
    "fieldtype": "Section Break",
    "label": "Class X details"
+  },
+  {
+   "fieldname": "class_x_exam_name",
+   "fieldtype": "Data",
+   "label": "Name of Examination (Class X - as per marksheet)"
   },
   {
    "fieldname": "class_x_completion_year",
@@ -1750,7 +1755,7 @@
  ],
  "image_field": "passport_size_photo",
  "links": [],
- "modified": "2026-11-04 17:30:01.470612",
+ "modified": "2026-11-13 15:30:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Student Master",

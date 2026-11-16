@@ -537,19 +537,10 @@ frappe.ui.form.on("Student Master", {
 	},
 
 	state(frm) {
-		// Clear district when state changes
+		// Clear district when state changes (district is free text)
 		if (frm.doc.district) {
 			frm.set_value('district', '');
 		}
-
-		// Set filter for district based on selected state
-		frm.set_query('district', function () {
-			return {
-				filters: {
-					'state': frm.doc.state
-				}
-			};
-		});
 	}
 });
 
