@@ -1273,7 +1273,7 @@ class StudentFeeManagement {
 				},
 				{ fieldtype: "Date", fieldname: "payment_date", label: __("Payment Date"), reqd: 1, default: frappe.datetime.get_today() },
 				{ fieldtype: "Date", fieldname: "settlement_date", label: __("Settlement Date") },
-				{ fieldtype: "Select", fieldname: "university_bank_account", label: __("University bank account"), options: bank_accounts },
+				{ fieldtype: "Select", fieldname: "university_bank_account", label: __("University bank account"), options: bank_accounts, reqd: 1 },
 				{ fieldtype: "Data", fieldname: "bank_name", label: __("Bank Name") },
 				{ fieldtype: "Column Break" },
 				{ fieldtype: "Data", fieldname: "reference_number", label: __("Reference / UTR No."), reqd: 1 },
@@ -1282,6 +1282,7 @@ class StudentFeeManagement {
 			],
 			primary_action_label: __("Record Payment"),
 			primary_action: (values) => {
+				if (!values.university_bank_account) return frappe.msgprint(__("University bank account is mandatory."));
 				if (!(values.reference_number || "").trim()) return frappe.msgprint(__("Reference / UTR No. is mandatory."));
 				if (!(values.remarks || "").trim()) return frappe.msgprint(__("Remarks are mandatory."));
 				const allocations = [];

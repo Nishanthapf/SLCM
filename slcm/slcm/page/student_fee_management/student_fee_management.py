@@ -482,6 +482,8 @@ def record_payment(
 	reference_number = (reference_number or "").strip()
 	if not reference_number:
 		frappe.throw(_("Reference / UTR No. is mandatory."))
+	if not university_bank_account:
+		frappe.throw(_("University bank account is mandatory."))
 
 	allocations = frappe.parse_json(allocations) or []
 	allocations = [a for a in allocations if flt(a.get("amount")) > 0]
