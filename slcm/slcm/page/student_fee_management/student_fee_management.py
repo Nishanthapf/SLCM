@@ -362,8 +362,8 @@ def get_student_dues(student):
 		"Fee Payment",
 		filters={"student": student},
 		fields=[
-			"name", "payment_date", "payment_mode", "amount", "reference_number",
-			"transaction_date", "status", "docstatus", "receipt", "remarks", "university_bank_account",
+			"name", "payment_date", "payment_mode", "amount", "reference_number", "payment_gateway",
+			"settlement_date", "status", "docstatus", "receipt", "remarks", "university_bank_account",
 		],
 		order_by="payment_date desc, creation desc",
 	)
@@ -459,36 +459,39 @@ def get_student_dues(student):
 	}
 
 
-@frappe.whitelist()
-def record_payment(
-	student,
-	allocations,
-	payment_mode,
-	payment_date=None,
-	reference_number=None,
-	transaction_date=None,
-	bank_name=None,
-	remarks=None,
-	university_bank_account=None,
-	settlement_date=None,
-):
-	"""
-	Record one Fee Payment against one or more of a student's demands and submit it.
-	allocations: JSON list of {"fee_demand": ..., "amount": ...}.
-	Submitting runs the existing Fee Payment pipeline (demand status update, receipt, payment log).
-	"""
-	_check_access()
+def _payment_details(payment_mode, payment_date, reference_number, university_bank_account, settlement_date, remarks):
+	"""Validated header fields shared by Record Payment and Edit Payment."""
 	remarks = _require_remarks(remarks)
 	reference_number = (reference_number or "").strip()
+	if not payment_mode:
+		frappe.throw(_("Payment Mode is mandatory."))
+	if payment_mode == "Online Payment":
+		frappe.throw(_("Online payments are recorded by the payment gateway. Choose the mode the money was received in."))
 	if not reference_number:
 		frappe.throw(_("Reference / UTR No. is mandatory."))
 	if not university_bank_account:
 		frappe.throw(_("University bank account is mandatory."))
+	payment_date = payment_date or today()
+	return frappe._dict(
+		payment_mode=payment_mode,
+		payment_date=payment_date,
+		# settlement defaults to the payment date; staff may change it
+		settlement_date=settlement_date or payment_date,
+		reference_number=reference_number,
+		university_bank_account=university_bank_account,
+		remarks=remarks,
+	)
 
+
+def _submit_payment(student, allocations, details, amended_from=None):
+	"""Build, insert and submit one Fee Payment against the student's demands (allocations: list of
+	{"fee_demand", "amount"}). Submitting runs the Fee Payment pipeline (demand status, receipt, ERPNext)."""
 	allocations = frappe.parse_json(allocations) or []
 	allocations = [a for a in allocations if flt(a.get("amount")) > 0]
 	if not allocations:
 		frappe.throw(_("Enter an amount for at least one demand."))
+	if len({a["fee_demand"] for a in allocations}) != len(allocations):
+		frappe.throw(_("A due appears more than once in this payment."))
 
 	demand_names = [a["fee_demand"] for a in allocations]
 	demands = {
@@ -505,17 +508,19 @@ def record_payment(
 			frappe.throw(_("Fee Demand {0} does not belong to this student.").format(a["fee_demand"]))
 		if d.status in ("Paid", "Cancelled", "Waived"):
 			frappe.throw(_("Fee Demand {0} is {1} and cannot take a payment.").format(d.name, d.status))
+		if flt(a["amount"]) > flt(d.outstanding_amount) + 0.005:
+			frappe.throw(
+				_("Amount for {0} ({1}) exceeds its pending amount ({2}).").format(
+					d.name,
+					frappe.utils.fmt_money(a["amount"], currency="INR"),
+					frappe.utils.fmt_money(d.outstanding_amount, currency="INR"),
+				)
+			)
 
 	payment = frappe.new_doc("Fee Payment")
 	payment.student = student
-	payment.payment_date = payment_date or today()
-	payment.payment_mode = payment_mode
-	payment.reference_number = reference_number
-	payment.transaction_date = transaction_date
-	payment.bank_name = bank_name
-	payment.remarks = remarks
-	payment.university_bank_account = university_bank_account
-	payment.settlement_date = settlement_date or None
+	payment.update(details)
+	payment.amended_from = amended_from
 	payment.amount = sum(flt(a["amount"]) for a in allocations)
 	for a in allocations:
 		d = demands[a["fee_demand"]]
@@ -525,10 +530,123 @@ def record_payment(
 			"outstanding_amount": d.outstanding_amount,
 			"amount_allocated": flt(a["amount"]),
 		})
+	payment.flags.ignore_permissions = bool(amended_from)
 	payment.insert()
 	payment.submit()
+	return payment
 
+
+@frappe.whitelist()
+def record_payment(
+	student,
+	allocations,
+	payment_mode,
+	payment_date=None,
+	reference_number=None,
+	remarks=None,
+	university_bank_account=None,
+	settlement_date=None,
+):
+	"""
+	Record one offline Fee Payment against one or more of a student's demands and submit it.
+	allocations: JSON list of {"fee_demand": ..., "amount": ...}.
+	"""
+	_check_access()
+	details = _payment_details(
+		payment_mode, payment_date, reference_number, university_bank_account, settlement_date, remarks
+	)
+	payment = _submit_payment(student, allocations, details)
 	return {"payment": payment.name, "receipt": payment.receipt}
+
+
+def _editable_payment(payment, student):
+	"""The submitted offline Fee Payment, if it can still be edited or deleted; throws otherwise."""
+	if not frappe.db.exists("Fee Payment", payment):
+		frappe.throw(_("Fee Payment {0} was not found.").format(payment))
+	doc = frappe.get_doc("Fee Payment", payment)
+	if doc.student != student:
+		frappe.throw(_("Fee Payment {0} does not belong to this student.").format(payment))
+	if doc.docstatus != 1:
+		frappe.throw(_("Fee Payment {0} is not active (it is {1}).").format(payment, doc.status or _("a draft")))
+	if not doc.is_offline():
+		frappe.throw(
+			_("{0} is an online (gateway) payment. Only offline payments can be edited or deleted here.").format(payment)
+		)
+	for row in doc.payment_demands:
+		d = frappe.db.get_value(
+			"Fee Demand", row.fee_demand, ["refunded_amount", "moved_to_excess_amount"], as_dict=True
+		) or {}
+		if flt(d.get("refunded_amount")) > 0 or flt(d.get("moved_to_excess_amount")) > 0:
+			frappe.throw(
+				_("Money paid on {0} has been refunded or moved to excess, so {1} can no longer be edited or deleted.").format(
+					row.fee_demand, payment
+				)
+			)
+	if doc.receipt and frappe.db.exists("Student Credit Note", {"source_receipt": doc.receipt, "docstatus": 1}):
+		frappe.throw(_("A credit note was raised from receipt {0}, so {1} can no longer be edited or deleted.").format(doc.receipt, payment))
+	return doc
+
+
+def _cancel_payment(doc, remarks):
+	doc.add_comment("Comment", _("Cancelled from Student Due Details: {0}").format(remarks))
+	doc.flags.ignore_permissions = True
+	doc.cancel()
+
+
+@frappe.whitelist()
+def edit_payment(
+	student,
+	payment,
+	allocations,
+	payment_mode,
+	payment_date=None,
+	reference_number=None,
+	remarks=None,
+	university_bank_account=None,
+	settlement_date=None,
+):
+	"""Correct an offline payment: it is cancelled (dues, receipt and ERPNext entry reversed) and an amended
+	Fee Payment (FP-xxxx-1) is submitted in its place, all in one transaction - any error leaves the original."""
+	_check_access()
+	doc = _editable_payment(payment, student)
+	details = _payment_details(
+		payment_mode, payment_date, reference_number, university_bank_account, settlement_date, remarks
+	)
+	allocations = frappe.parse_json(allocations) or []
+	own = {r.fee_demand: flt(r.amount_allocated) for r in doc.payment_demands}
+	for a in allocations:
+		name = a.get("fee_demand")
+		if name not in own:
+			frappe.throw(_("Fee Demand {0} is not part of {1}.").format(name, payment))
+		# what the due can take once this payment is reversed
+		limit = flt(frappe.db.get_value("Fee Demand", name, "outstanding_amount")) + own[name]
+		if flt(a.get("amount")) < 0 or flt(a.get("amount")) > limit + 0.005:
+			frappe.throw(
+				_("Amount for {0} must be between 0 and {1}.").format(name, frappe.utils.fmt_money(limit, currency="INR"))
+			)
+	if not any(flt(a.get("amount")) > 0 for a in allocations):
+		frappe.throw(_("Enter an amount for at least one demand."))
+
+	# cancel + re-record succeed together or not at all
+	frappe.db.savepoint("sfm_edit_payment")
+	try:
+		_cancel_payment(doc, details.remarks)
+		new = _submit_payment(student, allocations, details, amended_from=doc.name)
+	except Exception:
+		frappe.db.rollback(save_point="sfm_edit_payment")
+		raise
+	return {"payment": new.name, "receipt": new.receipt, "old_payment": doc.name}
+
+
+@frappe.whitelist()
+def delete_payment(student, payment, remarks=None):
+	"""Delete an offline payment: it is cancelled, which re-opens the dues it paid, cancels its receipt and
+	reverses its ERPNext entry. The cancelled record stays for the audit trail."""
+	_check_access()
+	remarks = _require_remarks(remarks)
+	doc = _editable_payment(payment, student)
+	_cancel_payment(doc, remarks)
+	return {"payment": doc.name}
 
 
 @frappe.whitelist()

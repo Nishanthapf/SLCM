@@ -5,6 +5,8 @@
 
 const SFM_PAGE = "student-fee-management";
 const SFM_API = "slcm.slcm.page.student_fee_management.student_fee_management.";
+// Offline (staff-recorded) payments can be edited or deleted; gateway payments cannot. Mirrors FeePayment.is_offline.
+const SFM_OFFLINE_EDITABLE = (p) => p.docstatus === 1 && !p.payment_gateway && p.payment_mode !== "Online Payment";
 const SFM_PAGE_SIZES = [10, 25, 50, 100];
 
 frappe.pages[SFM_PAGE].on_page_load = function (wrapper) {
@@ -1251,12 +1253,41 @@ class StudentFeeManagement {
 		}
 	}
 
-	async payment_dialog(demands) {
+	// Record Payment (payment = null) or Edit Payment (payment = a row of this.detail.payments).
+	// Editing cancels the payment and submits an amended one in its place (server: edit_payment).
+	async payment_dialog(demands, payment = null) {
 		const student = this.detail.profile.name;
+		const editing = !!payment;
 		await frappe.model.with_doctype("Fee Payment");
 		const bank_accounts = ((frappe.meta.get_docfield("Fee Payment", "university_bank_account") || {}).options || "").split("\n");
-		const dialog = new frappe.ui.Dialog({
-			title: __("Record Payment"),
+		const modes = ["Cash", "Bank Transfer", "Cheque", "Credit Card", "Debit Card", "Other"];
+		if (editing && payment.payment_mode && !modes.includes(payment.payment_mode)) modes.push(payment.payment_mode);
+
+		// rows: what each due can take now. Editing re-opens this payment's own allocation, so its max adds it back.
+		const rows = editing
+			? (payment.allocations || []).map((a) => {
+					const d = this.detail.demands.find((x) => x.name === a.fee_demand) || {};
+					const max = flt(d.outstanding_amount) + flt(a.amount_allocated);
+					return { name: a.fee_demand, fee_component: d.fee_component || a.demand_description || "", pending: max, value: flt(a.amount_allocated) };
+			  })
+			: demands.map((d) => ({ name: d.name, fee_component: d.fee_component || "", pending: flt(d.outstanding_amount), value: flt(d.outstanding_amount) }));
+
+		const today = frappe.datetime.get_today();
+		const start_payment_date = editing ? payment.payment_date || today : today;
+		const start_settlement_date = editing ? payment.settlement_date || start_payment_date : start_payment_date;
+		// Settlement Date follows Payment Date until staff change it by hand.
+		let auto_settlement = start_payment_date;
+		let dialog = null;
+		const sync_settlement = () => {
+			if (!dialog) return; // onchange can fire while the dialog is still being built
+			const pd = dialog.get_value("payment_date");
+			const sd = dialog.get_value("settlement_date");
+			if (pd && (!sd || sd === auto_settlement)) dialog.set_value("settlement_date", pd);
+			auto_settlement = pd;
+		};
+
+		dialog = new frappe.ui.Dialog({
+			title: editing ? __("Edit Payment {0}", [payment.name]) : __("Record Payment"),
 			size: "large",
 			fields: [
 				{ fieldtype: "HTML", fieldname: "alloc" },
@@ -1266,23 +1297,47 @@ class StudentFeeManagement {
 					fieldname: "payment_mode",
 					label: __("Payment Mode"),
 					reqd: 1,
-					options: ["Cash", "Bank Transfer", "Cheque", "Credit Card", "Debit Card", "Online Payment", "Other"],
-					default: "Bank Transfer",
+					options: modes,
+					default: editing ? payment.payment_mode : "Bank Transfer",
 				},
-				{ fieldtype: "Date", fieldname: "payment_date", label: __("Payment Date"), reqd: 1, default: frappe.datetime.get_today() },
-				{ fieldtype: "Date", fieldname: "settlement_date", label: __("Settlement Date") },
-				{ fieldtype: "Select", fieldname: "university_bank_account", label: __("University bank account"), options: bank_accounts, reqd: 1 },
-				{ fieldtype: "Data", fieldname: "bank_name", label: __("Bank Name") },
+				{ fieldtype: "Date", fieldname: "payment_date", label: __("Payment Date"), reqd: 1, default: start_payment_date, onchange: () => sync_settlement() },
+				{
+					fieldtype: "Date",
+					fieldname: "settlement_date",
+					label: __("Settlement Date"),
+					default: start_settlement_date,
+					description: __("Same as the payment date unless changed."),
+				},
+				{
+					fieldtype: "Select",
+					fieldname: "university_bank_account",
+					label: __("University bank account"),
+					options: bank_accounts,
+					reqd: 1,
+					default: editing ? payment.university_bank_account : "",
+				},
 				{ fieldtype: "Column Break" },
-				{ fieldtype: "Data", fieldname: "reference_number", label: __("Reference / UTR No."), reqd: 1 },
-				{ fieldtype: "Date", fieldname: "transaction_date", label: __("Transaction Date") },
-				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Remarks"), reqd: 1 },
+				{
+					fieldtype: "Data",
+					fieldname: "reference_number",
+					label: __("Reference / UTR No."),
+					reqd: 1,
+					default: editing ? payment.reference_number : "",
+					description: __("Must be unique: a UTR can be used for one transaction only."),
+				},
+				{
+					fieldtype: "Small Text",
+					fieldname: "remarks",
+					label: editing ? __("Reason for the change") : __("Remarks"),
+					reqd: 1,
+				},
 			],
-			primary_action_label: __("Record Payment"),
+			primary_action_label: editing ? __("Save Changes") : __("Record Payment"),
 			primary_action: (values) => {
 				if (!values.university_bank_account) return frappe.msgprint(__("University bank account is mandatory."));
 				if (!(values.reference_number || "").trim()) return frappe.msgprint(__("Reference / UTR No. is mandatory."));
 				if (!(values.remarks || "").trim()) return frappe.msgprint(__("Remarks are mandatory."));
+				values.reference_number = values.reference_number.trim();
 				const allocations = [];
 				let invalid = null;
 				$alloc.find("input.sfm-alloc").each((_, el) => {
@@ -1295,22 +1350,20 @@ class StudentFeeManagement {
 				if (!allocations.length) return frappe.msgprint(__("Enter an amount for at least one due."));
 
 				const total = allocations.reduce((a, r) => a + r.amount, 0);
-				frappe.confirm(__("Record a {0} payment of <b>{1}</b> against {2} due(s)?", [values.payment_mode, sfm_money(total), allocations.length]), async () => {
+				const question = editing
+					? __("Save changes to {0}? It will be cancelled and replaced by an amended payment of <b>{1}</b> with a new receipt.", [payment.name, sfm_money(total)])
+					: __("Record a {0} payment of <b>{1}</b> against {2} due(s)?", [values.payment_mode, sfm_money(total), allocations.length]);
+				frappe.confirm(question, async () => {
 					const r = await frappe.call({
-						method: SFM_API + "record_payment",
-						args: { student, allocations, ...values },
+						method: SFM_API + (editing ? "edit_payment" : "record_payment"),
+						args: editing ? { student, payment: payment.name, allocations, ...values } : { student, allocations, ...values },
 						freeze: true,
-						freeze_message: __("Recording payment…"),
+						freeze_message: editing ? __("Updating payment…") : __("Recording payment…"),
 					});
 					dialog.hide();
-					const { payment, receipt } = r.message;
-					frappe.show_alert(
-						{
-							message: receipt ? __("Payment {0} recorded · Receipt {1}", [payment, receipt]) : __("Payment {0} recorded", [payment]),
-							indicator: "green",
-						},
-						7
-					);
+					const { payment: name, receipt } = r.message;
+					const done = editing ? __("Payment {0} updated as {1}", [payment.name, name]) : __("Payment {0} recorded", [name]);
+					frappe.show_alert({ message: receipt ? `${done} · ${__("Receipt {0}", [receipt])}` : done, indicator: "green" }, 7);
 					this.selected.clear();
 					this.show_student(student);
 				});
@@ -1320,21 +1373,22 @@ class StudentFeeManagement {
 
 		const $alloc = dialog.fields_dict.alloc.$wrapper;
 		$alloc.html(`
+			${editing ? `<p class="sfm-muted">${__("Saving cancels {0} (and its receipt) and records an amended payment with a new receipt number.", [sfm_esc(payment.name)])}</p>` : ""}
 			<table class="sfm-table sfm-alloc-table">
 				<thead><tr>
 					<th scope="col">${__("Voucher No.")}</th><th scope="col">${__("Fee Component")}</th>
-					<th scope="col" class="num">${__("Pending")}</th><th scope="col" class="num">${__("Paying Now")}</th>
+					<th scope="col" class="num">${__("Pending")}</th><th scope="col" class="num">${editing ? __("Amount") : __("Paying Now")}</th>
 				</tr></thead>
 				<tbody>
-					${demands
+					${rows
 						.map(
 							(d) => `<tr>
 						<td>${sfm_esc(d.name)}</td>
-						<td>${sfm_esc(d.fee_component || "")}</td>
-						<td class="num">${sfm_money(d.outstanding_amount)}</td>
+						<td>${sfm_esc(d.fee_component)}</td>
+						<td class="num">${sfm_money(d.pending)}</td>
 						<td class="num"><input type="number" class="form-control input-sm sfm-alloc" min="0" step="0.01"
 							aria-label="${sfm_esc(__("Amount paying now for {0}", [d.name]))}"
-							data-name="${sfm_esc(d.name)}" data-max="${flt(d.outstanding_amount)}" value="${flt(d.outstanding_amount)}"></td>
+							data-name="${sfm_esc(d.name)}" data-max="${d.pending}" value="${d.value}"></td>
 					</tr>`
 						)
 						.join("")}
@@ -1349,6 +1403,40 @@ class StudentFeeManagement {
 		};
 		$alloc.on("input", "input.sfm-alloc", update_total);
 		update_total();
+		dialog.show();
+	}
+
+	delete_payment_dialog(payment) {
+		const student = this.detail.profile.name;
+		const dialog = new frappe.ui.Dialog({
+			title: __("Delete Payment {0}", [payment.name]),
+			fields: [
+				{
+					fieldtype: "HTML",
+					fieldname: "info",
+					options: `<p class="sfm-muted">${__(
+						"{0} · {1} · UTR {2}. Deleting cancels this payment and its receipt {3}, and re-opens the dues it paid. This cannot be undone.",
+						[sfm_esc(payment.payment_mode || ""), sfm_money(payment.amount), sfm_esc(payment.reference_number || "—"), sfm_esc(payment.receipt || "—")]
+					)}</p>`,
+				},
+				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Reason for deleting"), reqd: 1 },
+			],
+			primary_action_label: __("Delete Payment"),
+			primary_action: async ({ remarks }) => {
+				if (!(remarks || "").trim()) return frappe.msgprint(__("Remarks are mandatory."));
+				await frappe.call({
+					method: SFM_API + "delete_payment",
+					args: { student, payment: payment.name, remarks },
+					freeze: true,
+					freeze_message: __("Deleting payment…"),
+				});
+				dialog.hide();
+				frappe.show_alert({ message: __("Payment {0} deleted", [payment.name]), indicator: "green" }, 7);
+				this.show_student(student);
+			},
+		});
+		dialog.$wrapper.addClass("sfm-dialog");
+		dialog.get_primary_btn().removeClass("btn-primary").addClass("btn-danger");
 		dialog.show();
 	}
 
@@ -1613,6 +1701,7 @@ class StudentFeeManagement {
 						<th scope="col">${__("Payment No.")}</th><th scope="col">${__("Date")}</th><th scope="col">${__("Mode")}</th>
 						<th scope="col">${__("Reference")}</th><th scope="col">${__("Bank Account")}</th><th scope="col">${__("Allocated To")}</th>
 						<th scope="col" class="num">${__("Amount")}</th><th scope="col">${__("Receipt")}</th><th scope="col">${__("Status")}</th>
+						<th scope="col" class="center">${__("Actions")}</th>
 					</tr></thead>
 					<tbody>
 						${
@@ -1637,16 +1726,33 @@ class StudentFeeManagement {
 									: '<span class="sfm-sub">—</span>'
 							}</td>
 							<td>${sfm_badge(p.status || ["Draft", "Submitted", "Cancelled"][p.docstatus])}</td>
+							<td class="center">${
+								SFM_OFFLINE_EDITABLE(p)
+									? `<div class="sfm-row-actions" data-payment="${sfm_esc(p.name)}">
+										<button type="button" class="sfm-icon-btn sfm-icon-btn-sm" data-pay-act="edit"
+											aria-label="${sfm_esc(__("Edit payment {0}", [p.name]))}" title="${__("Edit")}">${sfm_icon("pencil", 14)}</button>
+										<button type="button" class="sfm-icon-btn sfm-icon-btn-sm sfm-icon-btn-danger" data-pay-act="delete"
+											aria-label="${sfm_esc(__("Delete payment {0}", [p.name]))}" title="${__("Delete")}">${sfm_icon("trash", 14)}</button>
+									</div>`
+									: `<span class="sfm-sub" title="${sfm_esc(p.docstatus === 1 ? __("Online payments cannot be edited") : "")}">—</span>`
+							}</td>
 						</tr>`
 										)
 										.join("")
-								: `<tr><td colspan="9"><div class="sfm-empty-state"><div class="sfm-empty-title">${__("No payments recorded for this student")}</div></div></td></tr>`
+								: `<tr><td colspan="10"><div class="sfm-empty-state"><div class="sfm-empty-title">${__("No payments recorded for this student")}</div></div></td></tr>`
 						}
 					</tbody>
 				</table>
 			</div></div>
 		`);
 		$body.on("click", "[data-receipt]", (e) => this.download_receipt($(e.currentTarget).data("receipt"), $(e.currentTarget)));
+		$body.on("click", "[data-pay-act]", (e) => {
+			const $btn = $(e.currentTarget);
+			const p = payments.find((x) => x.name === $btn.closest("[data-payment]").data("payment"));
+			if (!p) return;
+			if ($btn.data("pay-act") === "edit") this.payment_dialog(null, p);
+			else this.delete_payment_dialog(p);
+		});
 	}
 
 	// ── Excess Breakdown ─────────────────────────────────────────────────
