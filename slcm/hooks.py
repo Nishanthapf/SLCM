@@ -11,9 +11,11 @@ app_email = "tech4socialsector@azimpremjifoundation.org"
 app_license = "mit"
 
 # The erpnext_bridge entries are no-ops on sites without ERPNext.
-after_install = ["slcm.install.after_install", "slcm.erpnext_bridge.install.after_migrate"]
+after_install = ["slcm.install.after_install", "slcm.erpnext_bridge.install.after_migrate", "slcm.utils.fonts.install_print_fonts"]
 after_migrate = [
     "slcm.install.after_migrate",
+    # receipt fonts as system fonts, so wkhtmltopdf PDFs carry copyable text
+    "slcm.utils.fonts.install_print_fonts",
     "slcm.erpnext_bridge.install.after_migrate",
     "slcm.slcm.doctype.site_domain_settings.site_domain_settings.sync_after_migrate",
     "slcm.setup.nlsiu_admin_role.sync",

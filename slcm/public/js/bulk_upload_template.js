@@ -28,7 +28,7 @@
 			info: __(
 				"A blank sheet for creating fee demands — one row per demand. Voucher No. is assigned by the system, and " +
 					"Student Email / Name, Net Payable and Status are filled automatically. The “Students” sheet lists every " +
-					"Student ID with its Registration Id; the filters below only narrow that list."
+					"student with their Registration ID; the filters below only narrow that list."
 			),
 			filters: ["academic_year", "programme"],
 		},

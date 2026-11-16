@@ -4,7 +4,7 @@ Each template mirrors the office's own spreadsheet (Desktop/SLCM/*.xlsx):
   * Fee Concession / Fee Payment — one row per open due, every column pre-filled from the system except
     the yellow ones the office fills in.
   * Fee Demand — a blank creation sheet (Voucher No. is assigned by the system), with dropdowns and a
-    "Students" reference sheet so the office can look up each Student ID.
+    "Students" reference sheet so the office can look up each student by Registration ID.
 
 Headers equal the doctype field labels, so a filled sheet imports through Data Import
 (Insert New Records) without any column mapping. Data Import's own "Download Template" returns these
@@ -19,7 +19,7 @@ from frappe.utils import flt, today
 
 # Dues columns shared by the Concession and Payment sheets: (header, width, key in the dues row)
 DUES_COLUMNS = [
-	("Student Registration Id / Application Number", 38, "registration_id"),
+	("Registration ID", 38, "registration_id"),
 	("Student Email Id", 30, "student_email"),
 	("Fee Component", 39, "fee_component"),
 	("Voucher Number", 19, "name"),
@@ -70,7 +70,7 @@ PREFILLED = {
 # Fee Demand creation sheet: (header, width, required, kind)
 DEMAND_COLUMNS = [
 	("Voucher No.", 16, False, "auto"),
-	("Student ID", 18, True, "student"),
+	("Student", 18, True, "student"),
 	("Student Email ID", 30, True, None),
 	("Student Name", 26, False, None),
 	("Academic Year", 14, False, "academic_year"),
@@ -253,7 +253,7 @@ def _demand_template(academic_year, programme, csv):
 			cell.font = Font(bold=True, color="808080")
 			cell.comment = Comment(_("Auto-filled by the system when the demand is created. Leave blank."), "SLCM")
 		elif h in ("Student Email ID", "Student Name"):
-			cell.comment = Comment(_("Filled from the Student ID. If entered, the email must match that student."), "SLCM")
+			cell.comment = Comment(_("Filled from the Student. If entered, the email must match that student."), "SLCM")
 		elif h == "Status":
 			cell.comment = Comment(_("Set by the system (Pending / Overdue …). Leave blank."), "SLCM")
 		elif h == "Net Payable":
@@ -269,10 +269,10 @@ def _demand_template(academic_year, programme, csv):
 	for h in ("Original Amount", "Waiver Amount", "Penalty Amount"):
 		_decimal_validation(ws, col[h], last, allow_zero=h != "Original Amount")
 
-	# Students reference sheet (Student ID dropdown points at it)
+	# Students reference sheet (the Student dropdown points at it)
 	students = _students(academic_year, programme)
 	ref = wb.create_sheet("Students")
-	ref.append(["Student ID", "Registration Id / Application Number", "Student Name", "Student Email ID", "Programme", "Academic Year"])
+	ref.append(["Student", "Registration ID", "Student Name", "Student Email ID", "Programme", "Academic Year"])
 	for c in ref[1]:
 		c.font = Font(bold=True)
 	for s in students:
@@ -281,7 +281,7 @@ def _demand_template(academic_year, programme, csv):
 		ref.column_dimensions[letter].width = width
 	ref.freeze_panes = "A2"
 	if students:
-		_range_validation(ws, col["Student ID"], last, f"=Students!$A$2:$A${len(students) + 1}", "Student ID")
+		_range_validation(ws, col["Student"], last, f"=Students!$A$2:$A${len(students) + 1}", "Student")
 	_list_validation(wb, ws, col["Academic Year"], last, "Academic Year", frappe.get_all("Academic Year", pluck="name", order_by="name desc"))
 	_list_validation(wb, ws, col["Fee Component"], last, "Fee Component", frappe.get_all("Fee Component", pluck="name", order_by="name"))
 	return _xlsx_response(wb, filename)

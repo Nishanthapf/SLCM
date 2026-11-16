@@ -418,7 +418,7 @@ class StudentFeeManagement {
 				doctype: "Fee Demand",
 				icon: "file-text",
 				title: __("Fee Demands"),
-				text: __("Create new dues. The sheet is blank; Voucher No. is assigned by the system. A Students sheet lists every Student ID."),
+				text: __("Create new dues. The sheet is blank; Voucher No. is assigned by the system. A Students sheet lists every student with their Registration ID."),
 				submit: 0,
 			},
 			{

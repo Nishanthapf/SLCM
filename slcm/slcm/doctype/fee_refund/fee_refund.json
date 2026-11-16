@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "student",
+  "registration_id",
   "student_name",
   "refund_source",
   "fee_demand",
@@ -40,11 +41,20 @@
   {
    "fieldname": "student",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Student",
    "options": "Student Master",
    "reqd": 1
+  },
+  {
+   "fetch_from": "student.registration_id",
+   "fieldname": "registration_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Registration ID",
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fetch_from": "student.first_name",
@@ -55,42 +65,61 @@
    "read_only": 1
   },
   {
+   "default": "Fee Demand",
+   "description": "Fee Demand: refund money paid against one due. Excess Amount: refund the student's unused excess (active Student Credit Notes, oldest first).",
+   "fieldname": "refund_source",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Refund Source",
+   "options": "Fee Demand\nExcess Amount",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.refund_source!='Excess Amount'",
    "fieldname": "fee_demand",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Fee Demand",
-   "options": "Fee Demand",
-   "reqd": 0,
    "mandatory_depends_on": "eval:doc.refund_source!='Excess Amount'",
-   "depends_on": "eval:doc.refund_source!='Excess Amount'"
+   "options": "Fee Demand",
+   "reqd": 0
+  },
+  {
+   "depends_on": "eval:doc.refund_source=='Excess Amount'",
+   "fieldname": "available_excess",
+   "fieldtype": "Currency",
+   "label": "Available Excess",
+   "no_copy": 1,
+   "read_only": 1
   },
   {
    "fieldname": "column_break_1",
    "fieldtype": "Column Break"
   },
   {
+   "depends_on": "eval:doc.refund_source!='Excess Amount'",
    "fetch_from": "fee_demand.fee_component",
    "fieldname": "fee_component",
    "fieldtype": "Data",
    "label": "Fee Component",
-   "read_only": 1,
-   "depends_on": "eval:doc.refund_source!='Excess Amount'"
+   "read_only": 1
   },
   {
+   "depends_on": "eval:doc.refund_source!='Excess Amount'",
    "fetch_from": "fee_demand.original_amount",
    "fieldname": "original_amount",
    "fieldtype": "Currency",
    "label": "Original Amount",
-   "read_only": 1,
-   "depends_on": "eval:doc.refund_source!='Excess Amount'"
+   "read_only": 1
   },
   {
+   "depends_on": "eval:doc.refund_source!='Excess Amount'",
    "fetch_from": "fee_demand.paid_amount",
    "fieldname": "paid_amount",
    "fieldtype": "Currency",
    "label": "Amount Paid",
-   "read_only": 1,
-   "depends_on": "eval:doc.refund_source!='Excess Amount'"
+   "read_only": 1
   },
   {
    "default": "Draft",
@@ -99,6 +128,16 @@
    "in_list_view": 1,
    "label": "Status",
    "options": "Draft\nApproved\nReversed",
+   "read_only": 1
+  },
+  {
+   "description": "Credit notes (and amounts) this refund was taken from; restored on cancel.",
+   "fieldname": "excess_allocation",
+   "fieldtype": "Code",
+   "hidden": 1,
+   "label": "Excess Allocation",
+   "no_copy": 1,
+   "options": "JSON",
    "read_only": 1
   },
   {
@@ -128,12 +167,12 @@
    "reqd": 1
   },
   {
+   "description": "Online = bank transfer from the university account. Payment Gateway = refunded from the Razorpay / Easebuzz dashboard (comes off Gateway Clearing in ERPNext).",
    "fieldname": "refund_mode",
    "fieldtype": "Select",
    "label": "Refund Mode",
    "options": "\nCash\nNEFT\nCheque\nOnline\nPayment Gateway",
-   "reqd": 1,
-   "description": "Online = bank transfer from the university account. Payment Gateway = refunded from the Razorpay / Easebuzz dashboard (comes off Gateway Clearing in ERPNext)."
+   "reqd": 1
   },
   {
    "fieldname": "column_break_2",
@@ -158,12 +197,6 @@
    "fieldname": "utr_number",
    "fieldtype": "Data",
    "label": "UTR / Reference Number"
-  },
-  {
-   "description": "Date on which the bank processed / credited the refund",
-   "fieldname": "transaction_date",
-   "fieldtype": "Date",
-   "label": "Transaction Date"
   },
   {
    "fieldname": "section_reason",
@@ -200,6 +233,12 @@
    "read_only": 1
   },
   {
+   "description": "Date on which the bank processed / credited the refund",
+   "fieldname": "transaction_date",
+   "fieldtype": "Date",
+   "label": "Transaction Date"
+  },
+  {
    "fieldname": "amended_from",
    "fieldtype": "Link",
    "label": "Amended From",
@@ -207,40 +246,11 @@
    "options": "Fee Refund",
    "print_hide": 1,
    "read_only": 1
-  },
-  {
-   "default": "Fee Demand",
-   "fieldname": "refund_source",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Refund Source",
-   "options": "Fee Demand\nExcess Amount",
-   "reqd": 1,
-   "description": "Fee Demand: refund money paid against one due. Excess Amount: refund the student's unused excess (active Student Credit Notes, oldest first)."
-  },
-  {
-   "depends_on": "eval:doc.refund_source=='Excess Amount'",
-   "fieldname": "available_excess",
-   "fieldtype": "Currency",
-   "label": "Available Excess",
-   "read_only": 1,
-   "no_copy": 1
-  },
-  {
-   "fieldname": "excess_allocation",
-   "fieldtype": "Code",
-   "label": "Excess Allocation",
-   "options": "JSON",
-   "read_only": 1,
-   "hidden": 1,
-   "no_copy": 1,
-   "description": "Credit notes (and amounts) this refund was taken from; restored on cancel."
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-11-13 10:00:00.000000",
+ "modified": "2026-11-16 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Fee Refund",

@@ -2,6 +2,16 @@
 {% set nls_logo = "/files/nlsiu-logo.jpg" %}
 
 {% include "slcm/templates/print/nls_receipt_style.html" %}
+<style>
+  /* One A4 page in every renderer (PDF download and browser print): the shared style's 355mm minimum height is
+     taller than A4, so the box sizes to its content and is never split across pages. */
+  .print-format .nls-doc .nls-copy.is-page, .nls-copy.is-page { min-height: 0 !important; }
+  .nls-copy { page-break-inside: avoid; break-inside: avoid; }
+  @page { size: A4; margin: 10mm; }
+  /* tighter rows so a payment covering many dues still fits */
+  .print-format .nls-doc .nls-table th, .print-format .nls-doc .nls-table td { padding: 4px 10px !important; }
+  .print-format .nls-doc .nls-meta td { padding: 3px 6px !important; }
+</style>
 <div class="nls-doc">
 
 <div class="nls-copy is-page">
@@ -15,10 +25,10 @@
   <!-- Title -->
   <div class="nls-title">Receipt (Admin Copy)</div>
 
-  <!-- Meta row 1: Registration Id + Student Name, Receipt Number + Date -->
+  <!-- Meta row 1: Registration ID + Student Name, Receipt Number + Date -->
   <table class="nls-meta">
     <tr>
-      <td class="lbl">Registration Id:</td>
+      <td class="lbl">Registration ID:</td>
       <td class="val">{{ doc.registration_id or student.registration_id or "Not Available" }}</td>
       <td class="lbl">Student Name:</td>
       <td class="val">{{ student.first_name }} {{ student.last_name or "" }}</td>

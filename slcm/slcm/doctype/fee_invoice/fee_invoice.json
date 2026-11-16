@@ -9,6 +9,7 @@
  "field_order": [
   "section_student",
   "student",
+  "registration_id",
   "student_name",
   "enrollment",
   "column_break_1",
@@ -43,10 +44,19 @@
   {
    "fieldname": "student",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Student",
    "options": "Student Master",
    "reqd": 1
+  },
+  {
+   "fetch_from": "student.registration_id",
+   "fieldname": "registration_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Registration ID",
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fetch_from": "student.first_name",
@@ -123,6 +133,30 @@
    "reqd": 1
   },
   {
+   "fieldname": "needs_accommodation",
+   "fieldtype": "Select",
+   "label": "Needs Accommodation",
+   "options": "Yes\nNo",
+   "read_only": 1
+  },
+  {
+   "default": "Unpaid",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Unpaid\nPartially Paid\nPaid\nOverdue\nCancelled",
+   "read_only": 1
+  },
+  {
+   "description": "Tracks the Razorpay gateway payment attempt state (separate from invoice billing status)",
+   "fieldname": "payment_status",
+   "fieldtype": "Select",
+   "label": "Online Payment Status",
+   "options": "\nPayment Initiated\nAuthorized\nCaptured\nPayment Failed\nRefunded",
+   "read_only": 1
+  },
+  {
    "fieldname": "column_break_2",
    "fieldtype": "Column Break"
   },
@@ -162,30 +196,6 @@
    "read_only": 1
   },
   {
-   "fieldname": "needs_accommodation",
-   "fieldtype": "Select",
-   "label": "Needs Accommodation",
-   "options": "Yes\nNo",
-   "read_only": 1
-  },
-  {
-   "default": "Unpaid",
-   "fieldname": "status",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Status",
-   "options": "Unpaid\nPartially Paid\nPaid\nOverdue\nCancelled",
-   "read_only": 1
-  },
-  {
-   "description": "Tracks the Razorpay gateway payment attempt state (separate from invoice billing status)",
-   "fieldname": "payment_status",
-   "fieldtype": "Select",
-   "label": "Online Payment Status",
-   "options": "\nPayment Initiated\nAuthorized\nCaptured\nPayment Failed\nRefunded",
-   "read_only": 1
-  },
-  {
    "fieldname": "section_components",
    "fieldtype": "Section Break",
    "label": "Fee Components"
@@ -209,7 +219,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-02 17:31:53.140876",
+ "modified": "2026-11-16 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Fee Invoice",
