@@ -1,6 +1,6 @@
 // Copyright (c) 2026, Nishanth and contributors
 // Attendance Sync — reconciliation queue for RFID taps that could not be
-// auto-matched to a Student Attendance record (missing device/room mapping,
+// auto-matched to a Student Attendance record (missing device/venue mapping,
 // faculty never activated RFID, unregistered card, etc.)
 
 const AUTO_REFRESH_MS = 30000;
@@ -546,7 +546,7 @@ function build_table(wrapper, logs) {
 			? `<div class="as-primary">${esc_or_dash(first_session.class_name)}</div>` +
 			  (first_session.course_code ? `<div class="as-sub">${frappe.utils.escape_html(first_session.course_code)}</div>` : "")
 			: log.resolved_rooms && log.resolved_rooms.length
-			? `<div>Room ${frappe.utils.escape_html(log.resolved_rooms.join(", "))}</div><div class="as-sub">No session that day</div>`
+			? `<div>Venue ${frappe.utils.escape_html(log.resolved_rooms.join(", "))}</div><div class="as-sub">No session that day</div>`
 			: DASH;
 
 		const lesson_time = first_session
@@ -660,7 +660,7 @@ function open_log_detail_dialog(log) {
 	body += _kv("RFID Activated By", first_session && first_session.rfid_activated_by
 		? frappe.utils.escape_html(first_session.rfid_activated_by) : "-");
 	if (!first_session && log.resolved_rooms && log.resolved_rooms.length) {
-		body += _kv("Resolved Room(s)", frappe.utils.escape_html(log.resolved_rooms.join(", ")) +
+		body += _kv("Resolved Venue(s)", frappe.utils.escape_html(log.resolved_rooms.join(", ")) +
 			' <span class="as-hero-sub">— no Attendance Session found for this date</span>', true);
 	}
 	body += `</div>`;
@@ -711,7 +711,7 @@ function open_bulk_sync_dialog(wrapper) {
 					'<div class="as-callout-title">Auto-sync unresolved taps that are safe to match</div>' +
 					"<ul>" +
 					"<li>The student is known (card is registered)</li>" +
-					"<li>The reader/device maps to exactly one room</li>" +
+					"<li>The reader/device maps to a venue with exactly one session around the tap time</li>" +
 					"<li>The tap falls within the class's RFID window — the first N minutes after " +
 					"session start (Attendance Settings), whether or not faculty pressed Activate RFID</li>" +
 					'<li class="skip"><i class="fa fa-info-circle"></i> Ambiguous, unregistered, or after-class ' +
@@ -764,7 +764,7 @@ function open_bulk_sync_dialog(wrapper) {
 				fieldtype: "Link",
 				fieldname: "venue",
 				label: "Venue",
-				options: "Room",
+				options: "Venue Master",
 				onchange: () => update_scope(),
 			},
 			{ fieldtype: "Section Break", hide_border: 1 },
@@ -905,7 +905,7 @@ function open_sync_dialog(wrapper, log) {
 		reqd: 1,
 		default: candidate_sessions.length ? candidate_sessions[0].name : "",
 		description: candidate_sessions.length
-			? `${candidate_sessions.length} candidate session(s) resolved from the device's room mapping for this date. Override if incorrect.`
+			? `${candidate_sessions.length} candidate session(s) resolved from the device's venue mapping for this date. Override if incorrect.`
 			: "No session could be auto-resolved — pick the correct one manually.",
 	});
 

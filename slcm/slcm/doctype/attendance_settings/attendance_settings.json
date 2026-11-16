@@ -55,7 +55,8 @@
   "rfid_general_note",
   "enable_rfid",
   "rfid_swipe_mode",
-  "rfid_active_window_minutes"
+  "rfid_active_window_minutes",
+  "rfid_require_venue_match"
  ],
  "fields": [
   {
@@ -415,11 +416,19 @@
    "label": "RFID Active Window (Minutes)",
    "non_negative": 1,
    "reqd": 1
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.enable_rfid==1",
+   "description": "When on, a tap counts for a class only if the reader is mapped (RFID Device Room Mapping) to the class's Time Table venue on that date. Turn on after every classroom reader is mapped.",
+   "fieldname": "rfid_require_venue_match",
+   "fieldtype": "Check",
+   "label": "Require Venue Match for RFID"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-11-02 14:26:53.094048",
+ "modified": "2026-11-16 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Attendance Settings",

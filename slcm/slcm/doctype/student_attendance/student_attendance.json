@@ -251,10 +251,11 @@
    "read_only": 1
   },
   {
+   "fetch_from": "attendance_session.room",
    "fieldname": "room",
    "fieldtype": "Link",
-   "label": "Room",
-   "options": "Room",
+   "label": "Venue",
+   "options": "Venue Master",
    "read_only": 1
   },
   {
@@ -265,7 +266,7 @@
  ],
  "icon": "fa fa-check-square-o",
  "links": [],
- "modified": "2026-11-02 14:26:53.094048",
+ "modified": "2026-11-16 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Student Attendance",

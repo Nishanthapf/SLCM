@@ -10,6 +10,8 @@
   "device_id",
   "device_name",
   "location",
+  "device_type",
+  "current_venue",
   "api_user",
   "column_break_1",
   "is_active",
@@ -36,11 +38,12 @@
    "label": "Device Name"
   },
   {
+   "description": "Label of the physical reader, e.g. NAB-103-1 (venue + reader number). The venue itself is set in RFID Device Room Mapping.",
    "fieldname": "location",
    "fieldtype": "Data",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Location"
+   "label": "Reader Label"
   },
   {
    "fieldname": "api_user",
@@ -84,10 +87,29 @@
    "fieldname": "serial_number",
    "fieldtype": "Data",
    "label": "Serial Number"
+  },
+  {
+   "default": "Classroom",
+   "description": "Only Classroom readers count towards class attendance. Entry Gate / Other taps are kept as logs only.",
+   "fieldname": "device_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Device Type",
+   "options": "Classroom\nEntry Gate\nOther"
+  },
+  {
+   "description": "From the active RFID Device Room Mapping for today.",
+   "fieldname": "current_venue",
+   "fieldtype": "Link",
+   "is_virtual": 1,
+   "label": "Current Venue",
+   "options": "Venue Master",
+   "read_only": 1
   }
  ],
  "links": [],
- "modified": "2026-11-04 12:53:29.888802",
+ "modified": "2026-11-16 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "RFID Device",
