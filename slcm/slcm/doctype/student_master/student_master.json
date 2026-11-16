@@ -282,7 +282,7 @@
   {
    "fieldname": "registration_id",
    "fieldtype": "Data",
-   "label": "Student ID",
+   "label": "Registration ID",
    "search_index": 1
   },
   {
@@ -1750,7 +1750,7 @@
  ],
  "image_field": "passport_size_photo",
  "links": [],
- "modified": "2026-11-04 17:30:01.470612",
+ "modified": "2026-11-16 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Student Master",
