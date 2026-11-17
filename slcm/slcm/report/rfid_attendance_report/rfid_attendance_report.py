@@ -452,16 +452,20 @@ def download_excel(filters):
 
 	used_titles = set()
 	ws = None
+	center = Alignment(horizontal="center", vertical="center")
 
 	def _xl_cell(value):
-		"""Dates as yyyy-mm-dd, times as hh:mm:ss (Excel's default drops the leading zero)."""
+		"""Dates as dd-mm-yyyy, times as hh:mm:ss (Excel's default drops the leading zero); both centred."""
 		c = WriteOnlyCell(ws, value=value)
 		if isinstance(value, _dt.datetime):
-			c.number_format = "yyyy-mm-dd hh:mm:ss"
+			c.number_format = "dd-mm-yyyy hh:mm:ss"
 		elif isinstance(value, _dt.date):
-			c.number_format = "yyyy-mm-dd"
+			c.number_format = "dd-mm-yyyy"
 		elif isinstance(value, _dt.time):
 			c.number_format = "hh:mm:ss"
+		else:
+			return c
+		c.alignment = center
 		return c
 
 	def sheet(title, headers, widths, rows, note=None, bold_rows=None):
@@ -483,7 +487,7 @@ def download_excel(filters):
 		for h in headers:
 			c = WriteOnlyCell(ws, value=h)
 			c.font, c.fill = header_font, header_fill
-			c.alignment = Alignment(vertical="center")
+			c.alignment = Alignment(horizontal="center", vertical="center")
 			head.append(c)
 		ws.append(head)
 		for i, row in enumerate(rows):
@@ -620,8 +624,8 @@ def _class_wise_sheets(filters, sheet, scope, main_only=False):
 
 	headers = [_("Date"), _("Day"), _("Time"), _("Course"), _("Class"), _("Section"), _("Faculty"), _("Venue"),
 	           _("Student ID"), _("Registration ID"), _("Student Name"), _("Programme"), _("Academic Year"), _("Swiped"), _("Swipes"),
-	           _("First Swipe"), _("Last Swipe"), _("Terminals"), _("At Venue"), _("Attendance"), _("Time Table")]
-	widths = [12, 11, 13, 34, 26, 10, 24, 20, 22, 16, 28, 34, 14, 9, 9, 12, 12, 30, 10, 14, 20]
+	           _("First Swipe Time (HH:MM:SS)"), _("Last Swipe Time (HH:MM:SS)"), _("Terminals"), _("At Venue"), _("Attendance"), _("Time Table")]
+	widths = [12, 11, 13, 34, 26, 10, 24, 20, 22, 16, 28, 34, 14, 9, 9, 26, 26, 30, 10, 14, 20]
 
 	def as_row(r):
 		return [r.date, _WEEKDAYS[r.date.weekday()], r.time, r.course, r.class_name, r.section, r.faculty, r.venue,
@@ -674,8 +678,8 @@ def _terminal_sheets(filters, sheet, scope, main_only=False):
 	sheet(
 		_("Student-wise (Daily)"),
 		[_("Date"), _("Day"), _("Student ID"), _("Registration ID"), _("Student Name"), _("Programme"), _("Academic Year"),
-		 _("Swipes"), _("First Swipe Time"), _("Last Swipe Time"), _("Terminals"), _("Venues")],
-		[12, 11, 22, 16, 28, 34, 14, 9, 16, 16, 40, 40],
+		 _("Swipes"), _("First Swipe Time (HH:MM:SS)"), _("Last Swipe Time (HH:MM:SS)"), _("Terminals"), _("Venues")],
+		[12, 11, 22, 16, 28, 34, 14, 9, 26, 26, 40, 40],
 		[[r.day, _WEEKDAYS[r.day.weekday()], r.student, *_student_cols(info, r.student),
 		  int(r.swipes), _time_only(r.first_swipe), _time_only(r.last_swipe), r.terminals, r.venues]
 		 for r in student_daily],
@@ -687,9 +691,9 @@ def _terminal_sheets(filters, sheet, scope, main_only=False):
 	sheet(
 		_("Student Totals"),
 		[_("Student ID"), _("Registration ID"), _("Student Name"), _("Programme"), _("Academic Year"), _("Total Swipes"),
-		 _("Days With Swipes"), _("Terminals Used"), _("First Swipe Date"), _("First Swipe Time"),
-		 _("Last Swipe Date"), _("Last Swipe Time")],
-		[22, 16, 28, 34, 14, 13, 16, 15, 16, 16, 16, 16],
+		 _("Days With Swipes"), _("Terminals Used"), _("First Swipe Date"), _("First Swipe Time (HH:MM:SS)"),
+		 _("Last Swipe Date"), _("Last Swipe Time (HH:MM:SS)")],
+		[22, 16, 28, 34, 14, 13, 16, 15, 16, 26, 16, 26],
 		[[r.student, *_student_cols(info, r.student), int(r.swipes), int(r.days), int(r.terminals),
 		  *_split_dt(r.first_swipe), *_split_dt(r.last_swipe)] for r in totals],
 		note=scope + " · " + _("One row per student for the whole range: all swipes added up, "
@@ -718,9 +722,9 @@ def _terminal_table(sheet, title, filters, rows, note):
 	sheet(
 		title,
 		[_("Period"), _("Terminal / Room"), _("Venue"), _("Total Swipes"), _("Unique Students"),
-		 _("Unknown Swipes"), _("First Swipe Date"), _("First Swipe Time"), _("Last Swipe Date"),
-		 _("Last Swipe Time")],
-		[30, 22, 26, 13, 15, 15, 16, 16, 16, 16],
+		 _("Unknown Swipes"), _("First Swipe Date"), _("First Swipe Time (HH:MM:SS)"), _("Last Swipe Date"),
+		 _("Last Swipe Time (HH:MM:SS)")],
+		[30, 22, 26, 13, 15, 15, 16, 26, 16, 26],
 		[[_period_label(r["period_key"], filters.view_by) if r.get("is_period_row") else "",
 		  r["terminal_alias"], r["venue"], r["total_swipes"], r["unique_students"], r["unknown_swipes"],
 		  *_split_dt(r["first_swipe"]), *_split_dt(r["last_swipe"])] for r in rows],
