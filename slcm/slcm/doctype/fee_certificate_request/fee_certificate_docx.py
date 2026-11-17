@@ -17,7 +17,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Mm, Pt
 
-FONT = "Cambria"
+FONT = "Merriweather"
 PAGE_MARGIN = Mm(15)
 CONTENT_WIDTH = Mm(210 - 30)
 

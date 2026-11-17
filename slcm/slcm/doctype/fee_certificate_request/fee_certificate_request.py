@@ -39,6 +39,14 @@ ROW_ORDER = [
 	["Hostel Fee", "Housing and Mess Fee", "Housing Fee"],
 	["Student Refundable Deposit"],
 ]
+# Printed particulars: these component types are charged every year; every other
+# component prints as "<name> – one time".
+PER_ANNUM_LABELS = {
+	"Tuition and Facilities Fee": "Tuition and Facilities fee – per annum",
+	"Hostel Fee": "Housing fee – per annum",
+	"Housing and Mess Fee": "Housing fee – per annum",
+	"Housing Fee": "Housing fee – per annum",
+}
 # Printed only for the student's first year of the programme ("-" in later years).
 FIRST_YEAR_ONLY_TYPES = {"Admission Fee"}
 # Charged once, so never repeated into a later year that has no fee data of its own.
@@ -720,6 +728,7 @@ def get_fee_certificate_context(request_name):
 		"closing_html": render(template and template.closing_text),
 		"total_label": (template and template.total_label) or "Total",
 		"generation_date": formatdate(today(), "dd.mm.yyyy"),
+		"font_face_css": _merriweather_font_face(),
 		"header_image": _trimmed_image_b64(settings.letterhead_header_image),
 		"footer_image": _trimmed_image_b64(settings.letterhead_footer_image),
 		"signature_image": _trimmed_image_b64(settings.cfo_signature),
@@ -746,6 +755,39 @@ def _bank_table(settings):
 		if value
 	)
 	return Markup(f'<table class="bank-table" style="border-collapse:collapse;line-height:1.4;">{body}</table>') if body else ""
+
+
+def _merriweather_font_face():
+	"""@font-face rules embedding the app's Merriweather .ttf files as data URIs, so the
+	PDF uses Merriweather whether or not the server has the font installed."""
+	cache_key = "slcm_fee_certificate_merriweather_css_v2"
+	css = frappe.cache.get_value(cache_key)
+	if css:
+		return Markup(css)
+	import base64
+	import os
+
+	rules = []
+	for file_name, weight, style in (
+		("Merriweather-Regular.ttf", "normal", "normal"),
+		("Merriweather-Bold.ttf", "bold", "normal"),
+		("Merriweather-Italic.ttf", "normal", "italic"),
+	):
+		path = frappe.get_app_path("slcm", "public", "fonts", file_name)
+		if not os.path.exists(path):
+			continue
+		with open(path, "rb") as f:
+			data = base64.b64encode(f.read()).decode()
+		# Two spaces after "src:" on purpose: Frappe's expand_relative_urls appends
+		# " !important" to any ": url(...)" (one optional space), which would make
+		# this src invalid and silently drop the font.
+		rules.append(
+			"@font-face { font-family: 'Merriweather'; font-weight: %s; font-style: %s; "
+			"src:  url(data:font/truetype;charset=utf-8;base64,%s) format('truetype'); }" % (weight, style, data)
+		)
+	css = "\n".join(rules)
+	frappe.cache.set_value(cache_key, css)
+	return Markup(css)
 
 
 def _trimmed_image_b64(file_url):
@@ -778,13 +820,23 @@ def _trimmed_image_b64(file_url):
 		return raw
 
 
+def _particular_label(component, component_type):
+	"""Tuition / Housing: "... – per annum"; anything else: "<component> – one time"."""
+	return PER_ANNUM_LABELS.get(component_type) or f"{component} – one time"
+
+
 def _build_table(years):
-	"""One row per Fee Component (its own name), in ROW_ORDER, with each year's amount."""
+	"""One row per Fee Component in ROW_ORDER, labelled by _particular_label, with each
+	year's amount. Components that print the same label (two housing components) share a row."""
 	components = _ordered_components([c for y in years for c in y["amounts"]])
-	rows = [
-		{"particulars": c, "amounts": [_amt(y["amounts"].get(c)) for y in years]}
-		for c in components
-	]
+	types = _component_types(components)
+	merged = {}
+	for c in components:
+		label = _particular_label(c, types.get(c) or c)
+		merged.setdefault(label, [0] * len(years))
+		for i, y in enumerate(years):
+			merged[label][i] += flt(y["amounts"].get(c))
+	rows = [{"particulars": label, "amounts": [_amt(a) for a in amounts]} for label, amounts in merged.items()]
 
 	totals = [sum(y["amounts"].values()) for y in years]
 	show_scholarship = any(y["waiver"] for y in years)
