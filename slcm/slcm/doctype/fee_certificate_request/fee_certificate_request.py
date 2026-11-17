@@ -29,28 +29,21 @@ def _amt(amount):
 	return fmt_money(flt(amount), precision=0, currency="INR").replace("₹", "").strip()
 
 
-# Certificate rows are Fee Components, printed under their own names in this
-# order of component_type; any other component follows, in the order its demand
-# was raised. Same order on all three certificates.
-ROW_ORDER = [
-	["Admission Fee"],
-	["Re-admission Fee"],
-	["Tuition and Facilities Fee"],
-	["Hostel Fee", "Housing and Mess Fee", "Housing Fee"],
-	["Student Refundable Deposit"],
-]
-# Printed particulars: these component types are charged every year; every other
-# component prints as "<name> – one time".
+# Certificate rows are Fee Components in this order of group, then any other
+# component in the order its demand was raised. Groups are matched on keywords in the
+# component name or its component_type, because sites name their types differently
+# (e.g. "Tuition Fee" vs "Tuition and Facilities Fee").
+ADMISSION, READMISSION, TUITION, HOUSING, REFUNDABLE, OTHER = range(6)
+# Printed particulars for the per-annum groups; every other component prints as
+# "<name> – one time".
 PER_ANNUM_LABELS = {
-	"Tuition and Facilities Fee": "Tuition and Facilities fee – per annum",
-	"Hostel Fee": "Housing fee – per annum",
-	"Housing and Mess Fee": "Housing fee – per annum",
-	"Housing Fee": "Housing fee – per annum",
+	TUITION: "Tuition and Facilities fee – per annum",
+	HOUSING: "Housing fee – per annum",
 }
-# Printed only for the student's first year of the programme ("-" in later years).
-FIRST_YEAR_ONLY_TYPES = {"Admission Fee"}
-# Charged once, so never repeated into a later year that has no fee data of its own.
-ONE_TIME_TYPES = {"Admission Fee", "Re-admission Fee", "Student Refundable Deposit", "Application Fee"}
+# Admission Fee prints for the student's first programme year only ("-" later).
+# Charged once, so never repeated into a later year that has no fee data of its own:
+ONE_TIME_GROUPS = {ADMISSION, READMISSION, REFUNDABLE}
+ONE_TIME_TYPES = {"Application Fee"}
 
 
 class FeeCertificateRequest(Document):
@@ -64,9 +57,9 @@ class FeeCertificateRequest(Document):
 			self.include_bank_details = template.include_bank_details
 		self.certificate_type = template.certificate_type
 		self.certificate_mode = "Multi Year" if self.certificate_type == MULTI_YEAR else "Single Year"
-		if self.certificate_type == SINGLE_YEAR_RECEIPT:
-			# The receipt is always for the current Academic Year ("Is Current Year").
-			self.from_academic_year = get_current_academic_year() or self.from_academic_year
+		if self.certificate_type == SINGLE_YEAR_RECEIPT and not self.from_academic_year:
+			# A receipt is for the chosen Academic Year; the current one when none is chosen.
+			self.from_academic_year = get_current_academic_year()
 		self.to_academic_year = None
 		self._set_identity()
 		self._validate_edited_certificate()
@@ -291,15 +284,24 @@ def _ordinal_year_for(student, academic_year_doc):
 	return str(diff + 1)
 
 
-def _student_current_year(student):
-	"""Roman numeral of the year the student is studying now, from Student Master
-	"Current Year No" (falling back to "Current Year", e.g. "2nd Year"); "" if unset."""
+def _student_year_for(student, academic_year_doc):
+	"""Roman numeral of the student's year of study in academic_year_doc, counted from
+	Student Master "Current Year No" (falling back to "Current Year", e.g. "2nd Year")
+	in the current Academic Year: IV year now means II year two academic years ago.
+	"" when that isn't known (then the batch-start offset is used)."""
 	if student.get("is_applicant"):
 		return ""
 	number = cint(student.get("current_year"))
 	if not number:
 		digits = re.match(r"\s*(\d+)", student.get("year_of_study") or "")
 		number = cint(digits.group(1)) if digits else 0
+	current_ay = get_current_academic_year()
+	if not number or not current_ay or not academic_year_doc.year_start_date:
+		return ""
+	current_start = frappe.db.get_value("Academic Year", current_ay, "year_start_date")
+	if not current_start:
+		return ""
+	number -= getdate(current_start).year - getdate(academic_year_doc.year_start_date).year
 	if 0 < number <= len(ORDINALS):
 		return ORDINALS[number - 1]
 	return str(number) if number else ""
@@ -453,17 +455,29 @@ def _component_types(fee_components):
 	)
 
 
+def _row_group(component, component_type=None):
+	"""ADMISSION / READMISSION / TUITION / HOUSING / REFUNDABLE / OTHER, from keywords
+	in the Fee Component name and its component_type."""
+	text = f"{component or ''} {component_type or ''}".lower()
+	if "re-admission" in text or "readmission" in text or "re admission" in text:
+		return READMISSION
+	if "admission" in text:
+		return ADMISSION
+	if "tuition" in text and "registration" not in text:
+		return TUITION
+	if "hostel" in text or "housing" in text:
+		return HOUSING
+	if "refundable" in text or "deposit" in text:
+		return REFUNDABLE
+	return OTHER
+
+
 def _ordered_components(components):
-	"""Fee Component names in ROW_ORDER (by component_type), the rest after in their
-	original order."""
+	"""Fee Component names by group (Admission, Re-admission, Tuition, Housing,
+	Refundable Deposit), the rest after in their original order."""
 	components = list(dict.fromkeys(components))
 	types = _component_types(components)
-
-	def rank(component):
-		component_type = types.get(component) or component
-		return next((i for i, group in enumerate(ROW_ORDER) if component_type in group), len(ROW_ORDER))
-
-	return sorted(components, key=rank)
+	return sorted(components, key=lambda c: _row_group(c, types.get(c)))
 
 
 def _year_amounts(totals, certificate_type, has_scholarship):
@@ -551,13 +565,8 @@ def get_fee_certificate_context(request_name):
 	template = get_purpose_template(request.purpose)
 	certificate_type = request.certificate_type or (template and template.certificate_type)
 
-	certificate_ay = request.from_academic_year
-	year_rows = request.years
-	if certificate_type == SINGLE_YEAR_RECEIPT and get_current_academic_year():
-		# Receipts state the current Academic Year, even on requests saved earlier.
-		if get_current_academic_year() != certificate_ay:
-			certificate_ay, year_rows = get_current_academic_year(), None
-	year_rows = year_rows or [
+	certificate_ay = request.from_academic_year or get_current_academic_year()
+	year_rows = request.years or [
 		frappe._dict(row) for row in academic_year_rows(student, certificate_ay, request.purpose)
 	]
 
@@ -594,8 +603,11 @@ def get_fee_certificate_context(request_name):
 
 	component_types = _component_types([c for y in years for c in y["amounts"]])
 
-	def component_type(component):
-		return component_types.get(component) or component
+	def group(component):
+		return _row_group(component, component_types.get(component))
+
+	def one_time(component):
+		return group(component) in ONE_TIME_GROUPS or component_types.get(component) in ONE_TIME_TYPES
 
 	if certificate_type == MULTI_YEAR:
 		# A year with no fee data of its own (a future year) repeats the per-annum
@@ -606,14 +618,14 @@ def get_fee_certificate_context(request_name):
 				last = y
 			elif last:
 				y["amounts"] = {
-					t: a for t, a in last["repeat_amounts"].items() if component_type(t) not in ONE_TIME_TYPES
+					t: a for t, a in last["repeat_amounts"].items() if not one_time(t)
 				}
 				y["waiver"] = last["waiver"]
 	if certificate_type != SINGLE_YEAR_RECEIPT:
 		# Admission Fee belongs to the first year only (programme_year 0 = unknown: keep as is).
 		for y in years:
 			if y["programme_year"] > 1:
-				for t in [c for c in y["amounts"] if component_type(c) in FIRST_YEAR_ONLY_TYPES]:
+				for t in [c for c in y["amounts"] if group(c) == ADMISSION]:
 					y["amounts"].pop(t)
 
 	first_ay = frappe.get_doc("Academic Year", certificate_ay)
@@ -656,7 +668,7 @@ def get_fee_certificate_context(request_name):
 		"programme_duration": _duration_words(_programme_duration(student)),
 		"academic_year": _short_ay_label(first_ay),
 		"current_year": (
-			(certificate_type == SINGLE_YEAR_RECEIPT and _student_current_year(student))
+			(certificate_type == SINGLE_YEAR_RECEIPT and _student_year_for(student, first_ay))
 			or _ordinal_year_for(student, first_ay)
 		),
 		"due_year": (
@@ -822,11 +834,11 @@ def _trimmed_image_b64(file_url):
 
 def _particular_label(component, component_type):
 	"""Tuition / Housing: "... – per annum"; anything else: "<component> – one time"."""
-	return PER_ANNUM_LABELS.get(component_type) or f"{component} – one time"
+	return PER_ANNUM_LABELS.get(_row_group(component, component_type)) or f"{component} – one time"
 
 
 def _build_table(years):
-	"""One row per Fee Component in ROW_ORDER, labelled by _particular_label, with each
+	"""One row per Fee Component in group order (_row_group), labelled by _particular_label, with each
 	year's amount. Components that print the same label (two housing components) share a row."""
 	components = _ordered_components([c for y in years for c in y["amounts"]])
 	types = _component_types(components)
