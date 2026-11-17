@@ -5226,8 +5226,9 @@ function _slcmAddRowSaveButton(gridRow) {
 		var missing = [];
 		(form && form.fields || []).forEach(function (ctrl) {
 			var df = ctrl && ctrl.df;
-			if (!df || !df.reqd || !df.fieldname) return;
+			if (!df || !df.fieldname) return;
 			if (ctrl.disp_status && ctrl.disp_status !== 'Write') return;   // hidden / read-only
+			if (!_slcmChildFieldRequired(df, doc, window.frappe && frappe.web_form)) return;
 			if (_slcmChildValueEmpty(df, doc[df.fieldname])) missing.push(__(df.label || df.fieldname));
 		});
 		var visibleDfs = (form && form.fields || [])
@@ -6332,6 +6333,25 @@ function _slcmChildDependsOnMet(expr, row, wf) {
 }
 
 /**
+ * Whether a child-table column is mandatory for this row: plain `reqd`, or `mandatory_depends_on`
+ * evaluated against the row (same shape as depends_on — "eval:doc.xxx == 'yyy'").
+ * Frappe's web form (and our own row/stage validators) otherwise only ever look at `reqd`, so a
+ * column that is conditionally required via mandatory_depends_on (e.g. PG CGPA / Transcripts when
+ * PG Degree Status == "Completed") was never enforced client-side.
+ */
+function _slcmChildFieldRequired(cdf, row, wf) {
+	if (cdf.reqd) return true;
+	if (!cdf.mandatory_depends_on) return false;
+	try {
+		var expr = String(cdf.mandatory_depends_on).replace(/^eval:/, '');
+		// eslint-disable-next-line no-new-func
+		return !!(new Function('doc', 'parent', 'return (' + expr + ')')(row, (wf && wf.doc) || {}));
+	} catch (e) {
+		return false;   // unknown expression — don't block on it (server re-checks anyway)
+	}
+}
+
+/**
  * Required fields INSIDE child-table rows (e.g. Percentage/CGPA in Undergraduate Degree Details).
  * Frappe's web form only checks that a mandatory table has rows, never the rows' own fields.
  * The untouched default degree row is skipped (it is dropped before saving).
@@ -6354,9 +6374,10 @@ function _slcmValidateChildRowsOnPage(wf, $page, missing) {
 			if (SLCM_DEGREE_TABLES.indexOf(fieldname) !== -1 && _slcmIsBlankDegreeRow(row)) return;
 			var rowMissing = [];
 			docfields.forEach(function (cdf) {
-				if (!cdf || !cdf.reqd || cdf.hidden || !cdf.fieldname) return;
+				if (!cdf || cdf.hidden || !cdf.fieldname) return;
 				if (_slcmWebFormLayoutFieldtype(cdf.fieldtype)) return;
 				if (!_slcmChildDependsOnMet(cdf.depends_on, row, wf)) return;
+				if (!_slcmChildFieldRequired(cdf, row, wf)) return;
 				if (_slcmChildValueEmpty(cdf, row[cdf.fieldname])) {
 					rowMissing.push((cdf.label || cdf.fieldname).trim());
 				}

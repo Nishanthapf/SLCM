@@ -103,11 +103,11 @@ def intercept_login():
 
         if path.startswith("/student-portal") or path.startswith("/faculty-portal"):
             encoded_url = urllib.parse.quote(path, safe='')
-            raise AuthRedirect(f"/portal-login?tab=faculty-student&redirect-to={encoded_url}")
+            raise AuthRedirect(f"/login?tab=faculty-student&redirect-to={encoded_url}")
 
         if path.startswith("/parent-portal"):
             encoded_url = urllib.parse.quote(path, safe='')
-            raise AuthRedirect(f"/portal-login?tab=parent&redirect-to={encoded_url}")
+            raise AuthRedirect(f"/login?tab=parent&redirect-to={encoded_url}")
 
     elif frappe.session.user != "Guest":
         applicant_route = (frappe.get_cached_value("Web Form", "applicant-form", "route") or "nlsatadmissions/application-form").strip("/")
@@ -154,16 +154,10 @@ def intercept_login():
                     if existing_app:
                         raise AuthRedirect(f"/{base_route}/{existing_app}")
 
-    # 2. Intercept the standard Frappe /login fallback. /login is left as
-    # Frappe's own stock login page (username/password) — that's what
-    # Administrator/System Users hit when accessing /app while logged out,
-    # and it must keep working untouched. We only redirect AWAY from /login
-    # when there's a clear signal this is a Student/Faculty/Parent visit
-    # (via the logged_out_from cookie or a matching redirect-to), sending
-    # those to the unified /portal-login page instead. Admission/PACE
-    # Applicant logins remain separate (different audience, out of scope).
-    # Anything else (desk, or no signal at all) falls through and renders
-    # the default Frappe /login page as-is.
+    # 2. /login is the unified sign-in page (slcm/www/login.py) for staff,
+    # faculty, students and parents. Admission/PACE applicants have their
+    # own login pages, so send them there. For the others, the
+    # logged_out_from cookie only picks which tab opens first.
     if path == "/login":
         if frappe.session.user != "Guest":
             return
@@ -177,20 +171,27 @@ def intercept_login():
         if hasattr(frappe.local, "cookie_manager") and frappe.local.cookie_manager:
             frappe.local.cookie_manager.delete_cookie("logged_out_from")
 
+        # An explicit tab (links, the Google callback, a refused sign-in with
+        # ?error=) already says who this is.
+        if frappe.form_dict.get("tab"):
+            return
+
         if logged_out_from:
             logged_out_from = urllib.parse.unquote(logged_out_from)
 
         if logged_out_from == "desk":
-            # Show the standard/default Frappe login page (return without redirecting)
+            frappe.local.flags.default_login_tab = "staff"
             return
         elif logged_out_from == "pace" or logged_out_from == "paceadmissions":
             raise AuthRedirect("/paceadmissions/login")
         elif logged_out_from == "admission":
             raise AuthRedirect(get_portal_login_url())
         elif logged_out_from == "student" or logged_out_from == "faculty":
-            raise AuthRedirect("/portal-login?tab=faculty-student")
+            frappe.local.flags.default_login_tab = "faculty-student"
+            return
         elif logged_out_from == "parent":
-            raise AuthRedirect("/portal-login?tab=parent")
+            frappe.local.flags.default_login_tab = "parent"
+            return
 
         # Normal fallback if no logout cookie is found
         redirect_to = frappe.form_dict.get("redirect-to") or frappe.form_dict.get("redirect_to") or ""
@@ -200,241 +201,12 @@ def intercept_login():
         elif any(r in redirect_to for r in ("/applicant-form", "/admission/", "/nlsatadmissions", "/nlsat-international")):
             portal_type = get_portal_type_from_path(urllib.parse.urlparse(redirect_to).path)
             raise AuthRedirect(f"{get_portal_login_url(portal_type)}?redirect-to={urllib.parse.quote(redirect_to, safe='')}")
-        elif "/student-portal" in redirect_to or "/faculty-portal" in redirect_to:
-            raise AuthRedirect(f"/portal-login?tab=faculty-student&redirect-to={urllib.parse.quote(redirect_to, safe='')}")
-        elif "/parent-portal" in redirect_to:
-            raise AuthRedirect(f"/portal-login?tab=parent&redirect-to={urllib.parse.quote(redirect_to, safe='')}")
 
-        # No portal signal at all (e.g. redirect-to=/app, or a bare /login
-        # hit) — this is desk/admin territory, so show the default Frappe
-        # login page instead of guessing.
+        # Everyone else signs in on /login itself (the tab follows redirect-to).
         return
 
-def enforce_student_google_login(login_manager=None):
-    """Runs on every successful login (on_session_creation hook).
-
-    Only acts on logins that came in through Google OAuth — normal
-    username/password logins are left untouched. For Google logins it:
-      1. Steps aside (does nothing) if this email matches a Faculty record, or
-         a Parent (Student Parent child table) record — enforce_faculty_google_login
-         / enforce_parent_google_login handle those cases instead. Without this
-         check, every faculty/parent Google login would get rejected here first,
-         since all three portals share the same generic Frappe OAuth callback and
-         this hook has no way to know which login page the user started at.
-      2. Rejects the session if Google login is disabled in settings.
-      3. Rejects if the account's email domain isn't the allowed domain
-         (e.g. only @nls.ac.in accounts, once NLSIU confirms their domain).
-      4. Rejects if no Student Master record has this email as its
-         `official_email_id`. NLSIU issues this institutional Gmail AFTER
-         admission, separately from the personal email a student applied
-         with (Student Master.user still holds that original application
-         email at this point) — so matching must key off official_email_id,
-         not `user`.
-      5. On first successful Google login for a student, re-points
-         Student Master.user to the official email (this Google-created
-         User account) so all later permission checks / portal data use
-         the real login identity. The original application-email User
-         record is left untouched.
-      6. Grants the slcm_Student role (if missing) and lets the session
-         through, so downstream pages see a properly-permissioned student
-         account instead of a bare, unlinked Google User.
-
-    Rejection = log the Google-created session out immediately and bounce
-    back to the student login page with a human-readable ?error= message.
-    """
-    from slcm.slcm.utils.parent_portal import get_parent_wards
-
-    user = getattr(login_manager, "user", None) or frappe.session.user
-    if not user or user == "Guest" or user == "Administrator":
-        return
-
-    request_path = getattr(frappe.local.request, "path", "") or ""
-    is_google_oauth = "frappe.integrations.oauth2_logins.login_via_google" in request_path
-    if not is_google_oauth:
-        return
-
-    if frappe.db.exists("Faculty", {"user_id": user}) or frappe.db.exists("Faculty", {"email": user}):
-        return
-
-    if get_parent_wards(user):
-        return
-
-    settings = frappe.get_single("Student Portal Settings")
-    if not settings.get("enable_google_login"):
-        _reject_google_login(
-            login_manager, "Google login is not enabled for the student portal.", "/portal-login?tab=faculty-student"
-        )
-        return
-
-    allowed_domain = (settings.get("google_login_allowed_domain") or "").strip().lower()
-    email_domain = user.split("@")[-1].lower() if "@" in user else ""
-
-    if allowed_domain and email_domain != allowed_domain:
-        _reject_google_login(
-            login_manager,
-            f"Only @{allowed_domain} accounts can log in to the student portal.",
-            "/portal-login?tab=faculty-student"
-        )
-        return
-
-    student = frappe.db.get_value("Student Master", {"official_email_id": user}, "name")
-    if not student:
-        _reject_google_login(
-            login_manager,
-            "No student record found for this email. Please contact administration.",
-            "/portal-login?tab=faculty-student"
-        )
-        return
-
-    # Point the Student Master at this Google-created User so future
-    # logins/permissions/portal data resolve against the real login email.
-    if frappe.db.get_value("Student Master", student, "user") != user:
-        frappe.db.set_value("Student Master", student, "user", user)
-
-    if not frappe.db.exists("Has Role", {"parent": user, "role": "slcm_Student"}):
-        user_doc = frappe.get_doc("User", user)
-        user_doc.append("roles", {"role": "slcm_Student"})
-        user_doc.save(ignore_permissions=True)
-
-
-def enforce_faculty_google_login(login_manager=None):
-    """Runs on every successful login (on_session_creation hook).
-
-    Faculty counterpart of enforce_student_google_login — see that function's
-    docstring for why both hooks fire on every Google login regardless of
-    which portal's login page initiated the OAuth flow.
-
-    For Google logins on a Faculty account it:
-      1. Steps aside if this email doesn't match any Faculty record — the
-         account is not faculty, so enforce_student_google_login (or a
-         rejection there) is authoritative instead.
-      2. Rejects if Google login is disabled in Faculty Portal Settings.
-      3. Rejects if the account's email domain isn't the allowed domain.
-      4. Grants the slcm_Faculty role (if missing) and lets the session
-         through.
-    """
-    user = getattr(login_manager, "user", None) or frappe.session.user
-    if not user or user == "Guest" or user == "Administrator":
-        return
-
-    request_path = getattr(frappe.local.request, "path", "") or ""
-    is_google_oauth = "frappe.integrations.oauth2_logins.login_via_google" in request_path
-    if not is_google_oauth:
-        return
-
-    faculty = (
-        frappe.db.get_value("Faculty", {"user_id": user}, "name")
-        or frappe.db.get_value("Faculty", {"official_email_id": user}, "name")
-        or frappe.db.get_value("Faculty", {"email": user}, "name")
-    )
-    if not faculty:
-        return
-
-    settings = frappe.get_single("Faculty Portal Settings")
-    if not settings.get("enable_google_login"):
-        _reject_google_login(
-            login_manager, "Google login is not enabled for the faculty portal.", "/portal-login?tab=faculty-student"
-        )
-        return
-
-    allowed_domain = (settings.get("google_login_allowed_domain") or "").strip().lower()
-    email_domain = user.split("@")[-1].lower() if "@" in user else ""
-
-    if allowed_domain and email_domain != allowed_domain:
-        _reject_google_login(
-            login_manager,
-            f"Only @{allowed_domain} accounts can log in to the faculty portal.",
-            "/portal-login?tab=faculty-student"
-        )
-        return
-
-    if frappe.db.get_value("Faculty", faculty, "user_id") != user:
-        frappe.db.set_value("Faculty", faculty, "user_id", user)
-
-    if not frappe.db.exists("Has Role", {"parent": user, "role": "slcm_Faculty"}):
-        user_doc = frappe.get_doc("User", user)
-        user_doc.append("roles", {"role": "slcm_Faculty"})
-        user_doc.save(ignore_permissions=True)
-
-
-def enforce_parent_google_login(login_manager=None):
-    """Runs on every successful login (on_session_creation hook).
-
-    Parent counterpart of enforce_student_google_login / enforce_faculty_google_login
-    — see enforce_student_google_login's docstring for why all three hooks fire
-    on every Google login regardless of which portal's login page initiated
-    the OAuth flow.
-
-    Unlike Student/Faculty, parents have no standalone master doctype — a
-    Google account is recognized as a parent purely by its email appearing on
-    at least one Student Master's "Parents" child table (Student Parent.email).
-    There is no per-parent link field to backfill (Student Parent has no
-    "user" field), so this hook only needs to check and grant the role.
-
-    For Google logins on a parent account it:
-      1. Steps aside if this email matches no Student Parent row — the
-         account is not a parent, so another hook (or a rejection there) is
-         authoritative instead.
-      2. Rejects if Google login is disabled in Parent Portal Settings.
-      3. Rejects if the account's email domain isn't the allowed domain.
-      4. Grants the slcm_parent role (if missing) and lets the session through.
-    """
-    from slcm.slcm.utils.parent_portal import get_parent_wards
-
-    user = getattr(login_manager, "user", None) or frappe.session.user
-    if not user or user == "Guest" or user == "Administrator":
-        return
-
-    request_path = getattr(frappe.local.request, "path", "") or ""
-    is_google_oauth = "frappe.integrations.oauth2_logins.login_via_google" in request_path
-    if not is_google_oauth:
-        return
-
-    if not get_parent_wards(user):
-        return
-
-    settings = frappe.get_single("Parent Portal Settings")
-    if not settings.get("enable_google_login"):
-        _reject_google_login(
-            login_manager, "Google login is not enabled for the parent portal.", "/portal-login?tab=parent"
-        )
-        return
-
-    allowed_domain = (settings.get("google_login_allowed_domain") or "").strip().lower()
-    email_domain = user.split("@")[-1].lower() if "@" in user else ""
-
-    if allowed_domain and email_domain != allowed_domain:
-        _reject_google_login(
-            login_manager,
-            f"Only @{allowed_domain} accounts can log in to the parent portal.",
-            "/portal-login?tab=parent"
-        )
-        return
-
-    if not frappe.db.exists("Has Role", {"parent": user, "role": "slcm_parent"}):
-        user_doc = frappe.get_doc("User", user)
-        user_doc.append("roles", {"role": "slcm_parent"})
-        user_doc.save(ignore_permissions=True)
-
-
-def _reject_google_login(login_manager, message, redirect_page="/portal-login?tab=faculty-student"):
-    """Tears down a just-created Google login session and bounces the
-    browser back to the given login page with an error message.
-
-    Must use AuthRedirect (a Werkzeug HTTPException), NOT frappe.Redirect —
-    this runs deep inside Frappe's login internals (on_session_creation),
-    which nothing catches frappe.Redirect from. AuthRedirect propagates as
-    a normal HTTP 302 response regardless of which hook raises it.
-    """
-    user = getattr(login_manager, "user", None) or frappe.session.user
-    frappe.local.login_manager.logout()
-    frappe.set_user("Guest")
-    frappe.db.commit()
-    frappe.log_error(
-        f"Rejected Google login for {user}: {message}",
-        "Google login rejected"
-    )
-    raise AuthRedirect(f"{redirect_page}?error={urllib.parse.quote(message)}")
+# Google sign-in checks (portal settings, allowed domain, linking the record)
+# live in slcm.utils.login_page.enforce_google_login.
 
 
 def handle_logout(login_manager=None):

@@ -1,12 +1,20 @@
 function slcm_applicant_setup_country_state_city_queries(frm) {
     frm.set_query("state", () => {
-        if (frm.doc.country) {
-            return { filters: { country: frm.doc.country } };
+        if (!frm.doc.nationality) {
+            return {
+                filters: {
+                    name: ["=", "__no_state__"]
+                }
+            };
         }
-        return { filters: { name: "!__noop__" } };
+
+        return {
+            filters: {
+                country: frm.doc.nationality
+            }
+        };
     });
 }
-
 // Class XII Status is asked only for Undergraduate (Completed / Appearing); other levels are "Completed".
 function slcm_applicant_sync_class_xii_status(frm) {
     if (frm.doc.docstatus === 2) return;

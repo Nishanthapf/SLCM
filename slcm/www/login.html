@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="robots" content="noindex">
+	<title>{{ title }}</title>
+	{% if brand.logo %}<link rel="icon" href="{{ brand.logo }}">{% endif %}
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family={{ brand.font | replace(' ', '+') | urlencode }}:wght@300;400;700&display=swap">
+	{% if assets %}{% for href in assets.css %}<link rel="stylesheet" href="{{ href }}">{% endfor %}{% endif %}
+	<style>
+		html, body { margin: 0; min-height: 100%; }
+		body {
+			background-color: #f3f4f6;
+			{% if brand.background %}
+			background-image: url("{{ brand.background }}");
+			background-size: cover;
+			background-position: center;
+			background-attachment: fixed;
+			{% endif %}
+		}
+	</style>
+</head>
+<body>
+	{#- Page settings for the Vue app (frontend/src/login/main.js) -#}
+	<script id="slcm-login-config" type="application/json">{{ config | tojson }}</script>
+	<script>window.csrf_token = {{ csrf_token | tojson }};</script>
+
+	{% if assets %}
+	<div id="slcm-login" class="slcm-fui"></div>
+	<script type="module" src="{{ assets.js }}"></script>
+	{% else %}
+	{#- The frontend build is missing (bench build not run). A plain form keeps
+	    staff able to sign in and fix it. -#}
+	<form id="fallback" style="max-width:360px;margin:12vh auto;padding:32px;background:#fff;border-radius:8px;font-family:system-ui,sans-serif;box-shadow:0 4px 24px rgba(0,0,0,.12)">
+		<h2 style="margin:0 0 4px">{{ brand.title }}</h2>
+		<p style="margin:0 0 20px;color:#6b7280;font-size:14px">Sign in (basic page: run <code>bench build --app slcm</code> to restore the full page)</p>
+		<input name="usr" placeholder="Email or username" autocomplete="username" required style="width:100%;box-sizing:border-box;padding:10px;margin-bottom:10px">
+		<input name="pwd" type="password" placeholder="Password" autocomplete="current-password" required style="width:100%;box-sizing:border-box;padding:10px;margin-bottom:10px">
+		<button style="width:100%;padding:10px">Sign in</button>
+		<p id="fallback-msg" style="color:#b91c1c;font-size:14px"></p>
+	</form>
+	<script>
+		document.getElementById("fallback").addEventListener("submit", async (e) => {
+			e.preventDefault();
+			const body = new URLSearchParams(new FormData(e.target));
+			const r = await fetch("/api/method/login", { method: "POST", body, headers: { "X-Frappe-CSRF-Token": window.csrf_token } });
+			if (r.ok) location.href = "/login?tab=staff";
+			else document.getElementById("fallback-msg").textContent = "Sign-in failed. Check your details and try again.";
+		});
+	</script>
+	{% endif %}
+</body>
+</html>

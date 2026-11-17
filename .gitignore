@@ -7,3 +7,5 @@ node_modules
 __pycache__
 .planning
 docs
+# Vite output of frontend/ (built by `bench build --app slcm`)
+slcm/public/frontend
