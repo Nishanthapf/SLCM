@@ -11,14 +11,19 @@ login pages). Three tabs:
   parent           username + password, plus Google when Parent Portal
                    Settings allows it.
 
-Rules enforced on the server (the page only mirrors them):
+Rules enforced on the server (the page only mirrors them). Tests:
+slcm/tests/test_login_page.py.
 
   * `enforce_password_login_policy` (on_login hook): faculty and students can
-    not sign in with a password or email link; they must use Google. Accounts
-    that also have real desk access (staff) are exempt.
+    not sign in with a password; they must use Google (staff are exempt). On
+    /login, accounts with no staff/faculty/student/parent record are refused,
+    and an account signing in on a tab that isn't its own is refused and the
+    page moves to its own tab. The applicant login pages are exempt from the
+    Google-only rule (applicants who became students).
   * `enforce_google_login` (on_session_creation hook): Google sign-ins are
     checked against the portal settings (switched on, allowed domain) and
-    linked to their Faculty / Student Master record.
+    linked to their Faculty / Student Master record. /login then checks the
+    tab (`check_google_sign_in_tab`) and signs a wrong-tab sign-in out.
 
 After signing in the browser comes back to /login?tab=..., and
 `get_landing_page` sends the user to their own portal.
@@ -46,6 +51,28 @@ PORTAL_HOMES = {
 	"student": "/student-portal",
 	"parent": "/parent-portal",
 }
+
+# The account kinds each tab is for. Signing in on a tab the account has no
+# kind for is refused, and the page moves to the account's own tab.
+TAB_KINDS = {
+	TAB_STAFF: ("staff",),
+	TAB_FACULTY_STUDENT: ("faculty", "student"),
+	TAB_PARENT: ("parent",),
+}
+
+# Applicant login pages: password sign-in stays allowed there for applicants who
+# have since become students (offer letter, fees, status).
+ADMISSION_LOGIN_PATHS = (
+	"/nlsatadmissions/login",
+	"/nlsat-international/login",
+	"/paceadmissions/login",
+	"/pace/login",
+)
+
+# The /login page sends this with a password sign-in: the tab it was made on.
+TAB_FIELD = "slcm_tab"
+# Set for a new Google session; /login checks its tab once, then clears it.
+GOOGLE_TAB_CHECK_KEY = "slcm_google_tab_check:"
 
 # Which account kind wins when a user has several, per tab they signed in from.
 LANDING_ORDER = {
@@ -80,21 +107,28 @@ class LoginNotAllowed(frappe.AuthenticationError):
 def get_error_message(code: str) -> str:
 	if not code:
 		return ""
+	if code == "wrong_tab_" + TAB_STAFF:
+		return _("This is a staff account, so sign in on the Staff tab. We've switched it for you.")
+	if code == "wrong_tab_" + TAB_FACULTY_STUDENT:
+		return _(
+			"This is a faculty or student account, so sign in on the Faculty & Student tab. We've switched it for you."
+		)
+	if code == "wrong_tab_" + TAB_PARENT:
+		return _("This is a parent account, so sign in on the Parent & Guardian tab. We've switched it for you.")
 	group, _sep, reason = code.partition("_")
 	label = {"faculty": _("Faculty"), "student": _("Student"), "parent": _("Parent")}.get(group)
 
 	if reason == "disabled" and label:
 		return _("{0} sign-in is currently disabled. Please contact the administration office if you need access.").format(label)
 	if reason == "domain" and label:
-		domain = _allowed_domain(group)
-		return _("Please sign in with your @{0} Google account. Other Google accounts can't be used here.").format(domain)
+		return _("Please sign in with your institutional Google account. Other Google accounts can't be used here.")
 	if code == "no_account":
 		return _(
-			"We couldn't find a staff, faculty, student or parent account for this Google account. "
-			"Please contact the administration office to get access."
+			"This account doesn't have access to SLCM. If you applied for admission, sign in on the "
+			"admission portal instead. Otherwise, contact the administration office."
 		)
 	if code == "use_google":
-		return _("Faculty and students sign in with their institutional Google account. Use the Faculty & Student tab.")
+		return _("Faculty and students sign in with their institutional Google account, here on the Faculty & Student tab.")
 	return _("Sign-in didn't complete. Please try again.")
 
 
@@ -152,6 +186,24 @@ def _allowed_domain(group: str) -> str:
 # --------------------------------------------------------------------------- #
 # Where to go after signing in
 # --------------------------------------------------------------------------- #
+
+
+def home_tab_for(kinds: dict) -> str | None:
+	"""The tab an account belongs on. Faculty/student first: they have the strictest rules."""
+	for tab in (TAB_FACULTY_STUDENT, TAB_STAFF, TAB_PARENT):
+		if any(kinds[k] for k in TAB_KINDS[tab]):
+			return tab
+	return None
+
+
+def check_tab(kinds: dict, tab: str) -> tuple[str, str] | None:
+	"""(error code, tab to show) when this account may not sign in on `tab`, else None."""
+	if not any(kinds.values()):
+		return "no_account", tab
+	if any(kinds[k] for k in TAB_KINDS.get(tab, ())):
+		return None
+	right = home_tab_for(kinds) or tab
+	return "wrong_tab_" + right, right
 
 
 def get_landing_page(user: str, tab: str, redirect_to: str = "") -> str | None:
@@ -248,7 +300,10 @@ def get_google_login_url(tab: str, redirect_to: str = "") -> str:
 		tab = TAB_STAFF
 	config = get_page_config(tab, "", "")["tabs"][tab]
 	if not config.get("google"):
-		frappe.throw(_("Google sign-in is not available here."), LoginNotAllowed)
+		frappe.throw(
+			_("Google sign-in isn't available right now. Refresh the page and try again, or contact the IT office."),
+			LoginNotAllowed,
+		)
 
 	callback = f"/login?tab={tab}"
 	redirect_to = safe_redirect_path(redirect_to, "")
@@ -272,23 +327,78 @@ def _is_impersonation() -> bool:
 	return path.endswith(".impersonate") or (frappe.form_dict.get("cmd") or "").endswith(".impersonate")
 
 
-def enforce_password_login_policy(login_manager=None):
-	"""on_login: faculty and students must use Google (staff accounts are exempt).
+def _from_admission_login() -> bool:
+	"""The sign-in was sent from an applicant login page (NLSAT / PACE)."""
+	from urllib.parse import urlparse
 
-	Covers every non-Google way in (password, email link, login token). Runs
-	after the password check, so it never tells a stranger what kind of
+	request = getattr(frappe.local, "request", None)
+	referrer = request.headers.get("Referer", "") if request else ""
+	path = urlparse(referrer).path.rstrip("/")
+	return path in ADMISSION_LOGIN_PATHS
+
+
+def _refuse(code: str, tab: str | None = None):
+	"""Refuse a password sign-in. The reply carries the code and the tab the
+	/login page should switch to (it reads `login_code` / `login_tab`)."""
+	frappe.local.response["login_code"] = code
+	if tab:
+		frappe.local.response["login_tab"] = tab
+	frappe.throw(get_error_message(code), LoginNotAllowed, title=_("Sign-in not allowed"))
+
+
+def enforce_password_login_policy(login_manager=None):
+	"""on_login: password (and every other non-Google) sign-in rules.
+
+	Runs after the password check, so it never tells a stranger what kind of
 	account an email belongs to.
+
+	From the /login page (it sends the tab as `slcm_tab`):
+	  1. No staff, faculty, student or parent record: refused (applicants too).
+	  2. Faculty and students (not also staff) must use Google: refused, and
+	     the page moves to the Faculty & Student tab.
+	  3. The account doesn't belong on this tab: refused, and the page moves to
+	     the account's own tab.
+	From anywhere else, only rule 2 applies, and not on the applicant login
+	pages: applicants who became students still sign in there with a password.
 	"""
 	user = getattr(login_manager, "user", None)
 	if not user or user in ("Guest", "Administrator") or _is_google_request() or _is_impersonation():
 		return
-	if is_staff(user):
+
+	tab = frappe.form_dict.get(TAB_FIELD)
+	if tab not in TABS:
+		tab = None
+	if not tab and _from_admission_login():
 		return
 
-	for group, finder in (("faculty", get_faculty_for), ("student", get_student_for)):
-		if finder(user):
-			code = "use_google" if google_enabled(group) else f"{group}_disabled"
-			frappe.throw(get_error_message(code), LoginNotAllowed, title=_("Sign-in not allowed"))
+	kinds = get_account_kinds(user)
+	if tab and not any(kinds.values()):
+		_refuse("no_account", tab)
+
+	if not kinds["staff"]:
+		for group in ("faculty", "student"):
+			if kinds[group]:
+				code = "use_google" if google_enabled(group) else f"{group}_disabled"
+				_refuse(code, TAB_FACULTY_STUDENT)
+
+	if tab:
+		problem = check_tab(kinds, tab)
+		if problem:
+			_refuse(*problem)
+
+
+def check_google_sign_in_tab(user: str, tab: str) -> tuple[str, str] | None:
+	"""For /login: right after a Google sign-in, whether it was made on the right tab.
+
+	Returns (error code, tab to show), or None when it's fine or the session
+	isn't a fresh Google sign-in. Checked once per session.
+	"""
+	sid = frappe.session.get("sid")
+	key = GOOGLE_TAB_CHECK_KEY + str(sid)
+	if not sid or not frappe.cache.get_value(key):
+		return None
+	frappe.cache.delete_value(key)
+	return check_tab(get_account_kinds(user), tab if tab in TABS else TAB_STAFF)
 
 
 def enforce_google_login(login_manager=None):
@@ -304,6 +414,12 @@ def enforce_google_login(login_manager=None):
 	user = getattr(login_manager, "user", None) or frappe.session.user
 	if not user or user in ("Guest", "Administrator") or not _is_google_request():
 		return
+
+	# The tab isn't known here (Frappe has already used up the OAuth state);
+	# /login checks it when the browser comes back (check_google_sign_in_tab).
+	sid = frappe.local.session.get("sid")
+	if sid:
+		frappe.cache.set_value(GOOGLE_TAB_CHECK_KEY + sid, 1, expires_in_sec=600)
 
 	staff = is_staff(user)
 	checks = (

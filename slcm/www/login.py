@@ -17,6 +17,7 @@ from slcm.utils.login_page import (
 	SWITCH_ACCOUNT_PARAM,
 	TAB_FACULTY_STUDENT,
 	TABS,
+	check_google_sign_in_tab,
 	get_landing_page,
 	get_page_config,
 	tab_for_redirect,
@@ -56,6 +57,15 @@ def get_context(context):
 		raise frappe.Redirect(302)
 
 	if frappe.session.user != "Guest":
+		# Just back from Google: the account must belong on the tab it used.
+		problem = check_google_sign_in_tab(frappe.session.user, tab)
+		if problem:
+			code, right_tab = problem
+			frappe.local.login_manager.logout()
+			frappe.db.commit()
+			frappe.local.flags.redirect_location = "/login?" + urlencode({"tab": right_tab, "error": code})
+			raise frappe.Redirect(302)
+
 		landing = get_landing_page(frappe.session.user, tab, redirect_to)
 		if not landing:
 			# Signed in, but not staff, faculty, student or parent (e.g. an applicant).

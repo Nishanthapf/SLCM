@@ -15,7 +15,7 @@
 				</div>
 			</div>
 
-			<h1 class="text-center text-xl text-ink-gray-9">Login</h1>
+			<h1 class="text-center text-xl text-ink-gray-9">Sign in</h1>
 			<p class="mb-4 mt-1 text-center text-sm text-ink-gray-6">{{ subtitles[tab] }}</p>
 
 			<!-- Full width, lined up with the fields below; stacked on phones -->
@@ -33,7 +33,12 @@
 
 			<!-- Staff: password and/or Google -->
 			<section v-if="tab === 'staff'">
-				<PasswordSignIn v-if="tabs.staff.password" tab="staff" :redirect-to="redirectTo" />
+				<PasswordSignIn
+					v-if="tabs.staff.password"
+					tab="staff"
+					:redirect-to="redirectTo"
+					@wrong-tab="moveToTab"
+				/>
 				<Divider v-if="tabs.staff.password && tabs.staff.google" />
 				<GoogleButton v-if="tabs.staff.google" tab="staff" :redirect-to="redirectTo" />
 				<Alert
@@ -65,7 +70,12 @@
 
 			<!-- Parent & Guardian: password and/or Google -->
 			<section v-else>
-				<PasswordSignIn v-if="tabs.parent.password" tab="parent" :redirect-to="redirectTo" />
+				<PasswordSignIn
+					v-if="tabs.parent.password"
+					tab="parent"
+					:redirect-to="redirectTo"
+					@wrong-tab="moveToTab"
+				/>
 				<Divider v-if="tabs.parent.password && tabs.parent.google" />
 				<GoogleButton v-if="tabs.parent.google" tab="parent" :redirect-to="redirectTo" />
 				<Alert
@@ -85,7 +95,7 @@
 </template>
 
 <script setup>
-import { computed, h, ref, watch } from "vue";
+import { computed, h, nextTick, ref, watch } from "vue";
 import { Alert, TabButtons } from "frappe-ui";
 import GoogleButton from "./components/GoogleButton.vue";
 import PasswordSignIn from "./components/PasswordSignIn.vue";
@@ -157,6 +167,14 @@ const Divider = () =>
 	]);
 
 // Keep ?tab= in the address bar, so a refresh or a shared link opens the same tab.
+// The server refused a sign-in made on the wrong tab: open the account's own
+// tab and show why there (after the tab watcher below has cleared old errors).
+async function moveToTab({ tab: target, message }) {
+	tab.value = target;
+	await nextTick();
+	pageError.value = message;
+}
+
 watch(tab, (value) => {
 	pageError.value = "";
 	const url = new URL(window.location.href);

@@ -138,7 +138,9 @@
       "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc 'cd ~/frappe-bench; ./env/bin/python /tmp/mk_sid.py 2>&1 | tail -5')",
       "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc 'SID=497bb84bb8fae019af3642f69a8e56fa294d0265560c25315d9cde07; curl -s -b \"sid=$SID\" localhost:8000/api/method/frappe.auth.get_logged_user | head -c 120; echo; curl -s -D - -o /tmp/d.html -b \"sid=$SID\" localhost:8000/desk | grep -iE \"^HTTP|^location\"; grep -oE \"href=.[^>]*login[^>]*\" /tmp/d.html; echo \"== click:\"; curl -s -D - -o /dev/null -b \"sid=$SID\" \"localhost:8000/login?switch-account=1\" | grep -iE \"^HTTP|^location|^set-cookie: \\(sid|logged\\)\"; echo \"== old sid after:\"; curl -s -b \"sid=$SID\" localhost:8000/api/method/frappe.auth.get_logged_user | head -c 60; echo')",
       "Bash(rm -f \"//wsl.localhost/Ubuntu-24.04/tmp/flow_test.py\" \"//wsl.localhost/Ubuntu-24.04/tmp/mk_sid.py\" \"//wsl.localhost/Ubuntu-24.04/tmp/sid.txt\" \"//wsl.localhost/Ubuntu-24.04/tmp/d.html\")",
-      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc 'cd ~/frappe-bench/apps/slcm/frontend && cat package.json | grep -A6 \"\\\\\"scripts\\\\\"\" && \\(yarn build 2>&1 || npm run build 2>&1\\) | tail -8')"
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc 'cd ~/frappe-bench/apps/slcm/frontend && cat package.json | grep -A6 \"\\\\\"scripts\\\\\"\" && \\(yarn build 2>&1 || npm run build 2>&1\\) | tail -8')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc 'cd ~/frappe-bench && bench --site slcm.com run-tests --module slcm.tests.test_login_page 2>&1 | tail -30')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc 'cd ~/frappe-bench/apps/slcm/frontend && yarn build 2>&1 | tail -4; cd ~/frappe-bench && bench --site slcm.com run-tests --module slcm.tests.test_login_page 2>&1 | tail -6')"
     ],
     "additionalDirectories": [
       "\\tmp",

@@ -2,7 +2,18 @@
 // person can act on. Every function resolves to { ok, data } or throws a
 // LoginError whose `message` is ready to show.
 
-export class LoginError extends Error {}
+export class LoginError extends Error {
+	/** `tab`: the tab the server says this account signs in on (wrong-tab refusals). */
+	constructor(message, tab = "") {
+		super(message);
+		this.tab = tab;
+	}
+}
+
+/** A refused sign-in, carrying the tab to switch to when the server named one. */
+function refusal(result) {
+	return new LoginError(explain(result), result.body.login_tab || "");
+}
 
 const NETWORK = "We couldn't reach the server. Check your internet connection and try again.";
 const SERVER = "Something went wrong on our side. Please try again in a few minutes.";
@@ -63,26 +74,29 @@ export function explain({ status, body }) {
 	if (status === 429 || /RateLimit|TooManyRequests/.test(exc))
 		return "Too many attempts. Please wait a few minutes and try again.";
 	if (/locked/i.test(text))
-		return "Your account is locked for a short while after too many wrong passwords. Please try again later.";
+		return 'Too many wrong passwords, so the account is locked for a few minutes. Wait, then try again, or use "Forgot password?".';
 	if (/verification code/i.test(text)) return "That verification code is wrong or has expired. Please try again.";
 	if (/session expired/i.test(text)) return "The verification step timed out. Go back and sign in again.";
 	if (/disabled or missing/i.test(text))
 		return "This account is disabled. Please contact the administration office.";
 	if (/IP Address/i.test(text))
-		return "Sign-in isn't allowed from the network you're on. Please contact the administration office.";
+		return "This account can only sign in from the university network. Connect to it, or contact the IT office.";
 	if (/not allowed at this time/i.test(text))
 		return "Your account can't sign in at this time of day. Please try again during your permitted hours.";
 	if (/username and password is not allowed/i.test(text))
-		return "Password sign-in is switched off. Please use another sign-in option.";
+		return 'Password sign-in is switched off. Use "Sign in with Google" instead.';
 	if (status === 401 || exc === "AuthenticationError" || /Invalid login|Incorrect password/i.test(text))
 		return "The email/username or password is incorrect. Please check them and try again.";
 	if (status >= 500 || !status) return SERVER;
 	return text || "Sign-in didn't complete. Please try again.";
 }
 
-/** Password sign-in. Resolves to { done } or { verify: { tmpId, prompt } } for two-factor. */
-export async function signIn(usr, pwd) {
-	const result = await post("login", { usr, pwd });
+/**
+ * Password sign-in. Resolves to { done } or { verify: { tmpId, prompt } } for two-factor.
+ * `tab` (slcm_tab) lets the server check the account belongs on that tab.
+ */
+export async function signIn(usr, pwd, tab) {
+	const result = await post("login", { usr, pwd, slcm_tab: tab });
 	const { body } = result;
 	if (result.ok && body.verification && body.tmp_id) {
 		return { verify: { tmpId: body.tmp_id, prompt: twoFactorPrompt(body.verification) } };
@@ -93,19 +107,22 @@ export async function signIn(usr, pwd) {
 		return { done: false };
 	}
 	if (result.ok) return { done: true };
-	throw new LoginError(explain(result));
+	throw refusal(result);
 }
 
-export async function verifyCode(tmpId, otp) {
-	const result = await post("login", { tmp_id: tmpId, otp });
+export async function verifyCode(tmpId, otp, tab) {
+	const result = await post("login", { tmp_id: tmpId, otp, slcm_tab: tab });
 	if (result.ok && !result.body.verification) return { done: true };
-	throw new LoginError(explain(result.ok ? { status: 401, body: { message: "verification code" } } : result));
+	throw result.ok ? new LoginError(explain({ status: 401, body: { message: "verification code" } })) : refusal(result);
 }
 
 function twoFactorPrompt(verification) {
 	if (verification.method === "OTP App") return "Open your authenticator app and enter the 6-digit code.";
 	if (verification.method === "SMS") return verification.prompt || "Enter the code we sent to your phone.";
-	return verification.prompt || "Enter the code we sent to your email.";
+	return (
+		verification.prompt ||
+		"Enter the code we sent to your email. It can take a minute to arrive; check your spam folder too."
+	);
 }
 
 export async function requestPasswordReset(email) {
@@ -115,6 +132,11 @@ export async function requestPasswordReset(email) {
 		return reply.message || "A password reset link has been sent. Check your inbox and spam folder.";
 	}
 	if (reply.status === "not_found") throw new LoginError("We couldn't find an account with that email address.");
+	// Worded here, not in slcm.api.user, whose texts the admission login pages also show.
+	if (reply.status === "not_allowed")
+		throw new LoginError("This account's password can't be reset here. Please contact the IT office.");
+	if (reply.status === "disabled")
+		throw new LoginError("This account is disabled. Please contact the administration office.");
 	if (reply.message) throw new LoginError(reply.message);
 	throw new LoginError(explain(result));
 }

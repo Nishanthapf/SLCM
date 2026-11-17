@@ -98,6 +98,7 @@ const props = defineProps({
 	tab: { type: String, required: true },
 	redirectTo: { type: String, default: "" },
 });
+const emit = defineEmits(["wrong-tab"]);
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -139,6 +140,12 @@ async function run(task) {
 	try {
 		await task();
 	} catch (e) {
+		// Wrong tab for this account: the page switches tabs and shows the message there.
+		if (e.tab && e.tab !== props.tab) {
+			busy.value = false;
+			emit("wrong-tab", { tab: e.tab, message: e.message });
+			return;
+		}
 		const title = step.value === "credentials" || step.value === "otp" ? "Couldn't sign you in" : "Couldn't send the email";
 		message.value = { theme: "red", title, text: e.message };
 		busy.value = false;
@@ -151,7 +158,7 @@ function submitCredentials() {
 	if (errors.usr || errors.pwd) return;
 
 	run(async () => {
-		const result = await signIn(usr.value.trim(), pwd.value);
+		const result = await signIn(usr.value.trim(), pwd.value, props.tab);
 		if (result.verify) {
 			tmpId.value = result.verify.tmpId;
 			otpPrompt.value = result.verify.prompt;
@@ -167,7 +174,7 @@ function submitCode() {
 	errors.otp = otp.value ? "" : "Please enter the verification code.";
 	if (errors.otp) return;
 	run(async () => {
-		await verifyCode(tmpId.value, otp.value);
+		await verifyCode(tmpId.value, otp.value, props.tab);
 		signedIn();
 	});
 }
