@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* --login-brand and --login-font are set from the page settings in main.js. */
+.slcm-fui {
+	--login-brand: #920c24;
+	--login-font: "Merriweather", Georgia, serif;
+}
+
+/* The card: frosted white panel, softly rounded, with a light shadow. */
+.slcm-fui .login-card {
+	background-color: rgba(255, 255, 255, 0.94);
+	border: 1px solid rgba(255, 255, 255, 0.7);
+	border-radius: 12px;
+	box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.3);
+	backdrop-filter: blur(4px);
+}
+
+/* Tighter tab padding so all three full-width tabs show their whole label. */
+.slcm-fui .login-tabs [data-slot="tab-button"] > span {
+	gap: 6px;
+	padding-left: 4px;
+	padding-right: 4px;
+}
+
+/* The selected tab takes the brand colour (label and icon). */
+.slcm-fui .login-tabs [aria-checked="true"],
+.slcm-fui .login-tabs [aria-checked="true"] * {
+	color: var(--login-brand);
+}
+
+/* Tab labels in a compact sans-serif, so all three fit the narrow card with their icons. */
+.slcm-fui .login-tabs,
+.slcm-fui .login-tabs * {
+	font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	font-size: 13px;
+}
+
+/* The brand button: frappe-ui's solid button, recoloured. */
+.slcm-fui .login-brand-button {
+	background-color: var(--login-brand) !important;
+	color: #fff !important;
+}
+.slcm-fui .login-brand-button:hover:not(:disabled) {
+	filter: brightness(0.92);
+}

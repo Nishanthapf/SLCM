@@ -1,7 +1,7 @@
 """Admission Dashboard (desk page `admission-dashboard`).
 
 The page is a Vue 3 + frappe-ui app built from `frontend/src/admission_dashboard`
-into `slcm/public/frontend/admission_dashboard`. These whitelisted methods feed it.
+into `slcm/public/frontend`. These whitelisted methods feed it.
 
 Programme cards follow the admission portal (`get_active_programs` in
 `slcm.admission.utils.portal`): the active rows of the Admission Cycle Program
@@ -14,12 +14,13 @@ Applicants are split the same way the portal splits them: `foriegn_national`
 """
 
 import json
-import os
 from collections import OrderedDict
 
 import frappe
 from frappe import _
 from frappe.utils import cint, get_datetime
+
+from slcm.utils.vite_assets import get_entry_assets
 
 DOMESTIC = "Domestic"
 INTERNATIONAL = "International"
@@ -40,7 +41,7 @@ CHARTS = OrderedDict(
 
 SETTINGS_DOCTYPE = "Admission Dashboard Settings"
 SETTINGS_EDITOR_ROLES = ("System Manager", "Admission Admin")
-BUNDLE_DIR = ("public", "frontend", "admission_dashboard")
+BUNDLE_ENTRY = "src/admission_dashboard/main.js"  # key in slcm/public/frontend/manifest.json
 
 
 # --------------------------------------------------------------------------- #
@@ -62,26 +63,13 @@ def get_bootstrap():
 
 def _get_bundle_assets():
 	"""Resolve the hashed JS/CSS file names from the Vite manifest."""
-	bundle_path = frappe.get_app_path("slcm", *BUNDLE_DIR)
-	manifest_path = os.path.join(bundle_path, "manifest.json")
-	if not os.path.exists(manifest_path):
+	assets = get_entry_assets(BUNDLE_ENTRY)
+	if not assets:
 		frappe.throw(
 			_("Admission Dashboard assets are not built. Run `bench build --app slcm`."),
 			title=_("Assets missing"),
 		)
-
-	with open(manifest_path) as f:
-		manifest = json.load(f)
-
-	base = "/assets/slcm/" + "/".join(BUNDLE_DIR[1:]) + "/"
-	entry = next((chunk for chunk in manifest.values() if chunk.get("isEntry")), None)
-	if not entry:
-		frappe.throw(_("Admission Dashboard manifest has no entry chunk."))
-
-	return {
-		"js": base + entry["file"],
-		"css": [base + css for css in entry.get("css", [])],
-	}
+	return assets
 
 
 # --------------------------------------------------------------------------- #

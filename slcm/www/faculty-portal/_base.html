@@ -71,7 +71,7 @@
 <script>try { if (localStorage.getItem('fp-dark') === '1') document.body.classList.add('fp-dark'); } catch(e) {}</script>
 
 {% if is_guest %}
-<script>window.location.href = "/portal-login?redirect-to=/faculty-portal";</script>
+<script>window.location.href = "/login?redirect-to=/faculty-portal";</script>
 
 {% elif not_a_faculty %}
 {% if is_admin_preview %}
@@ -115,7 +115,7 @@
         method: 'POST', credentials: 'same-origin',
         headers: { 'X-Frappe-CSRF-Token': window._fp_csrf || decodeURIComponent((document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/) || [])[1] || '') }
       }).finally(function() {
-        window.location.href = '/portal-login';
+        window.location.href = '/login';
       });
     }
     </script>
@@ -359,7 +359,7 @@ body.fp-compact .fp-card-header{ padding: 12px 16px !important; }
       method: 'POST',
       headers: { 'X-Frappe-CSRF-Token': window._fp_csrf || '' }
     }).finally(function() {
-      window.location.href = '/portal-login?redirect-to=/faculty-portal';
+      window.location.href = '/login?redirect-to=/faculty-portal';
     });
   }
   document.addEventListener('DOMContentLoaded', function() {

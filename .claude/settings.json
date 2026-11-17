@@ -129,12 +129,22 @@
       "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && bench --site slcm.com mariadb -t < /tmp/md2.sql 2>&1')",
       "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && bench --site slcm.com mariadb -t < /tmp/verify.sql 2>&1')",
       "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && bench --site slcm.com execute frappe.db.set_value --args \"[\\\\\"Dock Item\\\\\", {\\\\\"parent\\\\\": \\\\\"f3ks4g8mtf\\\\\", \\\\\"link_to\\\\\": \\\\\"Fee Management\\\\\"}, {\\\\\"link_to\\\\\": \\\\\"Fees Management\\\\\", \\\\\"title\\\\\": \\\\\"Fees Management\\\\\"}]\" && bench --site slcm.com execute frappe.db.commit && bench --site slcm.com clear-cache && bench --site slcm.com mariadb -t < /tmp/dk.sql 2>&1 | grep f3ks')",
-      "PowerShell($out = \"$env:TEMP\\\\claude\\\\e5ceb92a86c8925a\\\\8c4d351c-72d7-4123-a063-2ed7a15b628b\\\\scratchpad\"; & \"$out\\\\cdp2.ps1\" -Sid \"61dd0a74c8e11e5b07dc4db44014255fa5b4521c554d59d386f7a809\" -Out $out)"
+      "PowerShell($out = \"$env:TEMP\\\\claude\\\\e5ceb92a86c8925a\\\\8c4d351c-72d7-4123-a063-2ed7a15b628b\\\\scratchpad\"; & \"$out\\\\cdp2.ps1\" -Sid \"61dd0a74c8e11e5b07dc4db44014255fa5b4521c554d59d386f7a809\" -Out $out)",
+      "PowerShell($o = \"C:\\\\Users\\\\SHIVEN~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e5ceb92a86c8925a\\\\8c4d351c-72d7-4123-a063-2ed7a15b628b\\\\scratchpad\"; & \"$o\\\\login_cdp.ps1\" -Out $o)",
+      "PowerShell($o = \"C:\\\\Users\\\\SHIVEN~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e5ceb92a86c8925a\\\\8c4d351c-72d7-4123-a063-2ed7a15b628b\\\\scratchpad\"; Remove-Item -Recurse -Force \"$o\\\\chrome-login\" -ErrorAction SilentlyContinue; & \"$o\\\\login_cdp.ps1\" -Out $o)",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc 'SID=06129f6a84c06196de9fa020f7a170b5ba3d2c134f5a0bb202217076; H=\"Host: slcm.com\"; echo \"== /desk button:\"; curl -s -H \"$H\" -b \"sid=$SID\" localhost:8000/desk | grep -o \"href=.[^ ]*login[^ ]*\"; echo \"== /login?switch-account=1:\"; curl -s -o /dev/null -D - -H \"$H\" -b \"sid=$SID\" \"localhost:8000/login?switch-account=1\" | grep -iE \"^HTTP|^location|set-cookie: \\(sid|logged_out\\)\"; echo \"== old sid now:\"; curl -s -o /dev/null -w \"%{http_code}\\\\n\" -H \"$H\" -b \"sid=$SID\" localhost:8000/login')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc 'cd ~/frappe-bench; cat sites/currentsite.txt; echo; grep -h default_site sites/common_site_config.json; SID=06129f6a84c06196de9fa020f7a170b5ba3d2c134f5a0bb202217076; curl -s -D - -o /tmp/d.html -b \"sid=$SID\" localhost:8000/desk | head -5; grep -o \"<title>[^<]*\" /tmp/d.html; grep -o \"href=.[^ >]*\" /tmp/d.html | grep -i login')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc 'SID=06129f6a84c06196de9fa020f7a170b5ba3d2c134f5a0bb202217076; curl -s -D - -o /dev/null -b \"sid=$SID\" localhost:8000/desk | grep -i location; curl -s -b \"sid=$SID\" localhost:8000/api/method/frappe.auth.get_logged_user; echo')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc 'cd ~/frappe-bench; ./env/bin/python /tmp/mk_sid.py 2>&1 | tail -5')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc 'SID=497bb84bb8fae019af3642f69a8e56fa294d0265560c25315d9cde07; curl -s -b \"sid=$SID\" localhost:8000/api/method/frappe.auth.get_logged_user | head -c 120; echo; curl -s -D - -o /tmp/d.html -b \"sid=$SID\" localhost:8000/desk | grep -iE \"^HTTP|^location\"; grep -oE \"href=.[^>]*login[^>]*\" /tmp/d.html; echo \"== click:\"; curl -s -D - -o /dev/null -b \"sid=$SID\" \"localhost:8000/login?switch-account=1\" | grep -iE \"^HTTP|^location|^set-cookie: \\(sid|logged\\)\"; echo \"== old sid after:\"; curl -s -b \"sid=$SID\" localhost:8000/api/method/frappe.auth.get_logged_user | head -c 60; echo')",
+      "Bash(rm -f \"//wsl.localhost/Ubuntu-24.04/tmp/flow_test.py\" \"//wsl.localhost/Ubuntu-24.04/tmp/mk_sid.py\" \"//wsl.localhost/Ubuntu-24.04/tmp/sid.txt\" \"//wsl.localhost/Ubuntu-24.04/tmp/d.html\")",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc 'cd ~/frappe-bench/apps/slcm/frontend && cat package.json | grep -A6 \"\\\\\"scripts\\\\\"\" && \\(yarn build 2>&1 || npm run build 2>&1\\) | tail -8')"
     ],
     "additionalDirectories": [
       "\\tmp",
       "\\\\wsl.localhost\\Ubuntu-24.04\\home\\n_l_s_i_u\\frappe-bench\\apps\\slcm\\slcm\\scratch",
-      "\\\\wsl.localhost\\Ubuntu-24.04\\home\\n_l_s_i_u\\frappe-bench\\apps\\slcm\\src"
+      "\\\\wsl.localhost\\Ubuntu-24.04\\home\\n_l_s_i_u\\frappe-bench\\apps\\slcm\\src",
+      "\\\\wsl.localhost\\Ubuntu-24.04\\tmp"
     ]
   }
 }

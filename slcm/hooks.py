@@ -666,10 +666,11 @@ on_logout = [
     "slcm.utils.auth_routing.handle_logout",
     "slcm.utils.activity_log.on_logout",
 ]
+# /login (slcm/www/login.py): faculty and students may only sign in with Google
+on_login = ["slcm.utils.login_page.enforce_password_login_policy"]
 on_session_creation = [
-    "slcm.utils.auth_routing.enforce_faculty_google_login",
-    "slcm.utils.auth_routing.enforce_parent_google_login",
-    "slcm.utils.auth_routing.enforce_student_google_login",
+    # Google sign-ins: portal switched on, allowed domain, link Faculty / Student Master
+    "slcm.utils.login_page.enforce_google_login",
     # last, so only logins the routing checks above let through are recorded
     "slcm.utils.activity_log.on_session_creation",
 ]
@@ -835,7 +836,6 @@ role_home_page = {
 
 # Websitex
 website_route_rules = [
-    {"from_route": "/portal-login", "to_route": "portal-login/login"},
     # Admission portals (see docs/admission_portal_restructure.md):
     #   www/nlsatadmissions     — NLSAT Indian Nationals
     #   www/nlsat-international — NLSAT International
@@ -888,6 +888,8 @@ website_route_rules = [
 # The /admission/(.*) rule also keeps www/admission (shared pages) from being opened by folder path;
 # those pages are only served under /nlsat/... and /pace/... (route rules above).
 website_redirects = [
+    # The old student / faculty / parent login is now the unified /login (slcm/www/login.py)
+    {"source": "/portal-login", "target": "/login", "forward_query_parameters": True},
     {"source": "/admission", "target": "/nlsatadmissions", "forward_query_parameters": True},
     {"source": r"/admission/(.*)", "target": r"/nlsatadmissions/\1", "forward_query_parameters": True},
     # Shared NLSAT + PACE pages (www/admission)
@@ -917,7 +919,10 @@ website_redirects = [
     {"source": "/pace/forgot_password", "target": "/paceadmissions/forgot_password", "forward_query_parameters": True},
 ]
 
-update_website_context = "slcm.admission.utils.portal.update_website_context"
+update_website_context = [
+    "slcm.admission.utils.portal.update_website_context",
+    "slcm.utils.login_page.switch_account_on_not_permitted",
+]
 # permission_query_conditions = {
 #     "Applicant": "slcm.permissions.applicant_query_conditions",
 #     "Entrance Test Seat Allocation": "slcm.permissions.seat_allocation_query_conditions",
