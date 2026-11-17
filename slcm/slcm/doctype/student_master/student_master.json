@@ -667,8 +667,7 @@
    "fieldtype": "Data",
    "in_standard_filter": 1,
    "label": "Current Year",
-   "length": 10,
-   "read_only": 1
+   "length": 10
   },
   {
    "fieldname": "academic_progress_html",
@@ -1796,7 +1795,7 @@
  ],
  "image_field": "passport_size_photo",
  "links": [],
- "modified": "2026-11-16 18:00:00.000000",
+ "modified": "2026-11-17 14:25:56.450423",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Student Master",

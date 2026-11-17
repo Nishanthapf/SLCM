@@ -1,12 +1,15 @@
 # Copyright (c) 2026, TFSS and contributors
 # For license information, please see license.txt
 
+import re
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, flt, fmt_money, formatdate, getdate, today
 from markupsafe import Markup
 
+from slcm.slcm.doctype.academic_year.academic_year import get_current_academic_year
 from slcm.slcm.doctype.fee_certificate_settings.fee_certificate_settings import (
 	DEFAULT_PAID_LINE,
 	MULTI_YEAR,
@@ -26,20 +29,16 @@ def _amt(amount):
 	return fmt_money(flt(amount), precision=0, currency="INR").replace("₹", "").strip()
 
 
-# Fee Component.component_type -> row label used on the certificate, and the
-# order those rows appear in. Anything not listed here falls back to its own
-# component_type text and is appended after these standard rows.
-ROW_DEFS = [
-	("Admission Fee", "Admission Fee - one time"),
-	("Re-admission Fee", "Re-admission Fee - one time"),
-	("Tuition and Facilities Fee", "Tuition and Facilities fee – per annum"),
-	("Hostel Fee", "Housing fee – per annum"),
-	("Housing and Mess Fee", "Housing fee – per annum"),
-	("Mess Charges", "Mess Charges – per annum"),
-	("Student Refundable Deposit", "Refundable Deposits – one time"),
+# Certificate rows are Fee Components, printed under their own names in this
+# order of component_type; any other component follows, in the order its demand
+# was raised. Same order on all three certificates.
+ROW_ORDER = [
+	["Admission Fee"],
+	["Re-admission Fee"],
+	["Tuition and Facilities Fee"],
+	["Hostel Fee", "Housing and Mess Fee", "Housing Fee"],
+	["Student Refundable Deposit"],
 ]
-ROW_LABELS = dict(ROW_DEFS)
-ROW_ORDER = [key for key, _label in ROW_DEFS]
 # Printed only for the student's first year of the programme ("-" in later years).
 FIRST_YEAR_ONLY_TYPES = {"Admission Fee"}
 # Charged once, so never repeated into a later year that has no fee data of its own.
@@ -57,6 +56,9 @@ class FeeCertificateRequest(Document):
 			self.include_bank_details = template.include_bank_details
 		self.certificate_type = template.certificate_type
 		self.certificate_mode = "Multi Year" if self.certificate_type == MULTI_YEAR else "Single Year"
+		if self.certificate_type == SINGLE_YEAR_RECEIPT:
+			# The receipt is always for the current Academic Year ("Is Current Year").
+			self.from_academic_year = get_current_academic_year() or self.from_academic_year
 		self.to_academic_year = None
 		self._set_identity()
 		self._validate_edited_certificate()
@@ -281,6 +283,20 @@ def _ordinal_year_for(student, academic_year_doc):
 	return str(diff + 1)
 
 
+def _student_current_year(student):
+	"""Roman numeral of the year the student is studying now, from Student Master
+	"Current Year No" (falling back to "Current Year", e.g. "2nd Year"); "" if unset."""
+	if student.get("is_applicant"):
+		return ""
+	number = cint(student.get("current_year"))
+	if not number:
+		digits = re.match(r"\s*(\d+)", student.get("year_of_study") or "")
+		number = cint(digits.group(1)) if digits else 0
+	if 0 < number <= len(ORDINALS):
+		return ORDINALS[number - 1]
+	return str(number) if number else ""
+
+
 def _duration_words(years):
 	if not years:
 		return ""
@@ -289,7 +305,7 @@ def _duration_words(years):
 
 
 def _component_totals(student, academic_year):
-	"""{component_type: {original, waiver, paid, outstanding}} for one year —
+	"""{Fee Component name: {original, waiver, paid, outstanding}} for one year —
 	from the student's Fee Demands, falling back to their assigned Fee Structure
 	(if it is for this year) when no demands have been raised yet, e.g. an applicant."""
 	if student.get("is_applicant"):
@@ -299,16 +315,21 @@ def _component_totals(student, academic_year):
 		demands = frappe.get_all(
 			"Fee Demand",
 			filters={"student": student.name, "academic_year": academic_year, "status": ["!=", "Cancelled"]},
-			fields=["fee_component", "original_amount", "waiver_amount", "paid_amount", "outstanding_amount"],
+			fields=[
+				"fee_component", "original_amount", "penalty_amount", "waiver_amount", "net_payable",
+				"paid_amount", "outstanding_amount",
+			],
+			order_by="creation asc",
 		)
-		types = _component_types([d.fee_component for d in demands])
 		for d in demands:
 			row = totals.setdefault(
-				types.get(d.fee_component) or d.fee_component,
-				{"original": 0, "waiver": 0, "paid": 0, "outstanding": 0},
+				d.fee_component,
+				{"original": 0, "penalty": 0, "waiver": 0, "net": 0, "paid": 0, "outstanding": 0},
 			)
 			row["original"] += flt(d.original_amount)
+			row["penalty"] += flt(d.penalty_amount)
 			row["waiver"] += flt(d.waiver_amount)
+			row["net"] += flt(d.net_payable)
 			row["paid"] += flt(d.paid_amount)
 			row["outstanding"] += flt(d.outstanding_amount)
 
@@ -326,14 +347,15 @@ def _component_totals(student, academic_year):
 				"parentfield": "fee_components_for_indian",
 			},
 			fields=["fee_component", "amount"],
+			order_by="idx asc",
 		)
-		types = _component_types([c.fee_component for c in components])
 		for c in components:
 			row = totals.setdefault(
-				types.get(c.fee_component) or c.fee_component,
-				{"original": 0, "waiver": 0, "paid": 0, "outstanding": 0},
+				c.fee_component,
+				{"original": 0, "penalty": 0, "waiver": 0, "net": 0, "paid": 0, "outstanding": 0},
 			)
 			row["original"] += flt(c.amount)
+			row["net"] += flt(c.amount)
 			row["outstanding"] += flt(c.amount)
 	return totals
 
@@ -346,9 +368,9 @@ def _applicant_component_totals(applicant, academic_year):
 	if not academic_year:
 		return totals
 
-	def row(fee_component, types):
+	def row(fee_component):
 		return totals.setdefault(
-			types.get(fee_component) or fee_component, {"original": 0, "waiver": 0, "paid": 0, "outstanding": 0}
+			fee_component, {"original": 0, "penalty": 0, "waiver": 0, "net": 0, "paid": 0, "outstanding": 0}
 		)
 
 	assignments = frappe.get_all(
@@ -398,14 +420,14 @@ def _applicant_component_totals(applicant, academic_year):
 			fields=["fee_component", "amount"],
 		)
 
-	types = _component_types([c.fee_component for c in components + paid])
 	for c in components:
-		row(c.fee_component, types)["original"] += flt(c.amount)
+		row(c.fee_component)["original"] += flt(c.amount)
 	for c in paid:
-		row(c.fee_component, types)["paid"] += flt(c.amount)
+		row(c.fee_component)["paid"] += flt(c.amount)
 	if totals and waiver:
 		next(iter(totals.values()))["waiver"] += waiver
 	for r in totals.values():
+		r["net"] = r["original"] - r["waiver"]
 		r["outstanding"] = max(r["original"] - r["waiver"] - r["paid"], 0)
 	return totals
 
@@ -423,19 +445,32 @@ def _component_types(fee_components):
 	)
 
 
-def _ordered_types(types):
-	types = list(dict.fromkeys(types))
-	ordered = [t for t in ROW_ORDER if t in types]
-	return ordered + [t for t in types if t not in ordered]
+def _ordered_components(components):
+	"""Fee Component names in ROW_ORDER (by component_type), the rest after in their
+	original order."""
+	components = list(dict.fromkeys(components))
+	types = _component_types(components)
+
+	def rank(component):
+		component_type = types.get(component) or component
+		return next((i for i, group in enumerate(ROW_ORDER) if component_type in group), len(ROW_ORDER))
+
+	return sorted(components, key=rank)
 
 
 def _year_amounts(totals, certificate_type, has_scholarship):
-	"""{component_type: amount} as printed for one year, plus the scholarship deduction."""
+	"""{Fee Component: amount} as printed for one year, plus the scholarship deduction.
+
+	Each amount is the demand's Net Payable (original + penalty - waiver). With the
+	request's scholarship box ticked, the rows show original + penalty instead and the
+	waiver is returned separately for the "Less: University Scholarship" row, which
+	brings the total to the same net figure."""
 	if certificate_type == SINGLE_YEAR_RECEIPT:
-		return {t: a["paid"] for t, a in totals.items() if a["paid"]}, 0
-	amounts = {t: a["original"] for t, a in totals.items()}
-	waiver = sum(a["waiver"] for a in totals.values()) if has_scholarship else 0
-	return amounts, waiver
+		return {t: a["net"] for t, a in totals.items() if a["net"]}, 0
+	if has_scholarship:
+		amounts = {t: a["original"] + a["penalty"] for t, a in totals.items()}
+		return amounts, sum(a["waiver"] for a in totals.values())
+	return {t: a["net"] for t, a in totals.items()}, 0
 
 
 def _long_ay_label(academic_year_doc):
@@ -448,8 +483,7 @@ def _long_ay_label(academic_year_doc):
 def _earlier_years(student, before_academic_year, has_scholarship):
 	"""[(label "2025-2026", fee, paid)] for each academic year the student has
 	already studied before the certificate's first year (from their batch start)
-	that has Fee Demands. fee is the year's overall total: original fee, less the
-	scholarship (waiver) when the request has one."""
+	that has Fee Demands. fee is the year's total Net Payable, matching the table."""
 	if student.get("is_applicant"):
 		return []
 	if not (student.academic_year and frappe.db.exists("Academic Year", student.academic_year)):
@@ -468,13 +502,13 @@ def _earlier_years(student, before_academic_year, has_scholarship):
 		demands = frappe.get_all(
 			"Fee Demand",
 			filters={"student": student.name, "academic_year": ay.name, "status": ["!=", "Cancelled"]},
-			fields=["original_amount", "waiver_amount", "paid_amount"],
+			fields=["net_payable", "paid_amount"],
 		)
 		if demands:
 			result.append(
 				(
 					_long_ay_label(ay),
-					sum(flt(d.original_amount) - (flt(d.waiver_amount) if has_scholarship else 0) for d in demands),
+					sum(flt(d.net_payable) for d in demands),
 					sum(flt(d.paid_amount) for d in demands),
 				)
 			)
@@ -509,8 +543,14 @@ def get_fee_certificate_context(request_name):
 	template = get_purpose_template(request.purpose)
 	certificate_type = request.certificate_type or (template and template.certificate_type)
 
-	year_rows = request.years or [
-		frappe._dict(row) for row in academic_year_rows(student, request.from_academic_year, request.purpose)
+	certificate_ay = request.from_academic_year
+	year_rows = request.years
+	if certificate_type == SINGLE_YEAR_RECEIPT and get_current_academic_year():
+		# Receipts state the current Academic Year, even on requests saved earlier.
+		if get_current_academic_year() != certificate_ay:
+			certificate_ay, year_rows = get_current_academic_year(), None
+	year_rows = year_rows or [
+		frappe._dict(row) for row in academic_year_rows(student, certificate_ay, request.purpose)
 	]
 
 	seen, unique_rows = set(), []
@@ -536,10 +576,18 @@ def get_fee_certificate_context(request_name):
 				"has_academic_year": bool(ay),
 				"programme_year": programme_year,
 				"amounts": amounts,
+				# What a later year with no fee data repeats: the same fees without
+				# this year's late-payment penalty.
+				"repeat_amounts": {t: a - flt(totals.get(t, {}).get("penalty")) for t, a in amounts.items()},
 				"waiver": waiver,
 				"paid": sum(a["paid"] for a in totals.values()),
 			}
 		)
+
+	component_types = _component_types([c for y in years for c in y["amounts"]])
+
+	def component_type(component):
+		return component_types.get(component) or component
 
 	if certificate_type == MULTI_YEAR:
 		# A year with no fee data of its own (a future year) repeats the per-annum
@@ -549,16 +597,18 @@ def get_fee_certificate_context(request_name):
 			if y["amounts"]:
 				last = y
 			elif last:
-				y["amounts"] = {t: a for t, a in last["amounts"].items() if t not in ONE_TIME_TYPES}
+				y["amounts"] = {
+					t: a for t, a in last["repeat_amounts"].items() if component_type(t) not in ONE_TIME_TYPES
+				}
 				y["waiver"] = last["waiver"]
 	if certificate_type != SINGLE_YEAR_RECEIPT:
 		# Admission Fee belongs to the first year only (programme_year 0 = unknown: keep as is).
 		for y in years:
 			if y["programme_year"] > 1:
-				for t in FIRST_YEAR_ONLY_TYPES:
-					y["amounts"].pop(t, None)
+				for t in [c for c in y["amounts"] if component_type(c) in FIRST_YEAR_ONLY_TYPES]:
+					y["amounts"].pop(t)
 
-	first_ay = frappe.get_doc("Academic Year", request.from_academic_year)
+	first_ay = frappe.get_doc("Academic Year", certificate_ay)
 	table = _build_table(years)
 	if (
 		certificate_type == MULTI_YEAR
@@ -597,7 +647,10 @@ def get_fee_certificate_context(request_name):
 		"programme": programme,
 		"programme_duration": _duration_words(_programme_duration(student)),
 		"academic_year": _short_ay_label(first_ay),
-		"current_year": _ordinal_year_for(student, first_ay),
+		"current_year": (
+			(certificate_type == SINGLE_YEAR_RECEIPT and _student_current_year(student))
+			or _ordinal_year_for(student, first_ay)
+		),
 		"due_year": (
 			(ORDINALS[due["programme_year"] - 1] if 0 < due["programme_year"] <= len(ORDINALS) else str(due["programme_year"]))
 			if due and due["programme_year"]
@@ -726,16 +779,12 @@ def _trimmed_image_b64(file_url):
 
 
 def _build_table(years):
-	types = _ordered_types([t for y in years for t in y["amounts"]])
-	# Two component types can share a printed label (e.g. hostel variants) —
-	# merge them so the table doesn't show the same particulars twice.
-	merged = {}
-	for t in types:
-		label = ROW_LABELS.get(t, t)
-		merged.setdefault(label, [0] * len(years))
-		for i, y in enumerate(years):
-			merged[label][i] += flt(y["amounts"].get(t))
-	rows = [{"particulars": label, "amounts": [_amt(a) for a in amounts]} for label, amounts in merged.items()]
+	"""One row per Fee Component (its own name), in ROW_ORDER, with each year's amount."""
+	components = _ordered_components([c for y in years for c in y["amounts"]])
+	rows = [
+		{"particulars": c, "amounts": [_amt(y["amounts"].get(c)) for y in years]}
+		for c in components
+	]
 
 	totals = [sum(y["amounts"].values()) for y in years]
 	show_scholarship = any(y["waiver"] for y in years)

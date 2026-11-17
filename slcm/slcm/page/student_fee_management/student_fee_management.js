@@ -180,7 +180,7 @@ class StudentFeeManagement {
 									["year_term", __("Year / Term")],
 									["batch", __("Batch")],
 									["demand_count", __("Demands"), "num"],
-									["total_payable", __("Total Payable"), "num"],
+									["total_payable", __("Net Fee Payable"), "num"],
 									["paid_amount", __("Paid"), "num"],
 									["outstanding_amount", __("Pending"), "num"],
 									["excess_amount", __("Excess"), "num"],
@@ -655,7 +655,7 @@ class StudentFeeManagement {
 		const t = totals || {};
 		const cards = [
 			["users", __("Students"), sfm_int(t.student_count), "neutral"],
-			["rupee", __("Total Payable"), sfm_money(t.total_payable), "primary"],
+			["rupee", __("Net Fee Payable"), sfm_money(t.total_payable), "primary"],
 			["check", __("Collected"), sfm_money(t.paid_amount), "success"],
 			["clock", __("Pending Dues"), sfm_money(t.outstanding_amount), "warning"],
 			["alert", __("Overdue"), sfm_money(t.overdue_amount), "danger"],
@@ -1182,10 +1182,10 @@ class StudentFeeManagement {
 			{ key: "status", label: __("Due Status"), cell: (d) => `<td class="sfm-wrap-cell sfm-status-cell">${sfm_badge(sfm_demand_status(d))}</td>` },
 			{ key: "due_date", label: __("Due Date"), cell: (d) => `<td>${sfm_date(d.due_date)}</td>` },
 			{ key: "created", label: __("Date of Creation"), cell: (d) => `<td>${sfm_date(d.demand_date || d.creation)}</td>` },
-			{ key: "amount", label: __("Amount"), cls: "num", cell: (d) => `<td class="num">${sfm_money(d.original_amount)}</td>` },
+			{ key: "amount", label: __("Total Fee Payable"), cls: "num", cell: (d) => `<td class="num">${sfm_money(d.original_amount)}</td>` },
 			{ key: "penalty", label: __("Penalty"), cls: "num", cell: (d) => `<td class="num">${sfm_money(d.penalty_amount)}</td>` },
 			{ key: "waiver", label: __("Scholarship"), sub: __("Waiver"), cls: "num", cell: (d) => `<td class="num">${sfm_money(d.waiver_amount)}</td>` },
-			{ key: "payable", label: __("Total Payable"), cls: "num", cell: (d) => `<td class="num">${sfm_money(d.net_payable)}</td>` },
+			{ key: "payable", label: __("Net Fee Payable"), cls: "num", cell: (d) => `<td class="num">${sfm_money(d.net_payable)}</td>` },
 			{
 				key: "paid",
 				label: __("Paid Amount"),
