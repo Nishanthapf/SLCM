@@ -30,11 +30,11 @@
 	color: var(--login-brand);
 }
 
-/* Tab labels in a compact sans-serif, so all three fit the narrow card with their icons. */
+/* Tab labels in the page font (Merriweather), sized so all three fit the card with their icons. */
 .slcm-fui .login-tabs,
 .slcm-fui .login-tabs * {
-	font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-	font-size: 13px;
+	font-family: var(--login-font);
+	font-size: 12px;
 }
 
 /* The brand button: frappe-ui's solid button, recoloured. */
