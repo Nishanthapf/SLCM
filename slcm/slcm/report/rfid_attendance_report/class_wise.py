@@ -163,7 +163,7 @@ def collect(filters, parse, venue_expr, terminal_expr):
 	ids = sorted(students)
 	for i in range(0, len(ids), 1000):
 		for s in frappe.get_all("Student Master", filters={"name": ["in", ids[i:i + 1000]]},
-		                        fields=["name", "first_name", "programme_of_study", "academic_year"]):
+		                        fields=["name", "registration_id", "first_name", "programme_of_study", "academic_year"]):
 			info[s.name] = s
 
 	mapped = frappe.get_all(
@@ -347,7 +347,7 @@ def student_rows(ctx):
 			rows.append(frappe._dict(
 				date=s.schedule_date, time=item.row["class_time"], course=item.row["course"],
 				class_name=s.class_name, section=s.section or "", faculty=item.row["faculty"], venue=s.venue or "",
-				student=st, student_name=sm.first_name or "", programme=sm.programme_of_study or "",
+				student=st, registration_id=sm.registration_id or "", student_name=sm.first_name or "", programme=sm.programme_of_study or "",
 				academic_year=sm.academic_year or "",
 				swiped=bool(m), swipes=int(m.swipes) if m else 0,
 				first_swipe=m.first_swipe if m else None, last_swipe=m.last_swipe if m else None,
@@ -362,7 +362,7 @@ def student_summary(rows):
 	agg = OrderedDict()
 	for r in rows:
 		a = agg.setdefault(r.student, frappe._dict(
-			student=r.student, student_name=r.student_name, programme=r.programme,
+			student=r.student, registration_id=r.registration_id, student_name=r.student_name, programme=r.programme,
 			academic_year=r.academic_year, classes=0, swiped=0, present=0,
 		))
 		a.classes += 1
