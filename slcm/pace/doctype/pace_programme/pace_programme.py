@@ -30,7 +30,8 @@ class PACEProgramme(Document):
 			web_form_route = (
 				frappe.db.get_value("Web Form", "PACE Application Form", "route") or "paceadmissions/application-form"
 			).strip("/")
-			self.application_form_link = f"/{web_form_route}/new?programme={self.route}"
+			baseURL = frappe.utils.get_url() + "/"
+			self.application_form_link = f"{baseURL}{web_form_route}/new?programme={self.route}"
 
 	def generate_program_slug(self):
 		if not self.programme_name:

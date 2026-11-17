@@ -228,8 +228,10 @@ def _get_columns(filters):
 		{"fieldname": "total_swipes",    "label": _("Total Swipes"),         "fieldtype": "Int",      "width": 115},
 		{"fieldname": "unique_students", "label": _("Unique Students"),      "fieldtype": "Int",      "width": 130},
 		{"fieldname": "unknown_swipes",  "label": _("Unknown Swipes"),       "fieldtype": "Int",      "width": 130},
-		{"fieldname": "first_swipe",     "label": _("First Swipe"),          "fieldtype": "Datetime", "width": 175},
-		{"fieldname": "last_swipe",      "label": _("Last Swipe"),           "fieldtype": "Datetime", "width": 175},
+		{"fieldname": "first_swipe_date", "label": _("First Swipe Date"),    "fieldtype": "Date",     "width": 120},
+		{"fieldname": "first_swipe_time", "label": _("First Swipe Time"),    "fieldtype": "Time",     "width": 120},
+		{"fieldname": "last_swipe_date",  "label": _("Last Swipe Date"),     "fieldtype": "Date",     "width": 120},
+		{"fieldname": "last_swipe_time",  "label": _("Last Swipe Time"),     "fieldtype": "Time",     "width": 120},
 	]
 
 
@@ -375,6 +377,9 @@ def _get_data(filters, base, params):
 				"first_swipe": r.first_swipe,
 				"last_swipe": r.last_swipe,
 			})
+	for row in data:
+		row["first_swipe_date"], row["first_swipe_time"] = _split_dt(row["first_swipe"])
+		row["last_swipe_date"], row["last_swipe_time"] = _split_dt(row["last_swipe"])
 	return data
 
 
@@ -695,11 +700,12 @@ def _terminal_table(sheet, title, filters, rows, note):
 	sheet(
 		title,
 		[_("Period"), _("Terminal / Room"), _("Venue"), _("Total Swipes"), _("Unique Students"),
-		 _("Unknown Swipes"), _("First Swipe"), _("Last Swipe")],
-		[30, 22, 26, 13, 15, 15, 20, 20],
+		 _("Unknown Swipes"), _("First Swipe Date"), _("First Swipe Time"), _("Last Swipe Date"),
+		 _("Last Swipe Time")],
+		[30, 22, 26, 13, 15, 15, 16, 16, 16, 16],
 		[[_period_label(r["period_key"], filters.view_by) if r.get("is_period_row") else "",
 		  r["terminal_alias"], r["venue"], r["total_swipes"], r["unique_students"], r["unknown_swipes"],
-		  _naive(r["first_swipe"]), _naive(r["last_swipe"])] for r in rows],
+		  *_split_dt(r["first_swipe"]), *_split_dt(r["last_swipe"])] for r in rows],
 		note=note,
 		bold_rows=lambda i: bool(rows[i].get("is_period_row")),
 	)
@@ -874,6 +880,14 @@ def _naive(value):
 	if isinstance(value, _dt.datetime) and value.tzinfo:
 		return value.replace(tzinfo=None)
 	return value
+
+
+def _split_dt(value):
+	"""(date, time-to-the-second) for a swipe datetime; (None, None) when empty."""
+	value = get_datetime(value) if value else None
+	if not value:
+		return None, None
+	return value.date(), value.time().replace(microsecond=0)
 
 
 def _time_only(value):
