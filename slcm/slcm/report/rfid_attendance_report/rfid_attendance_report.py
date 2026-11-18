@@ -27,7 +27,8 @@ Terminal-wise:
   Student-wise (Daily)    one row per student per day
   Student Totals          one row per student for the whole range
   Most Swiped - Daily / Weekly / Monthly
-                          top student per period, overall and per terminal
+                          top student per period, overall and per terminal —
+                          only when "Include Most Swiped Sheets" is ticked
 Class-wise:
   Class-wise              the on-screen table
   Class Students          one row per class per enrolled student
@@ -43,7 +44,7 @@ from collections import OrderedDict
 
 import frappe
 from frappe import _
-from frappe.utils import add_to_date, get_datetime, get_time, getdate
+from frappe.utils import add_to_date, cint, get_datetime, get_time, getdate
 
 from slcm.permissions import AAD_ROLES
 from slcm.slcm.report.rfid_attendance_report import class_wise
@@ -450,8 +451,25 @@ def download_excel(filters):
 	bold = Font(bold=True)
 
 	used_titles = set()
+	ws = None
+	center = Alignment(horizontal="center", vertical="center")
+
+	def _xl_cell(value):
+		"""Dates as dd-mm-yyyy, times as hh:mm:ss (Excel's default drops the leading zero); both centred."""
+		c = WriteOnlyCell(ws, value=value)
+		if isinstance(value, _dt.datetime):
+			c.number_format = "dd-mm-yyyy hh:mm:ss"
+		elif isinstance(value, _dt.date):
+			c.number_format = "dd-mm-yyyy"
+		elif isinstance(value, _dt.time):
+			c.number_format = "hh:mm:ss"
+		else:
+			return c
+		c.alignment = center
+		return c
 
 	def sheet(title, headers, widths, rows, note=None, bold_rows=None):
+		nonlocal ws
 		ws = wb.create_sheet(title=_sheet_title(title, used_titles))
 		for idx, width in enumerate(widths, start=1):
 			ws.column_dimensions[_col_letter(idx)].width = width
@@ -469,19 +487,19 @@ def download_excel(filters):
 		for h in headers:
 			c = WriteOnlyCell(ws, value=h)
 			c.font, c.fill = header_font, header_fill
-			c.alignment = Alignment(vertical="center")
+			c.alignment = Alignment(horizontal="center", vertical="center")
 			head.append(c)
 		ws.append(head)
 		for i, row in enumerate(rows):
 			if bold_rows and bold_rows(i):
 				cells = []
 				for v in row:
-					c = WriteOnlyCell(ws, value=v)
+					c = _xl_cell(v)
 					c.font = bold
 					cells.append(c)
 				ws.append(cells)
 			else:
-				ws.append(row)
+				ws.append([_xl_cell(v) for v in row])
 
 	_write_sheets(filters, sheet)
 
@@ -605,13 +623,13 @@ def _class_wise_sheets(filters, sheet, scope, main_only=False):
 		             _scope_note(sub) + class_note)
 
 	headers = [_("Date"), _("Day"), _("Time"), _("Course"), _("Class"), _("Section"), _("Faculty"), _("Venue"),
-	           _("Student ID"), _("Student Name"), _("Programme"), _("Academic Year"), _("Swiped"), _("Swipes"),
-	           _("First Swipe"), _("Last Swipe"), _("Terminals"), _("At Venue"), _("Attendance"), _("Time Table")]
-	widths = [12, 11, 13, 34, 26, 10, 24, 20, 22, 28, 34, 14, 9, 9, 12, 12, 30, 10, 14, 20]
+	           _("Student ID"), _("Registration ID"), _("Student Name"), _("Programme"), _("Academic Year"), _("Swiped"), _("Swipes"),
+	           _("First Swipe Time (HH:MM:SS)"), _("Last Swipe Time (HH:MM:SS)"), _("Terminals"), _("At Venue"), _("Attendance"), _("Time Table")]
+	widths = [12, 11, 13, 34, 26, 10, 24, 20, 22, 16, 28, 34, 14, 9, 9, 26, 26, 30, 10, 14, 20]
 
 	def as_row(r):
 		return [r.date, _WEEKDAYS[r.date.weekday()], r.time, r.course, r.class_name, r.section, r.faculty, r.venue,
-		        r.student, r.student_name, r.programme, r.academic_year, _("Yes") if r.swiped else _("No"),
+		        r.student, r.registration_id, r.student_name, r.programme, r.academic_year, _("Yes") if r.swiped else _("No"),
 		        r.swipes, _time_only(r.first_swipe), _time_only(r.last_swipe), r.terminals, r.at_venue,
 		        r.attendance, r.time_table]
 
@@ -621,10 +639,10 @@ def _class_wise_sheets(filters, sheet, scope, main_only=False):
 	summary = class_wise.student_summary(students)
 	sheet(
 		_("Student Summary"),
-		[_("Student ID"), _("Student Name"), _("Programme"), _("Academic Year"), _("Classes"), _("Swiped"),
+		[_("Student ID"), _("Registration ID"), _("Student Name"), _("Programme"), _("Academic Year"), _("Classes"), _("Swiped"),
 		 _("Not Swiped"), _("Swiped %"), _("Marked Present")],
-		[22, 28, 34, 14, 10, 10, 11, 10, 15],
-		[[a.student, a.student_name, a.programme, a.academic_year, a.classes, a.swiped, a.not_swiped,
+		[22, 16, 28, 34, 14, 10, 10, 11, 10, 15],
+		[[a.student, a.registration_id, a.student_name, a.programme, a.academic_year, a.classes, a.swiped, a.not_swiped,
 		  a.swipe_pct, a.present] for a in summary],
 		note=note + " · " + _("Lowest swipe rate first."),
 	)
@@ -642,7 +660,9 @@ def _terminal_sheets(filters, sheet, scope, main_only=False):
 
 	report_rows = _get_data(filters, base, params)
 	totals = _student_total_rows(base, params)
-	top = {view: _most_swiped_rows(view, base, params) for view in ("Daily", "Weekly", "Monthly")}
+	top = {}
+	if cint(filters.get("include_most_swiped")):
+		top = {view: _most_swiped_rows(view, base, params) for view in ("Daily", "Weekly", "Monthly")}
 	info = _student_info({r.student for r in student_daily})
 
 	# 1. Overall report (as on screen), then one sheet per selected filter value
@@ -654,28 +674,30 @@ def _terminal_sheets(filters, sheet, scope, main_only=False):
 		sub_base, sub_params = _base_query(sub)
 		_terminal_table(sheet, value, sub, _get_data(sub, sub_base, sub_params), _scope_note(sub))
 
-	# 2. Student-wise (Daily)
+	# 2. Student-wise (Daily): one row per student per day
 	sheet(
 		_("Student-wise (Daily)"),
-		[_("Date"), _("Day"), _("Student ID"), _("Student Name"), _("Programme"), _("Academic Year"),
-		 _("Swipes"), _("First Swipe"), _("Last Swipe"), _("Terminals"), _("Venues")],
-		[12, 11, 22, 28, 34, 14, 9, 12, 12, 40, 40],
+		[_("Date"), _("Day"), _("Student ID"), _("Registration ID"), _("Student Name"), _("Programme"), _("Academic Year"),
+		 _("Swipes"), _("First Swipe Time (HH:MM:SS)"), _("Last Swipe Time (HH:MM:SS)"), _("Terminals"), _("Venues")],
+		[12, 11, 22, 16, 28, 34, 14, 9, 26, 26, 40, 40],
 		[[r.day, _WEEKDAYS[r.day.weekday()], r.student, *_student_cols(info, r.student),
 		  int(r.swipes), _time_only(r.first_swipe), _time_only(r.last_swipe), r.terminals, r.venues]
 		 for r in student_daily],
-		note=scope,
+		note=scope + " · " + _("One row per student per day: that day's swipes and its first / last swipe time."),
 	)
 
-	# 3. Student Totals
+	# 3. Student Totals: one row per student for the whole range
 	info.update(_student_info({r.student for r in totals} - set(info)))
 	sheet(
 		_("Student Totals"),
-		[_("Student ID"), _("Student Name"), _("Programme"), _("Academic Year"), _("Total Swipes"),
-		 _("Days With Swipes"), _("Terminals Used"), _("First Swipe"), _("Last Swipe")],
-		[22, 28, 34, 14, 13, 16, 15, 20, 20],
+		[_("Student ID"), _("Registration ID"), _("Student Name"), _("Programme"), _("Academic Year"), _("Total Swipes"),
+		 _("Days With Swipes"), _("Terminals Used"), _("First Swipe Date"), _("First Swipe Time (HH:MM:SS)"),
+		 _("Last Swipe Date"), _("Last Swipe Time (HH:MM:SS)")],
+		[22, 16, 28, 34, 14, 13, 16, 15, 16, 26, 16, 26],
 		[[r.student, *_student_cols(info, r.student), int(r.swipes), int(r.days), int(r.terminals),
-		  _naive(r.first_swipe), _naive(r.last_swipe)] for r in totals],
-		note=scope,
+		  *_split_dt(r.first_swipe), *_split_dt(r.last_swipe)] for r in totals],
+		note=scope + " · " + _("One row per student for the whole range: all swipes added up, "
+		                       "with the earliest and latest swipe in the range."),
 	)
 
 	# 4-6. Most swiped per period
@@ -683,9 +705,9 @@ def _terminal_sheets(filters, sheet, scope, main_only=False):
 		info.update(_student_info({r["student"] for r in rows} - set(info)))
 		sheet(
 			_("Most Swiped - {0}").format(view),
-			[_("Period"), _("Terminal / Room"), _("Venue"), _("Student ID"), _("Student Name"), _("Programme"),
+			[_("Period"), _("Terminal / Room"), _("Venue"), _("Student ID"), _("Registration ID"), _("Student Name"), _("Programme"),
 			 _("Academic Year"), _("Their Swipes"), _("Known-Student Swipes There"), _("Share %"), _("Students Tied")],
-			[30, 22, 26, 22, 28, 34, 14, 13, 24, 9, 13],
+			[30, 22, 26, 22, 16, 28, 34, 14, 13, 24, 9, 13],
 			[[_period_label(r["period_key"], view), r["terminal"], r["venue"], r["student"],
 			  *_student_cols(info, r["student"]), r["swipes"], r["group_swipes"],
 			  round(100.0 * r["swipes"] / r["group_swipes"], 1) if r["group_swipes"] else 0, r["ties"]]
@@ -700,9 +722,9 @@ def _terminal_table(sheet, title, filters, rows, note):
 	sheet(
 		title,
 		[_("Period"), _("Terminal / Room"), _("Venue"), _("Total Swipes"), _("Unique Students"),
-		 _("Unknown Swipes"), _("First Swipe Date"), _("First Swipe Time"), _("Last Swipe Date"),
-		 _("Last Swipe Time")],
-		[30, 22, 26, 13, 15, 15, 16, 16, 16, 16],
+		 _("Unknown Swipes"), _("First Swipe Date"), _("First Swipe Time (HH:MM:SS)"), _("Last Swipe Date"),
+		 _("Last Swipe Time (HH:MM:SS)")],
+		[30, 22, 26, 13, 15, 15, 16, 26, 16, 26],
 		[[_period_label(r["period_key"], filters.view_by) if r.get("is_period_row") else "",
 		  r["terminal_alias"], r["venue"], r["total_swipes"], r["unique_students"], r["unknown_swipes"],
 		  *_split_dt(r["first_swipe"]), *_split_dt(r["last_swipe"])] for r in rows],
@@ -845,7 +867,7 @@ def _student_info(student_ids):
 		for s in frappe.get_all(
 			"Student Master",
 			filters={"name": ["in", ids[i:i + 1000]]},
-			fields=["name", "first_name", "programme_of_study", "academic_year"],
+			fields=["name", "registration_id", "first_name", "programme_of_study", "academic_year"],
 		):
 			info[s.name] = s
 	return info
@@ -853,7 +875,7 @@ def _student_info(student_ids):
 
 def _student_cols(info, student):
 	s = info.get(student) or frappe._dict()
-	return [s.first_name or "", s.programme_of_study or "", s.academic_year or ""]
+	return [s.registration_id or "", s.first_name or "", s.programme_of_study or "", s.academic_year or ""]
 
 
 def _scope_note(filters):

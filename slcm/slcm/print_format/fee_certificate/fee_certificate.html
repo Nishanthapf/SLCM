@@ -7,11 +7,17 @@
 <html>
 <head>
 	<meta charset="UTF-8">
+	<style>{{ ctx.font_face_css }}</style>
 	<style>
-		/* Equal 15mm margin on all four sides (the print format's margin fields match). */
+		/* 15mm margin on top and sides; the bottom is 1mm so the letterhead footer sits
+		   low on the page. wkhtmltopdf reads its margins from the .print-format rule. */
 		@page {
 			size: A4;
-			margin: 15mm;
+			margin: 15mm 15mm 1mm 15mm;
+		}
+
+		.print-format {
+			margin-bottom: 1mm;
 		}
 
 		html, body { margin: 0; padding: 0; }
@@ -32,11 +38,11 @@
 		   scale, so the PDF needs 328mm here; a real browser (JavaScript on; the PDF
 		   generator runs with it off) switches to .fc-browser, which is 1:1. */
 		table.fc-layout td.fc-layout-body {
-			height: 328mm;
+			height: 344mm;
 		}
 
 		.fc-browser table.fc-layout td.fc-layout-body {
-			height: 245mm;
+			height: 259mm;
 		}
 
 		table.fc-layout > tbody > tr.fc-layout-footer > td {
@@ -46,7 +52,7 @@
 		/* Exactly one A4 page in the PDF (about 0.75 scale there, see below): anything
 		   past the footer is clipped, so wkhtmltopdf can't add a blank second page. */
 		.fc-page {
-			height: 346mm;
+			height: 362mm;
 			overflow: hidden;
 		}
 
@@ -57,7 +63,7 @@
 		   Browsers get .fc-browser, which resets it. */
 		.fc-page.fc-true-scale {
 			zoom: 0.75;
-			height: 352mm;
+			height: 368mm;
 		}
 
 		.fc-page.fc-browser {
@@ -67,7 +73,7 @@
 		}
 
 		.fc-page {
-			font-family: Cambria, Georgia, "Times New Roman", serif;
+			font-family: "Merriweather", Cambria, Georgia, "Times New Roman", serif;
 			font-size: 12pt;
 			line-height: 1.85;
 			color: #000;
@@ -122,6 +128,43 @@
 			text-align: justify;
 		}
 
+		/* Larger text on all three certificates. */
+		.fc-page .body-text {
+			font-size: 16pt;
+		}
+
+		.fc-page .title {
+			font-size: 16pt;
+		}
+
+		.fc-page .date-line,
+		.fc-page table.fee-table th,
+		.fc-page table.fee-table td {
+			font-size: 14pt;
+		}
+
+		.fc-page .bank-details,
+		.fc-page .closing-text {
+			font-size: 14pt;
+		}
+
+		/* The multi-year table and bank details are long: a little smaller so the
+		   page still fits one A4 sheet with nine or more fee components. */
+		.fc-page.fc-multi table.fee-table th,
+		.fc-page.fc-multi table.fee-table td {
+			font-size: 13pt;
+			padding: 4px 5px !important;
+		}
+
+		.fc-page.fc-multi .bank-details,
+		.fc-page.fc-multi .closing-text {
+			font-size: 13pt;
+		}
+
+		.fc-page.fc-multi table.bank-table td {
+			font-size: 12pt !important;
+		}
+
 		.body-text p, .bank-details p, .closing-text p {
 			margin: 0 0 12px;
 		}
@@ -170,7 +213,7 @@
 			border: none !important;
 			line-height: 1.45 !important;
 			vertical-align: top !important;
-			font-size: 11pt !important;
+			font-size: 13pt !important;
 		}
 
 		.bank-details, .closing-text {
@@ -187,14 +230,14 @@
 		   { width: 100% !important }", which outranks these rules, so the width is
 		   also set inline on the <img> tags (inline !important always wins). */
 		.signature-block .signature {
-			height: 24mm;
+			height: 36mm;
 			width: auto !important;
 			max-width: none;
 			display: inline-block;
 		}
 
 		.signature-block .seal {
-			height: 24mm;
+			height: 36mm;
 			width: auto !important;
 			max-width: none;
 			display: block;
@@ -224,7 +267,7 @@
 	</style>
 </head>
 <body>
-<div class="fc-page{% if ctx.true_scale %} fc-true-scale{% endif %}">
+<div class="fc-page{% if is_multi_year %} fc-multi{% endif %}{% if ctx.true_scale %} fc-true-scale{% endif %}{% if ctx.certificate_type == "Single Year Fee Receipt" %} fc-receipt{% endif %}">
 <script>document.querySelector(".fc-page").classList.add("fc-browser");</script>
 <table class="fc-layout"><tbody><tr><td class="fc-layout-body">
 	{% if ctx.header_image %}
@@ -258,10 +301,10 @@
 		<table class="fee-table">
 			<thead>
 				<tr>
-					<th style="width: {{ '6%' if is_multi_year else '10%' }};">Sl. No.</th>
+					<th style="width: {{ '5%' if is_multi_year else '10%' }};">Sl. No.</th>
 					<th>Particulars</th>
 					{% for label in table.year_labels %}
-					<th style="width: {{ '11%' if is_multi_year else '18%' }};">{{ label }}</th>
+					<th style="width: {{ '9.5%' if is_multi_year else '18%' }};">{{ label }}</th>
 					{% endfor %}
 				</tr>
 			</thead>
@@ -277,7 +320,7 @@
 				{% endfor %}
 				<tr class="total-row">
 					<td></td>
-					<td>{{ "Total Course Fee" if table.show_scholarship_row else ctx.total_label }}</td>
+					<td>{{ "Total Fee payable" if table.show_scholarship_row else ctx.total_label }}</td>
 					{% for amount in table.total_row %}
 					<td class="amount">{{ amount }}</td>
 					{% endfor %}
@@ -292,7 +335,7 @@
 				</tr>
 				<tr class="net-row">
 					<td></td>
-					<td>{{ ctx.total_label }}</td>
+					<td>Net Fee payable</td>
 					{% for amount in table.net_row %}
 					<td class="amount">{{ amount }}</td>
 					{% endfor %}
@@ -326,12 +369,12 @@
 		{% endif %}
 
 		<div class="signature-block">
-			{% if ctx.signature_image %}<img class="signature" style="width: auto !important; max-width: none !important; height: 24mm;" src="data:image/png;base64,{{ ctx.signature_image }}">{% endif %}
+			{% if ctx.signature_image %}<img class="signature" style="width: auto !important; max-width: none !important; height: 36mm;" src="data:image/png;base64,{{ ctx.signature_image }}">{% endif %}
 			{% if not (settings.cfo_signature and settings.signature_includes_designation) %}
 			<div class="designation">{{ settings.cfo_designation or "Chief Finance Officer" }}</div>
 			<div>{{ settings.institute_name or "" }}</div>
 			{% endif %}
-			{% if settings.seal_image %}<img class="seal" style="width: auto !important; max-width: none !important; height: 24mm;" src="data:image/png;base64,{{ get_file_b64(settings.seal_image) }}">{% endif %}
+			{% if settings.seal_image %}<img class="seal" style="width: auto !important; max-width: none !important; height: 36mm;" src="data:image/png;base64,{{ get_file_b64(settings.seal_image) }}">{% endif %}
 		</div>
 	</div>
 </td></tr>

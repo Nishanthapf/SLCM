@@ -239,6 +239,16 @@ frappe.query_reports["RFID Attendance Report"] = {
 			fieldtype: "Check",
 			default: 0,
 			depends_on: "eval:doc.report_type !== 'Class-wise'"
+		},
+		{
+			fieldname: "include_most_swiped",
+			label: __("Include Most Swiped Sheets"),
+			fieldtype: "Check",
+			default: 0,
+			description: __("Adds the Most Swiped - Daily / Weekly / Monthly sheets to the Excel and all-sheets CSV downloads."),
+			depends_on: "eval:doc.report_type !== 'Class-wise'",
+			// Download-only option: the on-screen table doesn't use it, so don't re-run the report.
+			on_change: function () {}
 		}
 	],
 

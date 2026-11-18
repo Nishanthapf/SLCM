@@ -164,22 +164,47 @@ def suggest_venue_mappings():
 
 
 @frappe.whitelist()
-def create_suggested_mappings(devices):
-	"""Create mappings (effective today) for the given devices, using the
-	current suggestion for each. Only 'Suggested' rows are created."""
+def create_suggested_mappings(devices=None, manual=None):
+	"""Create mappings (effective today).
+
+	`devices`: devices whose current 'Suggested' venue should be used.
+	`manual`: {device: venue} picked by hand for unmatched/ambiguous/skipped readers.
+	All-or-nothing: any error rolls back the whole request."""
 	frappe.only_for("System Manager")
 	wanted = set(frappe.parse_json(devices) or [])
+	manual = frappe.parse_json(manual) or {}
+	if not isinstance(manual, dict):
+		frappe.throw(_("Invalid manual mappings."))
+	manual = {d: v for d, v in manual.items() if d and v}
+
+	rows = {row["device"]: row for row in _suggest_rows()}
+	for device, venue in manual.items():
+		row = rows.get(device)
+		if not row:
+			frappe.throw(_("RFID Device {0} is not an active reader.").format(frappe.bold(device)))
+		if row["code"] not in ("unmatched", "ambiguous", "skipped"):
+			frappe.throw(_("Device {0} ({1}) can no longer be mapped by hand: {2}. Reopen the dialog.").format(
+				frappe.bold(device), row["label"], row["status"]))
+		if not frappe.db.get_value("Venue Master", {"name": venue, "is_active": 1}):
+			frappe.throw(_("Venue {0} does not exist or is inactive.").format(frappe.bold(venue)))
+
 	created = []
-	for row in _suggest_rows():
-		if row["device"] not in wanted or row["code"] != "suggested":
+	for row in rows.values():
+		if row["device"] in manual:
+			venue = manual[row["device"]]
+			remarks = _("Mapped by hand from reader label '{0}'").format(row["label"])
+		elif row["device"] in wanted and row["code"] == "suggested":
+			venue = row["venue"]
+			remarks = _("Created from reader label '{0}'").format(row["label"])
+		else:
 			continue
 		doc = frappe.get_doc({
 			"doctype": "RFID Device Room Mapping",
 			"device": row["device"],
-			"room": row["venue"],
+			"room": venue,
 			"effective_from": today(),
 			"is_active": 1,
-			"remarks": _("Created from reader label '{0}'").format(row["label"]),
+			"remarks": remarks,
 		}).insert()
 		created.append(doc.name)
 	return created

@@ -17,7 +17,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Mm, Pt
 
-FONT = "Cambria"
+FONT = "Merriweather"
 PAGE_MARGIN = Mm(15)
 CONTENT_WIDTH = Mm(210 - 30)
 
@@ -171,13 +171,13 @@ def build_certificate_docx(ctx):
 	for i, row in enumerate(table["rows"], 1):
 		add_row(str(i), row["particulars"], row["amounts"])
 	if table.get("show_scholarship_row"):
-		add_row("", "Total Course Fee", table["total_row"], bold=True)
+		add_row("", "Total Fee payable", table["total_row"], bold=True)
 		add_row(
 			"",
 			"Less: University Scholarship",
 			[a if a == "-" else f"({a})" for a in table["scholarship_row"]],
 		)
-		add_row("", ctx["total_label"], table["net_row"], bold=True)
+		add_row("", "Net Fee payable", table["net_row"], bold=True)
 	else:
 		add_row("", ctx["total_label"], table["total_row"], bold=True)
 	if table.get("show_paid_rows"):
@@ -235,7 +235,7 @@ def build_certificate_docx(ctx):
 	sign.paragraph_format.space_before = Pt(18)
 	if ctx.get("signature_image"):
 		stream = _image(ctx["signature_image"])
-		sign.add_run().add_picture(stream, height=Mm(24))
+		sign.add_run().add_picture(stream, height=Mm(27))  # PDF: 36mm at ~0.75 scale
 	if not (ctx.get("signature_image") and settings.get("signature_includes_designation")):
 		for line, bold in ((settings.get("cfo_designation") or "Chief Finance Officer", True), (settings.get("institute_name") or "", False)):
 			p = doc.add_paragraph()
