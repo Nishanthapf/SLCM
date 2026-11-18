@@ -353,11 +353,14 @@ def validate_new_application_access(program=None, foriegn_national=None, nationa
 
 
 @frappe.whitelist(allow_guest=False)
-def get_open_programmes():
+def get_open_programmes(foriegn_national=None):
     """
     Returns open programmes for the active Admission Cycle.
     Used by the programme picker dialog on the applicant web form.
     Each item: {"name": <Program.program_slug or Program.name>, "label": <Program.program_name>}
+
+    foriegn_national ("Yes" / "No"): leave out programmes not open to that applicant type
+    (Admission Cycle Program.admission_open_for), same rule as validate_new_application_access.
     """
     active_cycle = frappe.db.get_value(
         "Admission Cycle", {"status": "Active"}, "name"
@@ -368,15 +371,23 @@ def get_open_programmes():
     rows = frappe.get_all(
         "Admission Cycle Program",
         filters={"parent": active_cycle, "is_active": 1},
-        fields=["program"],
+        fields=["program", "admission_open_for"],
     )
+
+    fn = (foriegn_national or "").strip().lower()
+    is_international = fn in ("yes", "true", "1")
+    is_domestic = fn in ("no", "false", "0")
 
     out = []
     for r in rows:
         prog = r.get("program") or ""
         if not prog:
             continue
-        
+
+        open_for = (r.get("admission_open_for") or "").strip()
+        if (open_for == "International" and is_domestic) or (open_for == "Domestic" and is_international):
+            continue
+
         prog_data = frappe.db.get_value("Programme", prog, ["program_name", "program_slug"], as_dict=True) or {}
         label = prog_data.get("program_name") or prog
         slug = prog_data.get("program_slug") or prog
@@ -439,6 +450,18 @@ def get_application_fee_amount(
 # ───────────────────────────────────────────────────────────────────
 #  SAVE DRAFT
 # ───────────────────────────────────────────────────────────────────
+
+def _portal_missing_applicant_type(doc):
+    """
+    Portal submit only: foriegn_national (Domestic / International) must be "Yes" or "No".
+    The field is hidden on the portal and normally comes from the entry link or the
+    Applicant Type picker; an old cached page could still send an application without it.
+    Returns a list with the field label when missing (same shape as get_missing_mandatory_fields).
+    """
+    if (getattr(doc, "foriegn_national", "") or "").strip().lower() in ("yes", "no"):
+        return []
+    return [_("Applicant Type (Domestic / International) — please reload the application page and choose one")]
+
 
 @frappe.whitelist()
 def save_applicant_draft(data, ignore_mandatory=True):
@@ -630,7 +653,7 @@ def save_applicant_draft(data, ignore_mandatory=True):
     # skips Frappe's mandatory check for Drafts, so check explicitly — including child-table rows —
     # and stop before eligibility / payment instead of failing after the applicant has paid.
     if not ignore_mandatory:
-        missing = get_missing_mandatory_fields(doc)
+        missing = list(get_missing_mandatory_fields(doc) or []) + _portal_missing_applicant_type(doc)
         if missing:
             return {
                 "status": "error",
@@ -746,7 +769,11 @@ def submit_applicant(applicant_name, target_status=None):
     if current_status and current_status not in ("Draft", "Submitted"):
         return {"status": "error", "message": _("Only Draft or Submitted applications can be updated here.")}
 
-    missing = get_missing_mandatory_fields(doc)
+    missing = list(get_missing_mandatory_fields(doc) or [])
+    # Applicant type: only on the first Draft → Submitted step, so applications already
+    # submitted (e.g. Submitted → Submitted and Paid after payment) are never blocked by it.
+    if current_status in ("", "Draft"):
+        missing += _portal_missing_applicant_type(doc)
     if missing:
         return {
             "status": "error",

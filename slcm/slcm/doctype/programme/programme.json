@@ -16,6 +16,7 @@
   "programme_url",
   "column_break_aosh",
   "program_image",
+  "dashboard_icon",
   "program_slug",
   "application_form_link",
   "international_application_form_link",
@@ -104,6 +105,13 @@
    "fieldtype": "Attach Image",
    "label": "Programme Image",
    "reqd": 1
+  },
+  {
+   "description": "Icon on this programme's card in the Admission Dashboard. Leave blank to use the default icon for the Level of Study.",
+   "fieldname": "dashboard_icon",
+   "fieldtype": "Select",
+   "label": "Dashboard Icon",
+   "options": "\ngraduation-cap\nbook-open\nmicroscope\nlandmark\nscale\ngavel\nbriefcase\nbuilding-2\nlibrary\nscroll-text\nglobe\nusers\nshield\nleaf\nhandshake\nnewspaper"
   },
   {
    "fieldname": "program_description",
@@ -275,7 +283,7 @@
   }
  ],
  "make_attachments_public": 1,
- "modified": "2026-11-11 15:00:00.000000",
+ "modified": "2026-11-18 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Programme",

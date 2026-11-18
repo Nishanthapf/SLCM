@@ -47,8 +47,9 @@ def build_conditions(filters):
         values["from_date"] = filters["from_date"]
 
     if filters.get("to_date"):
+        # include the whole To Date, not just its midnight
         conditions.append("u.creation <= %(to_date)s")
-        values["to_date"] = filters["to_date"]
+        values["to_date"] = f"{filters['to_date']} 23:59:59"
 
     if filters.get("user"):
         conditions.append("u.name = %(user)s")
@@ -97,7 +98,21 @@ def get_data(filters):
 
 
 def get_report_summary(filters):
-    condition_str, values = build_conditions(filters)
+    counts = get_registration_counts(filters.get("from_date"), filters.get("to_date"))
+    return [
+        {"value": counts["total"], "label": "Total Registered (Applicant)", "datatype": "Int", "indicator": "blue"},
+        {"value": counts["applied"], "label": "Registered & Applied", "datatype": "Int", "indicator": "green"},
+        {"value": counts["enrolled"], "label": "Enrolled", "datatype": "Int", "indicator": "green"},
+        {"value": counts["not_applied"], "label": "Registered & Not Applied", "datatype": "Int", "indicator": "red"},
+    ]
+
+
+def get_registration_counts(from_date=None, to_date=None):
+    """Applicant accounts registered in the period, by what they did next.
+
+    Also used by the Admission Dashboard, so its cards match this report.
+    """
+    condition_str, values = build_conditions({"from_date": from_date, "to_date": to_date})
 
     query = f"""
         SELECT
@@ -125,9 +140,4 @@ def get_report_summary(filters):
     applied = len([r for r in rows if r.application_status == "Applied"])
     not_applied = len([r for r in rows if r.application_status == "Not Applied"])
 
-    return [
-        {"value": total, "label": "Total Registered (Applicant)", "datatype": "Int", "indicator": "blue"},
-        {"value": applied, "label": "Registered & Applied", "datatype": "Int", "indicator": "green"},
-        {"value": enrolled, "label": "Enrolled", "datatype": "Int", "indicator": "green"},
-        {"value": not_applied, "label": "Registered & Not Applied", "datatype": "Int", "indicator": "red"},
-    ]
+    return {"total": total, "applied": applied, "enrolled": enrolled, "not_applied": not_applied}
