@@ -58,33 +58,59 @@ def build_conditions(filters):
     return " AND ".join(conditions), values
 
 
-def get_data(filters):
+def get_registered_users(filters):
+    """Applicant-role users with their application status (Enrolled / Applied / Not Applied).
+
+    A user "has applied" when any Applicant carries their email or their user id. That used to
+    be a correlated `EXISTS (... email = u.email OR user_id = u.name)` per user, which the OR
+    keeps off any index: users x applicants full scans, and a 504 on a real site. Instead the
+    Applicant table is read once and matched in Python.
+    """
     condition_str, values = build_conditions(filters)
 
-    query = f"""
-        SELECT
-            u.email AS user_id,
-            u.full_name,
-            u.creation AS created_on,
-            CASE
-                WHEN EXISTS (
-                    SELECT 1 FROM `tabApplicant` pa
-                    WHERE (pa.email = u.email OR pa.user_id = u.name) AND pa.status = 'Enrolled'
-                ) THEN 'Enrolled'
-                WHEN EXISTS (
-                    SELECT 1 FROM `tabApplicant` pa
-                    WHERE pa.email = u.email OR pa.user_id = u.name
-                ) THEN 'Applied'
-                ELSE 'Not Applied'
-            END AS application_status
+    users = frappe.db.sql(
+        f"""
+        SELECT u.name, u.email, u.full_name, u.creation
         FROM `tabUser` u
         INNER JOIN `tabHas Role` hr
-            ON hr.parent = u.name AND hr.role = 'Applicant'
+            ON hr.parent = u.name AND hr.role = 'Applicant' AND hr.parenttype = 'User'
         WHERE {condition_str}
+        GROUP BY u.name
         ORDER BY u.full_name
-    """
+        """,
+        values,
+        as_dict=True,
+    )
+    if not users:
+        return []
 
-    rows = frappe.db.sql(query, values, as_dict=True)
+    applied, enrolled = set(), set()
+    for email, user_id, status in frappe.db.sql(
+        "SELECT email, user_id, status FROM `tabApplicant` WHERE IFNULL(email, '') != '' OR IFNULL(user_id, '') != ''"
+    ):
+        keys = {k for k in (email, user_id) if k}
+        applied |= keys
+        if status == "Enrolled":
+            enrolled |= keys
+
+    for u in users:
+        keys = {u.email, u.name}
+        u.application_status = (
+            "Enrolled" if keys & enrolled else "Applied" if keys & applied else "Not Applied"
+        )
+    return users
+
+
+def get_data(filters):
+    rows = [
+        frappe._dict(
+            user_id=u.email,
+            full_name=u.full_name,
+            created_on=u.creation,
+            application_status=u.application_status,
+        )
+        for u in get_registered_users(filters)
+    ]
 
     case = filters.get("case")
     if case == "With Application":
@@ -112,28 +138,7 @@ def get_registration_counts(from_date=None, to_date=None):
 
     Also used by the Admission Dashboard, so its cards match this report.
     """
-    condition_str, values = build_conditions({"from_date": from_date, "to_date": to_date})
-
-    query = f"""
-        SELECT
-            CASE
-                WHEN EXISTS (
-                    SELECT 1 FROM `tabApplicant` pa
-                    WHERE (pa.email = u.email OR pa.user_id = u.name) AND pa.status = 'Enrolled'
-                ) THEN 'Enrolled'
-                WHEN EXISTS (
-                    SELECT 1 FROM `tabApplicant` pa
-                    WHERE pa.email = u.email OR pa.user_id = u.name
-                ) THEN 'Applied'
-                ELSE 'Not Applied'
-            END AS application_status
-        FROM `tabUser` u
-        INNER JOIN `tabHas Role` hr
-            ON hr.parent = u.name AND hr.role = 'Applicant'
-        WHERE {condition_str}
-    """
-
-    rows = frappe.db.sql(query, values, as_dict=True)
+    rows = get_registered_users({"from_date": from_date, "to_date": to_date})
 
     total = len(rows)
     enrolled = len([r for r in rows if r.application_status == "Enrolled"])

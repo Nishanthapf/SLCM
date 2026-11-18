@@ -173,7 +173,9 @@
       "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench/apps/slcm/slcm/admission/web_form/applicant_form && node --check applicant_form.js && echo NODE_OK; ~/frappe-bench/env/bin/python -c \"import jinja2;jinja2.Environment\\(\\).parse\\(open\\(\\\\\"applicant_form.js\\\\\"\\).read\\(\\)\\);print\\(\\\\\"JINJA_OK\\\\\"\\)\"; grep -c \"SLCM_PRIMARY_CSS\" applicant_form.js')",
       "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 --cd /home/n_l_s_i_u/frappe-bench/apps/slcm/frontend -- bash -lc 'yarn build 2>&1 | grep -v \"^\\\\s*$\" | sed -n \"/error during build/,+15p\"')",
       "Bash(export MSYS_NO_PATHCONV=1; wsl -d Ubuntu-24.04 -- python3 /tmp/overview_patch.py && rm //wsl.localhost/Ubuntu-24.04/tmp/overview_patch.py //wsl.localhost/Ubuntu-24.04/tmp/overview_template.vue)",
-      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 --cd /home/n_l_s_i_u/frappe-bench/apps/slcm/frontend -- bash -lc 'yarn build 2>&1 | grep -E \"built|rror\" | head -3; node --check ../slcm/admission/page/admission_dashboard/admission_dashboard.js && echo JS_OK')"
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 --cd /home/n_l_s_i_u/frappe-bench/apps/slcm/frontend -- bash -lc 'yarn build 2>&1 | grep -E \"built|rror\" | head -3; node --check ../slcm/admission/page/admission_dashboard/admission_dashboard.js && echo JS_OK')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc \"cd ~/frappe-bench/apps/slcm/frontend && yarn build 2>&1 | tail -2\")",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc 'cd ~/frappe-bench/apps/slcm && for f in slcm/admission/doctype/applicant/applicant.json slcm/slcm/doctype/slcm_payment_request/slcm_payment_request.json; do grep -n \"^ \\\\\"modified\\\\\":\" $f; done')"
     ],
     "additionalDirectories": [
       "\\tmp",

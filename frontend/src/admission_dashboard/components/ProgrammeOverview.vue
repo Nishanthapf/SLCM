@@ -40,6 +40,7 @@
 			<Button v-if="hasFilters" label="Clear filters" icon-left="lucide-x" variant="ghost" @click="clearFilters" />
 		</div>
 
+		<LoadProgress :loading="overview.loading" label="Loading programme data" />
 		<ErrorMessage v-if="overview.error" class="mt-6" :message="overview.error" />
 
 		<template v-else>
@@ -199,6 +200,8 @@
 						category="label"
 						value="count"
 						order="rows"
+						variant="half"
+						show-data-labels
 						center-label="Applications"
 						:format="formatNumber"
 						:loading="loading"
@@ -271,6 +274,7 @@ import { Badge, Button, ErrorMessage, Select, Skeleton, TabButtons, createResour
 import { AreaChart, BarChart, ChartCard, DonutChart, FunnelChart, OTHERS_KEY, PercentageBarChart } from "frappe-ui/charts";
 import DashChart from "./DashChart.vue";
 import DateRange from "./DateRange.vue";
+import LoadProgress from "./LoadProgress.vue";
 import StatCard from "./StatCard.vue";
 import { formatDate, formatINR, formatNumber, percent } from "../format";
 import { openApplicants, statusIn } from "../navigate";

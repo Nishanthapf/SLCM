@@ -245,14 +245,45 @@ def get_admission_cycles():
 # --------------------------------------------------------------------------- #
 
 
+CYCLE_PARTS = ("applications", "fees", "registrations")
+
+
 @frappe.whitelist()
-def get_cycle_overview(admission_cycle, applicant_type=DOMESTIC, from_date=None, to_date=None):
-	"""Summary cards, programme cards with their numbers, and the two cross-programme charts."""
+def get_cycle_overview(admission_cycle, applicant_type=DOMESTIC, from_date=None, to_date=None, part=None):
+	"""Summary cards, programme cards with their numbers, and the two cross-programme charts.
+
+	`part` returns one slice, so the page can load the three in parallel and show real progress:
+	  applications  -> programmes (application counts), by_programme
+	  fees          -> fee_stats (per programme), fee_daily
+	  registrations -> registrations
+	Without `part` everything comes back in one response, with the fee figures inside each programme.
+	"""
 	_check_access()
 	applicant_type = _validate_applicant_type(applicant_type)
 	cycle = _get_cycle(admission_cycle)
 	window = _Window(from_date, to_date)
+	if part and part not in CYCLE_PARTS:
+		frappe.throw(_("Unknown part: {0}").format(part))
 
+	out = {}
+	if part in (None, "applications"):
+		out.update(_cycle_applications(cycle, applicant_type, window))
+	if part in (None, "fees"):
+		out.update(_cycle_fees(cycle, applicant_type, window))
+	if part in (None, "registrations"):
+		registration_from = window.from_date or _cycle_start(cycle)
+		out["registrations"] = {
+			**get_registration_counts(registration_from, window.to_date),
+			"from_date": registration_from,
+			"to_date": window.to_date,
+		}
+	if part is None:
+		for p in out["programmes"]:
+			p["stats"].update(out["fee_stats"].get(p["name"], _empty_fee_stats()))
+	return out
+
+
+def _cycle_applications(cycle, applicant_type, window):
 	programmes = _cycle_programmes(cycle.name, applicant_type)
 	names = {p["name"] for p in programmes}
 
@@ -286,10 +317,31 @@ def get_cycle_overview(admission_cycle, applicant_type=DOMESTIC, from_date=None,
 		if stage == ENROLLED and not exited:
 			s["enrolled"] += 1
 
-	# Application fee: paid by payment date, settled by settlement date.
+	for p in programmes:
+		p["stats"] = stats[p["name"]]
+
+	labels = {p["name"]: p["label"] for p in _cycle_programmes(cycle.name, None)}
+	return {
+		"programmes": programmes,
+		"by_programme": [
+			{
+				"programme": labels.get(name, name),
+				"name": name,
+				"domestic": split[DOMESTIC],
+				"international": split[INTERNATIONAL],
+			}
+			for name, split in by_programme.items()
+			if name in labels
+		],
+	}
+
+
+def _cycle_fees(cycle, applicant_type, window):
+	"""Application fee per programme: paid by payment date, settled by settlement date."""
+	stats = {}
 	fee_daily = OrderedDict()
 	for pay in _fee_payments(cycle.name, applicant_type):
-		s = stats.get(pay.program)
+		s = stats.setdefault(pay.program, _empty_fee_stats()) if pay.program else None
 		amount = flt(pay.amount)
 		settled = pay.settlement_status in SETTLED_STATES
 		if window.contains(pay.paid_on):
@@ -310,38 +362,18 @@ def get_cycle_overview(admission_cycle, applicant_type=DOMESTIC, from_date=None,
 				s["settled_count"] += 1
 				s["settled_amount"] += amount
 
-	for p in programmes:
-		p["stats"] = stats[p["name"]]
-
-	labels = {p["name"]: p["label"] for p in _cycle_programmes(cycle.name, None)}
-	registration_from = window.from_date or _cycle_start(cycle)
 	return {
-		"programmes": programmes,
-		"registrations": {
-			**get_registration_counts(registration_from, window.to_date),
-			"from_date": registration_from,
-			"to_date": window.to_date,
-		},
-		"by_programme": [
-			{
-				"programme": labels.get(name, name),
-				"name": name,
-				"domestic": split[DOMESTIC],
-				"international": split[INTERNATIONAL],
-			}
-			for name, split in by_programme.items()
-			if name in labels
-		],
+		"fee_stats": stats,
 		"fee_daily": _fill_days(fee_daily, window, ("collected", "collected_count", "settled", "settled_count")),
 	}
 
 
 def _empty_programme_stats():
+	return {"total": 0, "draft": 0, "submitted": 0, "enrolled": 0}
+
+
+def _empty_fee_stats():
 	return {
-		"total": 0,
-		"draft": 0,
-		"submitted": 0,
-		"enrolled": 0,
 		"paid_count": 0,
 		"collected": 0,
 		"settled_count": 0,
