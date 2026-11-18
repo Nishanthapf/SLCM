@@ -1,6 +1,6 @@
 <template>
-	<!-- Decorative campus illustration (matches the brand tint, hidden from screen readers). -->
-	<svg viewBox="0 0 240 110" fill="none" aria-hidden="true" class="text-[var(--adm-brand)] opacity-[0.14]">
+	<!-- Decorative campus illustration (neutral grey, hidden from screen readers). -->
+	<svg viewBox="0 0 240 110" fill="none" aria-hidden="true" class="text-ink-gray-4 opacity-[0.25]">
 		<g fill="currentColor">
 			<circle cx="22" cy="88" r="14" />
 			<circle cx="38" cy="92" r="11" />

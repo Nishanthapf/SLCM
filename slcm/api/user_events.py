@@ -35,6 +35,14 @@ def user_before_insert(doc, method):
     except Exception:
         pass
 
+    if doc.flags.no_welcome_mail:
+        # Created without asking for a welcome email: a Google / social sign-up
+        # (frappe.utils.oauth sets this flag), or code that creates users silently.
+        # Send neither Frappe's welcome mail nor our sign-up email. A user added
+        # from the desk with "Send Welcome Email" ticked doesn't carry this flag.
+        doc.send_welcome_email = 0
+        return
+
     institution = frappe.get_single("Institution Settings")
     enable_custom = getattr(institution, "enable_signup_email", 0)
     

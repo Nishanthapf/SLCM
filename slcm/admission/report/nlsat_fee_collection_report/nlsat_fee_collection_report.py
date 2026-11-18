@@ -80,11 +80,17 @@ def get_fee_rows(filters, source):
 		programme_expr = "app.program"
 		fee_component_expr = "'Application Fee'"
 
+	# The date range reads the payment date unless the settlement date is asked for.
+	date_expr = (
+		"pr.settlement_date"
+		if filters.get("date_based_on") == "Settlement Date"
+		else "COALESCE(pr.paid_on, pr.creation)"
+	)
 	if filters.get("from_date"):
-		conditions.append("COALESCE(pr.paid_on, pr.creation) >= %(from_date)s")
+		conditions.append(f"{date_expr} >= %(from_date)s")
 		values["from_date"] = f"{filters.from_date} 00:00:00"
 	if filters.get("to_date"):
-		conditions.append("COALESCE(pr.paid_on, pr.creation) <= %(to_date)s")
+		conditions.append(f"{date_expr} <= %(to_date)s")
 		values["to_date"] = f"{filters.to_date} 23:59:59"
 	if filters.get("admission_cycle"):
 		conditions.append("app.admission_cycle = %(admission_cycle)s")
