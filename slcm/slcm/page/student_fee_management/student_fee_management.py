@@ -283,7 +283,14 @@ def download_receipt(receipt):
 	Access is gated by this page's roles, since Accounts roles lack read on Fee Receipt / Fee Payment.
 	"""
 	_check_access()
+	pdf = _receipt_pdf(receipt)
+	frappe.local.response.filename = "{0}.pdf".format(receipt.replace(" ", "-").replace("/", "-"))
+	frappe.local.response.filecontent = pdf
+	frappe.local.response.type = "pdf"
 
+
+def _receipt_pdf(receipt):
+	"""The Fee Receipt PDF that download_receipt serves (callers check access)."""
 	row = frappe.db.get_value("Fee Receipt", receipt, ["status", "fee_payment"], as_dict=True)
 	if not row:
 		frappe.throw(_("Receipt {0} not found.").format(receipt))
@@ -303,10 +310,51 @@ def download_receipt(receipt):
 		from slcm.api.student_portal import _generate_orphan_receipt_pdf
 
 		pdf = _generate_orphan_receipt_pdf(receipt)
+	return pdf
 
-	frappe.local.response.filename = "{0}.pdf".format(receipt.replace(" ", "-").replace("/", "-"))
-	frappe.local.response.filecontent = pdf
-	frappe.local.response.type = "pdf"
+
+@frappe.whitelist()
+def download_receipts_zip(student, receipts):
+	"""One ZIP of the student's receipts (the selected dues' receipts on Manage Dues).
+	receipts: JSON list of Fee Receipt names; each must belong to the student. Cancelled
+	receipts are skipped; a receipt that fails to render is listed in errors.txt."""
+	import io
+	import json
+	import zipfile
+
+	_check_access()
+	names = list(dict.fromkeys(json.loads(receipts) if isinstance(receipts, str) else receipts or []))
+	if not names:
+		frappe.throw(_("No receipts to download."))
+	rows = {
+		r.name: r
+		for r in frappe.get_all(
+			"Fee Receipt", filters={"name": ["in", names]}, fields=["name", "student", "status"]
+		)
+	}
+	buffer, errors, added = io.BytesIO(), [], 0
+	with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+		for name in names:
+			row = rows.get(name)
+			if not row or row.student != student:
+				errors.append(f"{name}: not a receipt of this student")
+				continue
+			if row.status == "Cancelled":
+				continue
+			try:
+				zf.writestr("{0}.pdf".format(name.replace(" ", "-").replace("/", "-")), _receipt_pdf(name))
+				added += 1
+			except Exception as e:
+				frappe.clear_messages()
+				errors.append(f"{name}: {frappe.utils.strip_html(str(e))}")
+		if errors:
+			zf.writestr("errors.txt", "\n".join(errors))
+	if not added:
+		frappe.throw(_("None of the selected receipts could be downloaded.") + ("<br>" + "<br>".join(errors) if errors else ""))
+	reg = frappe.db.get_value("Student Master", student, "registration_id") or student
+	frappe.local.response.filename = f"Receipts-{reg}.zip".replace(" ", "-").replace("/", "-")
+	frappe.local.response.filecontent = buffer.getvalue()
+	frappe.local.response.type = "download"
 
 
 @frappe.whitelist()

@@ -855,6 +855,45 @@ class StudentFeeManagement {
 		}
 	}
 
+	// One ZIP with the receipts of the given dues (each receipt once).
+	async download_receipts_zip(dues) {
+		const p = this.detail.profile;
+		const receipts = [...new Set(dues.flatMap((d) => (d.receipts || []).map((r) => r.name)))];
+		if (!receipts.length) return frappe.msgprint(__("The selected dues have no receipts yet."));
+		frappe.dom.freeze(__("Preparing {0} receipt(s)…", [receipts.length]));
+		try {
+			const body = new URLSearchParams({ student: p.name, receipts: JSON.stringify(receipts) });
+			const res = await fetch(`/api/method/${SFM_API}download_receipts_zip`, {
+				method: "POST",
+				credentials: "same-origin",
+				headers: { "X-Frappe-CSRF-Token": frappe.csrf_token },
+				body,
+			});
+			const type = res.headers.get("content-type") || "";
+			if (!res.ok || type.includes("json")) {
+				let msg = __("The receipts could not be downloaded.");
+				try {
+					msg = sfm_server_message(await res.json()) || msg;
+				} catch (e) {
+					// non-JSON error body — keep the generic message
+				}
+				return frappe.msgprint({ title: __("Receipts not available"), message: msg, indicator: "red" });
+			}
+			const url = URL.createObjectURL(await res.blob());
+			const a = document.createElement("a");
+			a.href = url;
+			a.download = `Receipts-${(p.registration_id || p.name).replace(/[\s/]/g, "-")}.zip`;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			setTimeout(() => URL.revokeObjectURL(url), 2000);
+		} catch (e) {
+			frappe.msgprint({ title: __("Receipts not available"), message: __("Network error while downloading the receipts."), indicator: "red" });
+		} finally {
+			frappe.dom.unfreeze();
+		}
+	}
+
 	async receipts_dialog(row) {
 		const r = await frappe.call({ method: SFM_API + "get_student_receipts", args: { student: row.student } });
 		this.receipt_picker(__("Receipts — {0}", [row.student_name || row.student]), r.message || []);
@@ -1072,6 +1111,7 @@ class StudentFeeManagement {
 							aria-haspopup="dialog" aria-expanded="false" title="${__("Show or hide columns")}">
 							${sfm_icon("columns", 15)}<span>${__("Columns")}</span>${n_hidden ? `<span class="sfm-cols-badge">${__("{0} hidden", [n_hidden])}</span>` : ""}
 						</button>
+						<button type="button" class="sfm-btn sfm-btn-secondary" data-act="bulk-receipts" title="${__("Download the receipts of the selected dues (all dues when none are selected) as one ZIP")}">${sfm_icon("download", 15)}<span>${__("Download Receipts")}</span></button>
 						<button type="button" class="sfm-btn sfm-btn-secondary" data-act="multi-pay">${__("Multiple Due Payment")}</button>
 						<div class="dropdown">
 							<button type="button" class="sfm-btn sfm-btn-primary dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">${__("Actions")}</button>
@@ -1351,6 +1391,10 @@ class StudentFeeManagement {
 
 			case "refund":
 				frappe.new_doc("Fee Refund", { student: p.name, refund_date: frappe.datetime.get_today() });
+				break;
+
+			case "bulk-receipts":
+				this.download_receipts_zip(sel.length ? sel : this.detail.demands);
 				break;
 
 			case "multi-pay": {
