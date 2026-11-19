@@ -9,6 +9,12 @@ const FD_EVENT_DEMAND_DOCTYPES = [
 ];
 
 frappe.ui.form.on("Fee Demand", {
+	// A due created by hand falls due after the day it is created (server checks bulk imports; Student Due Details too)
+	validate(frm) {
+		if (frm.is_new() && frm.doc.due_date && frm.doc.demand_date && frm.doc.due_date <= frm.doc.demand_date) {
+			frappe.throw(__("Due Date must be after the Date of Creation."));
+		}
+	},
 	setup(frm) {
 		// Student ID: search by ID, name, Registration Id, Application Number or email
 		frm.set_query("student", () => ({ query: "slcm.slcm.doctype.fee_concession.fee_concession.student_query" }));

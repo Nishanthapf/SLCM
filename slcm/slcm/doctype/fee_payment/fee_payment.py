@@ -4,7 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt
+from frappe.utils import flt, formatdate, getdate
 
 
 class FeePayment(Document):
@@ -17,6 +17,18 @@ class FeePayment(Document):
 		if self.payment_demands:
 			self._validate_demand_allocation()
 		self._validate_unique_reference()
+		self._validate_settlement_date()
+
+	def _validate_settlement_date(self):
+		"""An offline payment settles on or after the day it was paid (form, bulk upload, Student Due Details)."""
+		if not self.is_offline() or not (self.settlement_date and self.payment_date):
+			return
+		if getdate(self.settlement_date) < getdate(self.payment_date):
+			frappe.throw(
+				_("Settlement Date ({0}) cannot be before the Payment Date ({1}).").format(
+					formatdate(self.settlement_date), formatdate(self.payment_date)
+				)
+			)
 
 	def is_offline(self):
 		"""Recorded by staff (cash, cheque, bank transfer ...), not captured by a payment gateway."""
