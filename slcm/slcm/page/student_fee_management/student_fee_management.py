@@ -431,8 +431,8 @@ def export_student_dues(student, demands, view=None):
 		("Academic Year", 15, lambda d: d.academic_year or "", False),
 		("Voucher No.", 17, lambda d: d.name, False),
 		("Due Status", 18, status_of, False),
-		("Due Date", 12, lambda d: getdate(d.due_date) if d.due_date else None, False),
 		("Date of Creation", 15, lambda d: getdate(d.demand_date or d.creation), False),
+		("Due Date", 12, lambda d: getdate(d.due_date) if d.due_date else None, False),
 		("Total Fee Payable", 16, lambda d: flt(d.original_amount, 2), True),
 		("Penalty", 12, lambda d: flt(d.penalty_amount, 2), True),
 		("Scholarship / Waiver", 18, lambda d: flt(d.waiver_amount, 2), True),
@@ -1348,11 +1348,14 @@ def refund_from_excess(
 	transaction_date=None,
 	remarks=None,
 	account_holder_name=None,
+	university_bank_account=None,
 ):
 	"""Refund part or all of the student's excess: a submitted Fee Refund (source Excess Amount)
 	that draws down their active Student Credit Notes, oldest first."""
 	_check_access()
 	remarks = _require_remarks(remarks, _("Reason for Refund"))
+	if not university_bank_account:
+		frappe.throw(_("University Bank Account is mandatory."))
 	if flt(amount) <= 0:
 		frappe.throw(_("Amount must be greater than zero."))
 	if refund_mode in ("NEFT", "Cheque", "Online") and not (account_holder_name and bank_name and account_number and ifsc_code):
@@ -1369,6 +1372,7 @@ def refund_from_excess(
 		"refund_amount": flt(amount),
 		"refund_date": refund_date or today(),
 		"refund_mode": refund_mode,
+		"university_bank_account": university_bank_account,
 		"account_holder_name": account_holder_name,
 		"bank_name": bank_name,
 		"account_number": account_number,

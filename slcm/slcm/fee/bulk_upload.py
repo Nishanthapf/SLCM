@@ -101,6 +101,7 @@ REFUND_COLUMNS = [  # same order as the Fee Refund form
 	("Refund Amount", 15, None, "money"),
 	("Refund Date", 14, None, "date"),
 	("Refund Mode", 16, None, "select:refund_mode"),
+	("University Bank Account", 38, None, "select:university_bank_account"),
 	("Account Holder Name", 26, "account_holder_name", "text"),
 	("Bank Name", 24, "bank_name", "text"),
 	("Account Number", 20, "account_number", "text"),

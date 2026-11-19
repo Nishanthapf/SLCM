@@ -16,6 +16,12 @@ from slcm.erpnext_bridge import install, sync
 from slcm.erpnext_bridge.company import validate_company
 
 TAG = "[ERP-BRIDGE-TEST]"
+
+
+def UNI_BANK():
+	"""A University Bank Account option (mandatory on Fee Refund)."""
+	options = frappe.get_meta("Fee Refund").get_field("university_bank_account").options or ""
+	return next(o for o in options.split("\n") if o)
 PAY_ID = "pay_ERPTEST0001"
 TEST_COMPONENT = "ERP Bridge Test Component"
 TEST_GST_COMPONENT = "ERP Bridge Test GST Component"
@@ -268,6 +274,7 @@ class TestSLCMERPNextBridge(IntegrationTestCase):
 				"refund_amount": 1000,
 				"refund_date": self.date,
 				"refund_mode": "NEFT",
+				"university_bank_account": UNI_BANK(),
 				"reason": TAG,
 			}
 		).insert(ignore_permissions=True)
@@ -514,7 +521,7 @@ class TestSLCMERPNextBridge(IntegrationTestCase):
 		rows = self.je_rows(sync.live_journal_entry("Credit Adjustment Row", row))
 		self.assertEqual((rows[held].debit, rows[income].credit), (3000, 3000))
 
-		refund = sfm.refund_from_excess(self.student, 1000, "Cash", remarks=TAG)["fee_refund"]
+		refund = sfm.refund_from_excess(self.student, 1000, "Cash", remarks=TAG, university_bank_account=UNI_BANK())["fee_refund"]
 		frappe.db.commit()
 		self.assertEqual(sync.sync_document("Fee Refund", refund), "Posted")
 		rows = self.je_rows(sync.live_journal_entry("Fee Refund", refund))
@@ -605,7 +612,7 @@ class TestSLCMERPNextBridge(IntegrationTestCase):
 		self.assertEqual((rows[bank.account].debit, rows[self.saved.slcm_unallocated_fee_account].credit), (5000, 5000))
 		self.assertEqual(str(je.posting_date), self.date)
 
-		refund = sfm.refund_from_excess(self.student, 5000, "Cash", remarks=TAG)["fee_refund"]
+		refund = sfm.refund_from_excess(self.student, 5000, "Cash", remarks=TAG, university_bank_account=UNI_BANK())["fee_refund"]
 		frappe.db.commit()
 		sync.sync_document("Fee Refund", refund)
 		rows = self.je_rows(sync.live_journal_entry("Fee Refund", refund))
@@ -1118,6 +1125,7 @@ class TestSLCMERPNextBridge(IntegrationTestCase):
 			"doctype": "Fee Refund", "student": self.student, "refund_source": "Fee Demand", "fee_demand": demand,
 			"refund_type": "Overpayment", "refund_amount": 800, "refund_date": self.date,
 			"refund_mode": "Payment Gateway", "utr_number": "rfnd_ERPTESTFR", "reason": TAG,
+			"university_bank_account": UNI_BANK(),
 		}).insert(ignore_permissions=True)
 		refund.submit()
 		frappe.db.commit()

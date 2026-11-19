@@ -121,8 +121,11 @@ def _refund(cfg, fr):
 		# deducts it - see Gateway Refund Payout)
 		cash_account = conf.gateway_clearing_account(cfg)
 	else:
-		cash_account = conf.mode_of_payment_account(cfg, fr.refund_mode) or conf.require(
-			cfg, "default_cash_account" if fr.refund_mode == "Cash" else "default_bank_account"
+		# a bank refund leaves the University Bank Account chosen on it (its mapped ledger), like a receipt
+		cash_account = (
+			(conf.bank_account_for(cfg, fr.get("university_bank_account")) if fr.refund_mode != "Cash" else None)
+			or conf.mode_of_payment_account(cfg, fr.refund_mode)
+			or conf.require(cfg, "default_cash_account" if fr.refund_mode == "Cash" else "default_bank_account")
 		)
 
 	if fr.get("refund_source") == "Excess Amount":

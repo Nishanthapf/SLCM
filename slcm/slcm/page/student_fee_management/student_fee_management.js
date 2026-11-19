@@ -1271,8 +1271,8 @@ class StudentFeeManagement {
 				cell: (d) => `<td><a class="sfm-link" href="${frappe.utils.get_form_link("Fee Demand", d.name)}">${sfm_esc(d.name)}</a></td>`,
 			},
 			{ key: "status", label: __("Due Status"), cell: (d) => `<td class="sfm-wrap-cell sfm-status-cell">${sfm_badge(sfm_demand_status(d))}</td>` },
-			{ key: "due_date", label: __("Due Date"), cell: (d) => `<td>${sfm_date(d.due_date)}</td>` },
 			{ key: "created", label: __("Date of Creation"), cell: (d) => `<td>${sfm_date(d.demand_date || d.creation)}</td>` },
+			{ key: "due_date", label: __("Due Date"), cell: (d) => `<td>${sfm_date(d.due_date)}</td>` },
 			{ key: "amount", label: __("Total Fee Payable"), cls: "num", cell: (d) => `<td class="num">${sfm_money(d.original_amount)}</td>` },
 			{ key: "penalty", label: __("Penalty"), cls: "num", cell: (d) => `<td class="num">${sfm_money(d.penalty_amount)}</td>` },
 			{ key: "waiver", label: __("Scholarship"), sub: __("Waiver"), cls: "num", cell: (d) => `<td class="num">${sfm_money(d.waiver_amount)}</td>` },
@@ -1747,9 +1747,11 @@ class StudentFeeManagement {
 			title: __("Create a Due for {0}", [p.first_name || p.name]),
 			fields: [
 				{ fieldtype: "Link", fieldname: "fee_component", label: __("Fee Component"), options: "Fee Component", reqd: 1 },
-				{ fieldtype: "Link", fieldname: "academic_year", label: __("Academic Year"), options: "Academic Year", default: p.academic_year },
 				{ fieldtype: "Column Break" },
+				{ fieldtype: "Link", fieldname: "academic_year", label: __("Academic Year"), options: "Academic Year", default: p.academic_year },
+				{ fieldtype: "Section Break" },
 				{ fieldtype: "Date", fieldname: "demand_date", label: __("Date of Creation"), reqd: 1, default: today },
+				{ fieldtype: "Column Break" },
 				{ fieldtype: "Date", fieldname: "due_date", label: __("Due Date"), reqd: 1, description: __("Must be after the Date of Creation.") },
 				{ fieldtype: "Section Break" },
 				{ fieldtype: "Currency", fieldname: "original_amount", label: __("Amount"), options: "INR", reqd: 1 },
@@ -1827,6 +1829,8 @@ class StudentFeeManagement {
 
 		const bank = (await frappe.call({ method: SFM_API + "get_refund_bank_details", args: { student: p.name } })).message || {};
 		const needs_bank = (mode) => ["NEFT", "Cheque", "Online"].includes(mode);
+		await frappe.model.with_doctype("Fee Refund");
+		const uni_banks = ((frappe.meta.get_docfield("Fee Refund", "university_bank_account") || {}).options || "").split("\n");
 		const dialog = new frappe.ui.Dialog({
 			title: __("Refund from Excess"),
 			fields: [
@@ -1853,6 +1857,14 @@ class StudentFeeManagement {
 						["account_holder_name", "bank_name", "account_number", "ifsc_code"].forEach((f) => dialog.set_df_property(f, "reqd", req));
 					},
 				},
+				{
+					fieldtype: "Select",
+					fieldname: "university_bank_account",
+					label: __("University Bank Account"),
+					reqd: 1,
+					options: uni_banks,
+					description: __("The university account the refund is paid from."),
+				},
 				{ fieldtype: "Column Break" },
 				{ fieldtype: "Data", fieldname: "account_holder_name", label: __("Account Holder Name"), default: bank.account_holder_name, reqd: 1 },
 				{ fieldtype: "Data", fieldname: "bank_name", label: __("Bank Name"), default: bank.bank_name, reqd: 1 },
@@ -1867,6 +1879,7 @@ class StudentFeeManagement {
 			primary_action: (v) => {
 				const amount = flt(v.amount);
 				if (amount <= 0 || amount > excess) return frappe.msgprint(__("Amount must be between 0 and {0}.", [sfm_money(excess)]));
+				if (!v.university_bank_account) return frappe.msgprint(__("University Bank Account is mandatory."));
 				if (sfm_remarks_error(v.remarks, __("Reason for Refund"))) return frappe.msgprint(sfm_remarks_error(v.remarks, __("Reason for Refund")));
 				frappe.confirm(__("Refund <b>{0}</b> from {1}'s excess?", [sfm_money(amount), sfm_esc(p.first_name || p.name)]), async () => {
 					const r = await frappe.call({
