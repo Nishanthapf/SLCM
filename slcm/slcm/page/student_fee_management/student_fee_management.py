@@ -167,7 +167,9 @@ def _student_base(academic_year=None, academic_term=None, programme=None, dues_s
 	if search:
 		conditions.append(
 			"(sm.name LIKE %(search)s OR sm.first_name LIKE %(search)s "
-			"OR sm.registration_id LIKE %(search)s OR sm.official_email_id LIKE %(search)s)"
+			"OR sm.registration_id LIKE %(search)s OR sm.application_number LIKE %(search)s "
+			# a student's address may be in any of the three email fields
+			"OR sm.official_email_id LIKE %(search)s OR sm.email LIKE %(search)s OR sm.personal_email LIKE %(search)s)"
 		)
 		values["search"] = f"%{search.strip()}%"
 
