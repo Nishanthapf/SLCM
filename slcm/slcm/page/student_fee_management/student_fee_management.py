@@ -1,6 +1,6 @@
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, today
+from frappe.utils import cint, flt, fmt_money, today
 
 ALLOWED_ROLES = ("System Manager", "Campus Admin", "Accounts Manager", "Accounts User")
 
@@ -919,6 +919,81 @@ def _cancel_concession(doc, remarks):
 	doc.add_comment("Comment", _("Cancelled from Student Due Details: {0}").format(frappe.utils.escape_html(remarks)))
 	doc.flags.ignore_permissions = True
 	doc.cancel()
+
+
+@frappe.whitelist()
+def add_credit_note(
+	student,
+	credit_type,
+	credit_amount,
+	academic_year=None,
+	received_via=None,
+	received_bank_account=None,
+	received_date=None,
+	received_reference=None,
+	remarks=None,
+):
+	"""Add excess / credit for the student from the page's pop-up: a Student Credit Note is
+	created and submitted (it becomes Active with the full amount available)."""
+	_check_access()
+	if flt(credit_amount) <= 0:
+		frappe.throw(_("Credit Amount must be greater than zero."))
+	if not frappe.db.exists("Student Master", student):
+		frappe.throw(_("Student {0} was not found.").format(student))
+	doc = frappe.new_doc("Student Credit Note")
+	doc.update({
+		"student": student,
+		"credit_type": credit_type,
+		"credit_amount": flt(credit_amount),
+		"academic_year": academic_year,
+		"received_via": received_via,
+		"received_bank_account": received_bank_account if received_via and received_via != "Cash" else None,
+		"received_date": received_date,
+		"received_reference": received_reference,
+		"remarks": remarks,
+	})
+	doc.flags.ignore_permissions = True
+	doc.insert()
+	doc.submit()
+	return {"credit_note": doc.name}
+
+
+@frappe.whitelist()
+def apply_concession(student, fee_demand, concession_type, waiver_value, reason, concession_date=None):
+	"""Apply a scholarship / waiver to one of the student's dues from the page's pop-up:
+	a Fee Concession is created and submitted, which takes the waiver off the due."""
+	_check_access()
+	reason = (reason or "").strip()
+	if not reason:
+		frappe.throw(_("Reason is mandatory."))
+	if flt(waiver_value) <= 0:
+		frappe.throw(_("Waiver Value must be greater than zero."))
+	demand = frappe.db.get_value(
+		"Fee Demand", fee_demand, ["student", "status", "outstanding_amount"], as_dict=True
+	)
+	if not demand or demand.student != student:
+		frappe.throw(_("Due {0} does not belong to this student.").format(fee_demand))
+	if demand.status in ("Cancelled", "Paid", "Waived") or flt(demand.outstanding_amount) <= 0:
+		frappe.throw(_("A scholarship can only be applied to a due with a pending amount."))
+	if flt(waiver_value) > flt(demand.outstanding_amount) + 0.005:
+		frappe.throw(
+			_("Waiver Value {0} is more than the pending amount {1} on {2}.").format(
+				fmt_money(waiver_value, currency="INR"), fmt_money(demand.outstanding_amount, currency="INR"), fee_demand
+			)
+		)
+	doc = frappe.new_doc("Fee Concession")
+	doc.update({
+		"student": student,
+		"fee_demand": fee_demand,
+		"concession_type": concession_type,
+		"waiver_value": flt(waiver_value),
+		"concession_date": concession_date or frappe.utils.today(),
+		"reason": reason,
+	})
+	doc.flags.ignore_permissions = True
+	doc.insert()
+	doc.submit()
+	return {"concession": doc.name}
 
 
 @frappe.whitelist()

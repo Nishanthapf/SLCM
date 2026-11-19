@@ -13,6 +13,7 @@ from slcm.slcm.doctype.academic_year.academic_year import get_current_academic_y
 from slcm.slcm.doctype.fee_certificate_settings.fee_certificate_settings import (
 	DEFAULT_PAID_LINE,
 	MULTI_YEAR,
+	SINGLE_YEAR_DEMAND,
 	SINGLE_YEAR_RECEIPT,
 	get_purpose_template,
 )
@@ -62,6 +63,7 @@ class FeeCertificateRequest(Document):
 			self.from_academic_year = get_current_academic_year()
 		self.to_academic_year = None
 		self._set_identity()
+		check_not_fully_paid(self)
 		self._validate_edited_certificate()
 
 		if (
@@ -284,27 +286,54 @@ def _ordinal_year_for(student, academic_year_doc):
 	return str(diff + 1)
 
 
-def _student_year_for(student, academic_year_doc):
-	"""Roman numeral of the student's year of study in academic_year_doc, counted from
-	Student Master "Current Year No" (falling back to "Current Year", e.g. "2nd Year")
-	in the current Academic Year: IV year now means II year two academic years ago.
-	"" when that isn't known (then the batch-start offset is used)."""
+def _roman_to_int(text):
+	values = {"I": 1, "V": 5, "X": 10, "L": 50}
+	total, prev = 0, 0
+	for ch in reversed(text.upper()):
+		value = values.get(ch, 0)
+		total = total - value if value < prev else total + value
+		prev = max(prev, value)
+	return total
+
+
+def _student_year_now(student):
+	"""The year of study the student is in now, as a number (0 if unknown).
+
+	Student Master "Current Year No" holds either a number ("1") or the trimester /
+	semester the student is in ("Trimester VII - AY 2023-2024": three trimesters a
+	year, so III year). "Current Year" ("2nd Year") is used when it is a plain year."""
 	if student.get("is_applicant"):
-		return ""
-	number = cint(student.get("current_year"))
-	if not number:
-		digits = re.match(r"\s*(\d+)", student.get("year_of_study") or "")
-		number = cint(digits.group(1)) if digits else 0
+		return 0
+	text = (student.get("current_year") or "").strip()
+	term = re.match(r"(trimester|semester)\s+([ivxl]+|\d+)\b", text, re.I)
+	if term:
+		number = cint(term.group(2)) or _roman_to_int(term.group(2))
+		per_year = 3 if term.group(1).lower() == "trimester" else 2
+		return (number + per_year - 1) // per_year if number else 0
+	if re.fullmatch(r"\d{1,2}", text):
+		return cint(text)
+	plain = re.fullmatch(r"\s*(\d{1,2})(st|nd|rd|th)?\s*year\s*", student.get("year_of_study") or "", re.I)
+	return cint(plain.group(1)) if plain else 0
+
+
+def _ordinal(number):
+	if 0 < number <= len(ORDINALS):
+		return ORDINALS[number - 1]
+	return str(number) if number > 0 else ""
+
+
+def _student_year_for(student, academic_year_doc):
+	"""Roman numeral of the student's year of study in academic_year_doc, counted back
+	(or forward) from their year now in the current Academic Year: III year now means
+	I year two academic years ago. "" when unknown (callers fall back to the batch offset)."""
+	number = _student_year_now(student)
 	current_ay = get_current_academic_year()
 	if not number or not current_ay or not academic_year_doc.year_start_date:
 		return ""
 	current_start = frappe.db.get_value("Academic Year", current_ay, "year_start_date")
 	if not current_start:
 		return ""
-	number -= getdate(current_start).year - getdate(academic_year_doc.year_start_date).year
-	if 0 < number <= len(ORDINALS):
-		return ORDINALS[number - 1]
-	return str(number) if number else ""
+	return _ordinal(number - (getdate(current_start).year - getdate(academic_year_doc.year_start_date).year))
 
 
 def _duration_words(years):
@@ -483,16 +512,15 @@ def _ordered_components(components):
 def _year_amounts(totals, certificate_type, has_scholarship):
 	"""{Fee Component: amount} as printed for one year, plus the scholarship deduction.
 
-	Each amount is the demand's Net Payable (original + penalty - waiver). With the
-	request's scholarship box ticked, the rows show original + penalty instead and the
-	waiver is returned separately for the "Less: University Scholarship" row, which
-	brings the total to the same net figure."""
+	Each amount is the demand's Total Fee Payable (Fee Demand original_amount, the
+	"Total Fee Payable" column on Student Fee Management). With the request's
+	scholarship box ticked, the waiver is returned for the "Less: University
+	Scholarship" row (giving the Net Fee payable line)."""
 	if certificate_type == SINGLE_YEAR_RECEIPT:
-		return {t: a["net"] for t, a in totals.items() if a["net"]}, 0
-	if has_scholarship:
-		amounts = {t: a["original"] + a["penalty"] for t, a in totals.items()}
-		return amounts, sum(a["waiver"] for a in totals.values())
-	return {t: a["net"] for t, a in totals.items()}, 0
+		return {t: a["original"] for t, a in totals.items() if a["original"]}, 0
+	amounts = {t: a["original"] for t, a in totals.items()}
+	waiver = sum(a["waiver"] for a in totals.values()) if has_scholarship else 0
+	return amounts, waiver
 
 
 def _long_ay_label(academic_year_doc):
@@ -505,7 +533,8 @@ def _long_ay_label(academic_year_doc):
 def _earlier_years(student, before_academic_year, has_scholarship):
 	"""[(label "2025-2026", fee, paid)] for each academic year the student has
 	already studied before the certificate's first year (from their batch start)
-	that has Fee Demands. fee is the year's total Net Payable, matching the table."""
+	that has Fee Demands. fee is the year's Total Fee Payable, less the scholarship
+	(waiver) when the request has one, matching the table."""
 	if student.get("is_applicant"):
 		return []
 	if not (student.academic_year and frappe.db.exists("Academic Year", student.academic_year)):
@@ -524,13 +553,13 @@ def _earlier_years(student, before_academic_year, has_scholarship):
 		demands = frappe.get_all(
 			"Fee Demand",
 			filters={"student": student.name, "academic_year": ay.name, "status": ["!=", "Cancelled"]},
-			fields=["net_payable", "paid_amount"],
+			fields=["original_amount", "waiver_amount", "paid_amount"],
 		)
 		if demands:
 			result.append(
 				(
 					_long_ay_label(ay),
-					sum(flt(d.net_payable) for d in demands),
+					sum(flt(d.original_amount) - (flt(d.waiver_amount) if has_scholarship else 0) for d in demands),
 					sum(flt(d.paid_amount) for d in demands),
 				)
 			)
@@ -593,9 +622,8 @@ def get_fee_certificate_context(request_name):
 				"has_academic_year": bool(ay),
 				"programme_year": programme_year,
 				"amounts": amounts,
-				# What a later year with no fee data repeats: the same fees without
-				# this year's late-payment penalty.
-				"repeat_amounts": {t: a - flt(totals.get(t, {}).get("penalty")) for t, a in amounts.items()},
+				# What a later year with no fee data repeats.
+				"repeat_amounts": dict(amounts),
 				"waiver": waiver,
 				"paid": sum(a["paid"] for a in totals.values()),
 			}
@@ -629,6 +657,9 @@ def get_fee_certificate_context(request_name):
 					y["amounts"].pop(t)
 
 	first_ay = frappe.get_doc("Academic Year", certificate_ay)
+	current_ay_doc = (
+		frappe.get_doc("Academic Year", get_current_academic_year()) if get_current_academic_year() else first_ay
+	)
 	table = _build_table(years)
 	if (
 		certificate_type == MULTI_YEAR
@@ -671,6 +702,9 @@ def get_fee_certificate_context(request_name):
 			(certificate_type == SINGLE_YEAR_RECEIPT and _student_year_for(student, first_ay))
 			or _ordinal_year_for(student, first_ay)
 		),
+		# The student now: year of study from Student Master and the current Academic Year.
+		"studying_year": _ordinal(_student_year_now(student)) or _ordinal_year_for(student, current_ay_doc),
+		"current_academic_year": _short_ay_label(current_ay_doc),
 		"due_year": (
 			(ORDINALS[due["programme_year"] - 1] if 0 < due["programme_year"] <= len(ORDINALS) else str(due["programme_year"]))
 			if due and due["programme_year"]
@@ -862,12 +896,39 @@ def _build_table(years):
 	}
 
 
+def check_not_fully_paid(request):
+	"""A Fee Demand Letter asks for fees still due, so it can't be generated for an
+	Academic Year whose fees are already fully paid (there are demands and nothing is
+	outstanding). Throws a "Fees Already Paid" message."""
+	certificate_type = request.get("certificate_type") or (
+		get_purpose_template(request.purpose) and get_purpose_template(request.purpose).certificate_type
+	)
+	if certificate_type != SINGLE_YEAR_DEMAND or not request.get("from_academic_year"):
+		return
+	if not (request.get("student") or request.get("applicant")):
+		return
+	totals = _component_totals(get_subject(request), request.from_academic_year)
+	payable = sum(flt(t["original"]) for t in totals.values())
+	outstanding = sum(flt(t["outstanding"]) for t in totals.values())
+	if payable > 0 and outstanding <= 0:
+		ay = frappe.get_doc("Academic Year", request.from_academic_year)
+		frappe.throw(
+			_(
+				"{0} has already paid the fees for AY {1}, so a Fee Demand Letter can't be generated. "
+				"Generate the Fee Receipt instead."
+			).format(frappe.bold(request.get("student_name") or get_subject(request).first_name), _short_ay_label(ay)),
+			title=_("Fees Already Paid"),
+		)
+
+
 def certificate_file(request, file_format="pdf"):
 	"""(filename, content, response type) for a certificate download.
 
 	file_format: "pdf" gives the uploaded edited PDF when one is attached, else the
 	generated PDF; "generated" always gives the generated PDF; "docx" the Word version.
 	Callers do their own permission check."""
+	if not (file_format == "pdf" and request.edited_certificate):
+		check_not_fully_paid(request)
 	base = f"{(request.purpose or 'Fee Certificate').replace('/', '-')} - {(request.student_name or request.name).replace('/', '-')}"
 	if file_format == "docx":
 		from slcm.slcm.doctype.fee_certificate_request.fee_certificate_docx import build_certificate_docx
