@@ -1558,8 +1558,9 @@ class StudentFeeManagement {
 					fieldname: "payment_mode",
 					label: __("Payment Mode"),
 					reqd: 1,
-					options: modes,
-					default: editing ? payment.payment_mode : "Bank Transfer",
+					// no pre-selected mode: the user picks how the money came in (blank first, reqd)
+					options: ["", ...modes],
+					default: editing ? payment.payment_mode : "",
 				},
 				{ fieldtype: "Date", fieldname: "payment_date", label: __("Payment Date"), reqd: 1, default: start_payment_date, onchange: () => sync_settlement() },
 				{
