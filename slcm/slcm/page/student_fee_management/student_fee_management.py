@@ -1,6 +1,6 @@
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, fmt_money, today
+from frappe.utils import cint, flt, fmt_money, formatdate, getdate, today
 
 ALLOWED_ROLES = ("System Manager", "Campus Admin", "Accounts Manager", "Accounts User")
 
@@ -527,12 +527,20 @@ def _payment_details(payment_mode, payment_date, reference_number, university_ba
 		frappe.throw(_("Reference / UTR No. is mandatory."))
 	if not university_bank_account:
 		frappe.throw(_("University bank account is mandatory."))
-	payment_date = payment_date or today()
+	if not payment_date:
+		frappe.throw(_("Payment Date is mandatory."))
+	if not settlement_date:
+		frappe.throw(_("Settlement Date is mandatory."))
+	if getdate(settlement_date) < getdate(payment_date):
+		frappe.throw(
+			_("Settlement Date ({0}) cannot be before the Payment Date ({1}).").format(
+				formatdate(settlement_date), formatdate(payment_date)
+			)
+		)
 	return frappe._dict(
 		payment_mode=payment_mode,
 		payment_date=payment_date,
-		# settlement defaults to the payment date; staff may change it
-		settlement_date=settlement_date or payment_date,
+		settlement_date=settlement_date,
 		reference_number=reference_number,
 		university_bank_account=university_bank_account,
 		remarks=remarks,
@@ -756,6 +764,59 @@ def apply_excess_credit(student, fee_demand, amount, remarks=None):
 		),
 	)
 	return {"credit_notes": used}
+
+
+@frappe.whitelist()
+def create_due(
+	student,
+	fee_component,
+	demand_date,
+	due_date,
+	original_amount,
+	penalty_amount=0,
+	waiver_amount=0,
+	academic_year=None,
+	is_refundable=0,
+	remarks=None,
+):
+	"""Create a Fee Demand for the student from Student Due Details (normal Fee Demand permissions apply).
+	The description comes from the fee component (Fee Demand fills it in)."""
+	_check_access()
+	remarks = _require_remarks(remarks)
+	original_amount, penalty_amount, waiver_amount = flt(original_amount), flt(penalty_amount), flt(waiver_amount)
+	if original_amount <= 0:
+		frappe.throw(_("Amount must be greater than zero."))
+	if penalty_amount < 0 or waiver_amount < 0:
+		frappe.throw(_("Penalty and Scholarship / Waiver cannot be negative."))
+	if waiver_amount > original_amount:
+		frappe.throw(_("Scholarship / Waiver cannot exceed the amount."))
+	if not (demand_date and due_date):
+		frappe.throw(_("Date of Creation and Due Date are mandatory."))
+	if getdate(due_date) <= getdate(demand_date):
+		frappe.throw(
+			_("Due Date ({0}) must be after the Date of Creation ({1}).").format(formatdate(due_date), formatdate(demand_date))
+		)
+	sm = frappe.db.get_value("Student Master", student, ["programme_of_study", "batch"], as_dict=True)
+	if not sm:
+		frappe.throw(_("Student {0} not found.").format(student))
+
+	doc = frappe.new_doc("Fee Demand")
+	doc.update({
+		"student": student,
+		"program": sm.programme_of_study,
+		"programme": sm.batch,
+		"fee_component": fee_component,
+		"academic_year": academic_year,
+		"demand_date": demand_date,
+		"due_date": due_date,
+		"original_amount": original_amount,
+		"penalty_amount": penalty_amount,
+		"waiver_amount": waiver_amount,
+		"is_refundable": cint(is_refundable),
+		"remarks": remarks,
+	})
+	doc.insert()
+	return {"fee_demand": doc.name}
 
 
 @frappe.whitelist()

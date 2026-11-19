@@ -8,7 +8,16 @@
 <style>
   /* One A4 page in every renderer (PDF download and browser print): the shared style's 355mm minimum height is
      taller than A4, so the box sizes to its content and is never split across pages. */
-  .print-format .nls-doc .nls-copy.is-page, .nls-copy.is-page { min-height: 0 !important; }
+  /* Full-page box with the footer note pinned to its bottom, on one A4 page in both renderers:
+     345mm suits wkhtmltopdf (PDF download, which shrinks the page to fit); browsers read the min() line instead
+     (258mm of real A4). wkhtmltopdf's engine does not know min(), ignores that line and keeps 345mm. */
+  .print-format .nls-doc .nls-copy.is-page, .nls-copy.is-page {
+    min-height: 345mm !important; min-height: min(258mm, 345mm) !important;
+    position: relative; padding-bottom: 72px !important;
+  }
+  .print-format .nls-doc .nls-copy.is-page .nls-note, .nls-copy.is-page .nls-note {
+    position: absolute; left: 30px; right: 30px; bottom: 22px; margin-top: 0 !important;
+  }
   .nls-copy { page-break-inside: avoid; break-inside: avoid; }
   @page { size: A4; margin: 10mm; }
   /* tighter rows so a payment covering many dues still fits */

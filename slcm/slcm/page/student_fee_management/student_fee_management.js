@@ -1472,10 +1472,10 @@ class StudentFeeManagement {
 			  })
 			: demands.map((d) => ({ name: d.name, fee_component: d.fee_component || "", pending: flt(d.outstanding_amount), value: flt(d.outstanding_amount) }));
 
-		const today = frappe.datetime.get_today();
-		const start_payment_date = editing ? payment.payment_date || today : today;
-		const start_settlement_date = editing ? payment.settlement_date || start_payment_date : start_payment_date;
-		// Settlement Date follows Payment Date until staff change it by hand.
+		// Payment Date is entered by staff (never pre-filled for a new payment); Settlement Date follows it until
+		// changed by hand, and may not be earlier than it.
+		const start_payment_date = editing ? payment.payment_date || "" : "";
+		const start_settlement_date = editing ? payment.settlement_date || start_payment_date : "";
 		let auto_settlement = start_payment_date;
 		let dialog = null;
 		const sync_settlement = () => {
@@ -1505,8 +1505,9 @@ class StudentFeeManagement {
 					fieldtype: "Date",
 					fieldname: "settlement_date",
 					label: __("Settlement Date"),
+					reqd: 1,
 					default: start_settlement_date,
-					description: __("Same as the payment date unless changed."),
+					description: __("On or after the payment date; follows it unless changed."),
 				},
 				{
 					fieldtype: "Select",
@@ -1535,6 +1536,13 @@ class StudentFeeManagement {
 			],
 			primary_action_label: editing ? __("Save Changes") : __("Record Payment"),
 			primary_action: (values) => {
+				if (!values.payment_date) return frappe.msgprint(__("Payment Date is mandatory."));
+				if (!values.settlement_date) return frappe.msgprint(__("Settlement Date is mandatory."));
+				if (values.settlement_date < values.payment_date) {
+					return frappe.msgprint(
+						__("Settlement Date ({0}) cannot be before the Payment Date ({1}).", [sfm_date(values.settlement_date), sfm_date(values.payment_date)])
+					);
+				}
 				if (!values.university_bank_account) return frappe.msgprint(__("University bank account is mandatory."));
 				if (!(values.reference_number || "").trim()) return frappe.msgprint(__("Reference / UTR No. is mandatory."));
 				if (sfm_remarks_error(values.remarks)) return frappe.msgprint(sfm_remarks_error(values.remarks));
@@ -1687,7 +1695,7 @@ class StudentFeeManagement {
 				{ fieldtype: "Link", fieldname: "academic_year", label: __("Academic Year"), options: "Academic Year", default: p.academic_year },
 				{ fieldtype: "Column Break" },
 				{ fieldtype: "Date", fieldname: "demand_date", label: __("Date of Creation"), reqd: 1, default: today },
-				{ fieldtype: "Date", fieldname: "due_date", label: __("Due Date"), reqd: 1 },
+				{ fieldtype: "Date", fieldname: "due_date", label: __("Due Date"), reqd: 1, description: __("Must be after the Date of Creation.") },
 				{ fieldtype: "Section Break" },
 				{ fieldtype: "Currency", fieldname: "original_amount", label: __("Amount"), options: "INR", reqd: 1 },
 				{ fieldtype: "Column Break" },
@@ -1695,7 +1703,6 @@ class StudentFeeManagement {
 				{ fieldtype: "Column Break" },
 				{ fieldtype: "Currency", fieldname: "waiver_amount", label: __("Scholarship / Waiver"), options: "INR", default: 0 },
 				{ fieldtype: "Section Break" },
-				{ fieldtype: "Data", fieldname: "description", label: __("Description"), description: __("Defaults to the fee component name") },
 				{ fieldtype: "Check", fieldname: "is_refundable", label: __("Refundable") },
 				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Remarks"), reqd: 1, description: SFM_REMARKS_HINT },
 			],
@@ -1704,19 +1711,19 @@ class StudentFeeManagement {
 				if (sfm_remarks_error(v.remarks)) return frappe.msgprint(sfm_remarks_error(v.remarks));
 				if (flt(v.original_amount) <= 0) return frappe.msgprint(__("Amount must be greater than zero."));
 				if (flt(v.waiver_amount) > flt(v.original_amount)) return frappe.msgprint(__("Waiver cannot exceed the amount."));
-				if (v.due_date < v.demand_date) return frappe.msgprint(__("Due Date cannot be before the Date of Creation."));
+				if (v.due_date <= v.demand_date) {
+					return frappe.msgprint(__("Due Date ({0}) must be after the Date of Creation ({1}).", [sfm_date(v.due_date), sfm_date(v.demand_date)]));
+				}
 				dialog.disable_primary_action();
 				try {
-					const doc = await frappe.db.insert({
-						doctype: "Fee Demand",
-						student: p.name,
-						program: p.programme_of_study,
-						programme: p.batch,
-						...v,
-						description: (v.description || "").trim() || v.fee_component,
+					const r = await frappe.call({
+						method: SFM_API + "create_due",
+						args: { student: p.name, ...v },
+						freeze: true,
+						freeze_message: __("Creating due…"),
 					});
 					dialog.hide();
-					frappe.show_alert({ message: __("Due {0} created", [doc.name]), indicator: "green" });
+					frappe.show_alert({ message: __("Due {0} created", [r.message.fee_demand]), indicator: "green" });
 					this.show_student(p.name);
 				} finally {
 					dialog.enable_primary_action();
