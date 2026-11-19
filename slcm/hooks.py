@@ -99,6 +99,7 @@ jinja = {
 	"methods": [
 		"slcm.admission.utils.jinja.get_file_b64",
 		"slcm.admission.utils.jinja.get_merriweather_font_css",
+		"slcm.utils.print_logo.get_nls_logo",
 		"slcm.slcm.doctype.student_transcript.student_transcript.get_transcript_context",
 		"slcm.slcm.doctype.student_transcript.student_transcript.get_year_based_transcript_context",
 		"slcm.slcm.doctype.student_portal_settings.student_portal_settings.get_student_portal_settings",

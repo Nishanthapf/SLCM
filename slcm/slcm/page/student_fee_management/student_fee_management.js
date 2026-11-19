@@ -855,6 +855,56 @@ class StudentFeeManagement {
 		}
 	}
 
+	// The dues currently listed on Manage Dues (status chip + fee component filter), in table order.
+	shown_demands() {
+		let list = this.detail.demands;
+		if (this.dues_component) list = list.filter((d) => d.fee_component === this.dues_component);
+		if (this.dues_filter !== "All") list = list.filter((d) => sfm_demand_status(d) === this.dues_filter);
+		return list;
+	}
+
+	// Excel of the selected dues, or of every due in the current view when none are selected.
+	async export_dues(sel) {
+		const p = this.detail.profile;
+		const dues = sel.length ? this.shown_demands().filter((d) => this.selected.has(d.name)) : this.shown_demands();
+		if (!dues.length) return frappe.msgprint(__("There are no dues in this view to export."));
+		const view = sel.length
+			? __("{0} selected due(s)", [dues.length])
+			: [this.dues_filter === "All" ? __("All dues") : __(this.dues_filter), this.dues_component || __("All Fee Components")].join(" · ");
+		frappe.dom.freeze(__("Preparing the export…"));
+		try {
+			const body = new URLSearchParams({ student: p.name, demands: JSON.stringify(dues.map((d) => d.name)), view });
+			const res = await fetch(`/api/method/${SFM_API}export_student_dues`, {
+				method: "POST",
+				credentials: "same-origin",
+				headers: { "X-Frappe-CSRF-Token": frappe.csrf_token },
+				body,
+			});
+			const type = res.headers.get("content-type") || "";
+			if (!res.ok || type.includes("json")) {
+				let msg = __("The dues could not be exported.");
+				try {
+					msg = sfm_server_message(await res.json()) || msg;
+				} catch (e) {
+					// non-JSON error body — keep the generic message
+				}
+				return frappe.msgprint({ title: __("Export failed"), message: msg, indicator: "red" });
+			}
+			const url = URL.createObjectURL(await res.blob());
+			const a = document.createElement("a");
+			a.href = url;
+			a.download = `Dues-${(p.registration_id || p.name).replace(/[\s/]/g, "-")}-${frappe.datetime.get_today()}.xlsx`;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			setTimeout(() => URL.revokeObjectURL(url), 2000);
+		} catch (e) {
+			frappe.msgprint({ title: __("Export failed"), message: __("Network error while exporting the dues."), indicator: "red" });
+		} finally {
+			frappe.dom.unfreeze();
+		}
+	}
+
 	// One ZIP with the receipts of the given dues (each receipt once).
 	async download_receipts_zip(dues) {
 		const p = this.detail.profile;
@@ -1111,6 +1161,7 @@ class StudentFeeManagement {
 							aria-haspopup="dialog" aria-expanded="false" title="${__("Show or hide columns")}">
 							${sfm_icon("columns", 15)}<span>${__("Columns")}</span>${n_hidden ? `<span class="sfm-cols-badge">${__("{0} hidden", [n_hidden])}</span>` : ""}
 						</button>
+						<button type="button" class="sfm-btn sfm-btn-secondary" data-act="export-dues" title="${__("Export the dues in this view (only the selected ones when any are selected) to Excel")}">${sfm_icon("file-text", 15)}<span>${__("Export")}</span></button>
 						<button type="button" class="sfm-btn sfm-btn-secondary" data-act="bulk-receipts" title="${__("Download the receipts of the selected dues (all dues when none are selected) as one ZIP")}">${sfm_icon("download", 15)}<span>${__("Download Receipts")}</span></button>
 						<button type="button" class="sfm-btn sfm-btn-secondary" data-act="multi-pay">${__("Multiple Due Payment")}</button>
 						<div class="dropdown">
@@ -1391,6 +1442,10 @@ class StudentFeeManagement {
 
 			case "refund":
 				frappe.new_doc("Fee Refund", { student: p.name, refund_date: frappe.datetime.get_today() });
+				break;
+
+			case "export-dues":
+				this.export_dues(sel);
 				break;
 
 			case "bulk-receipts":
