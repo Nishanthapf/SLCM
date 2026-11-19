@@ -5,8 +5,8 @@
 			<p class="mt-4 text-p-base text-ink-gray-6">
 				{{
 					tab === "cards"
-						? "Show or hide number cards on the admission dashboard. Drag to reorder."
-						: "Show or hide charts on the admission dashboard. Drag to reorder."
+						? "Show or hide number cards on the programme overview. Drag to reorder."
+						: "Show or hide charts on the programme overview. Drag to reorder."
 				}}
 				These settings apply to everyone.
 			</p>
