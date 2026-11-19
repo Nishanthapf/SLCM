@@ -1239,6 +1239,8 @@ def apply_concession(student, fee_demand, concession_type, waiver_value, reason,
 	reason = (reason or "").strip()
 	if not reason:
 		frappe.throw(_("Reason is mandatory."))
+	if not concession_date:
+		frappe.throw(_("Date of concession is mandatory."))
 	if flt(waiver_value) <= 0:
 		frappe.throw(_("Waiver Value must be greater than zero."))
 	demand = frappe.db.get_value(
@@ -1260,7 +1262,7 @@ def apply_concession(student, fee_demand, concession_type, waiver_value, reason,
 		"fee_demand": fee_demand,
 		"concession_type": concession_type,
 		"waiver_value": flt(waiver_value),
-		"concession_date": concession_date or frappe.utils.today(),
+		"concession_date": concession_date,
 		"reason": reason,
 	})
 	doc.flags.ignore_permissions = True
@@ -1279,6 +1281,8 @@ def edit_concession(student, concession, concession_type, waiver_value, reason, 
 	reason = (reason or "").strip()
 	if not reason:
 		frappe.throw(_("Reason is mandatory."))
+	if not concession_date:
+		frappe.throw(_("Date of concession is mandatory."))
 	if flt(waiver_value) <= 0:
 		frappe.throw(_("Waiver Value must be greater than zero."))
 	doc = _active_concession(concession, student)
@@ -1292,7 +1296,7 @@ def edit_concession(student, concession, concession_type, waiver_value, reason, 
 			"fee_demand": doc.fee_demand,
 			"concession_type": concession_type,
 			"waiver_value": flt(waiver_value),
-			"concession_date": concession_date or doc.concession_date,
+			"concession_date": concession_date,
 			"reason": reason,
 			"amended_from": doc.name,
 		})

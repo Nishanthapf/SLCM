@@ -37,6 +37,19 @@ DUES_COLUMNS = [
 
 # Input columns (yellow) per pre-filled template: (header, width, kind)
 #   kind: "money" | "date" | "select:<fieldname>" (dropdown from that field's options) | None (free text)
+# Mandatory input columns (red header, checked row by row when the filled sheet is attached to Data Import):
+# fieldname -> header. A blank cell must be rejected, not defaulted (Payment Date would become today and
+# Payment Mode "Cash" through the Fee Payment defaults).
+MANDATORY_INPUTS = {
+	"Fee Concession": {
+		"concession_date": "Date of concession",
+	},
+	"Fee Payment": {
+		"payment_date": "Payment Date",
+		"payment_mode": "Payment Mode",
+		"university_bank_account": "University bank account",
+	},
+}
 PREFILLED = {
 	"Fee Concession": {
 		"filename": "Concession Bulk Upload",
@@ -265,9 +278,17 @@ def download_template(doctype, academic_year=None, programme=None, fee_component
 		return _csv_response(headers, rows, filename)
 
 	wb, ws, col = _new_sheet("Dues Details", headers, [w for _h, w, _k in DUES_COLUMNS] + [w for _h, w, _k in cfg["inputs"]])
+	from openpyxl.comments import Comment
+	from openpyxl.styles import Font
+
 	yellow = _fill("FFFF00")
+	mandatory = set(MANDATORY_INPUTS.get(doctype, {}).values())
 	for h, _w, _k in cfg["inputs"]:
 		ws[f"{col[h]}1"].fill = yellow
+		if h in mandatory:
+			# red = mandatory (header text unchanged: Data Import matches columns by the exact field label)
+			ws[f"{col[h]}1"].font = Font(bold=True, color="FF0000")
+			ws[f"{col[h]}1"].comment = Comment(_("Mandatory: every row you upload needs a value here."), "SLCM")
 	for row in rows:
 		ws.append(row)
 	last = max(ws.max_row, 2)
@@ -278,6 +299,7 @@ def download_template(doctype, academic_year=None, programme=None, fee_component
 			_decimal_validation(ws, col[h], last)
 		elif kind == "date":
 			_format(ws, col, last, dates=[h])
+			_date_validation(ws, col[h], last)
 		elif kind and kind.startswith("select:"):
 			_list_validation(wb, ws, col[h], last, h, _field_options(doctype, kind.split(":", 1)[1]))
 	return _xlsx_response(wb, filename)
@@ -526,6 +548,16 @@ def _decimal_validation(ws, letter, last, allow_zero=False):
 	dv.add(f"{letter}2:{letter}{last + 500}")
 
 
+def _date_validation(ws, letter, last):
+	from openpyxl.worksheet.datavalidation import DataValidation
+
+	dv = DataValidation(type="date", operator="greaterThan", formula1="1", allow_blank=True)
+	dv.errorTitle = _("Invalid date")
+	dv.error = _("Enter a date (dd/mm/yyyy).")
+	ws.add_data_validation(dv)
+	dv.add(f"{letter}2:{letter}{last + 500}")
+
+
 def _range_validation(ws, letter, last, formula, title):
 	from openpyxl.worksheet.datavalidation import DataValidation
 
@@ -578,3 +610,59 @@ def data_import_download_template(doctype, export_fields=None, export_records=No
 	from frappe.core.doctype.data_import.data_import import download_template as standard
 
 	return standard(doctype, export_fields, export_records, export_filters, file_type)
+
+
+def validate_data_import(doc, method=None):
+	"""Data Import (validate, hooks.py): reject a Fee Payment sheet with a blank mandatory cell when it is
+	attached, listing the rows, before anything is imported. Blank cells cannot be caught later: Data Import
+	fills them from the Fee Payment defaults (Payment Date = today, Payment Mode = Cash)."""
+	required = MANDATORY_INPUTS.get(doc.reference_doctype)
+	if not required or doc.import_type != "Insert New Records" or not (doc.import_file or doc.google_sheets_url):
+		return
+
+	from frappe.core.doctype.data_import.importer import ImportFile
+
+	try:
+		sheet = ImportFile(
+			doc.reference_doctype,
+			doc.import_file or doc.google_sheets_url,
+			frappe.parse_json(doc.template_options or "{}"),
+			doc.import_type,
+		)
+	except frappe.ValidationError:
+		return  # unreadable / empty file: Data Import reports that itself
+
+	# column index per mandatory field (Data Import's own header → field mapping, incl. manual remaps)
+	index = {
+		col.df.fieldname: col.index
+		for col in sheet.columns
+		if col.df and not col.skip_import and col.df.parent == doc.reference_doctype and col.df.fieldname in required
+	}
+	missing_cols = [label for field, label in required.items() if field not in index]
+	if missing_cols:
+		frappe.throw(
+			_("The sheet has no {0} column. Download the template again and fill it in.").format(
+				", ".join(frappe.bold(c) for c in missing_cols)
+			),
+			title=_("Mandatory column missing"),
+		)
+
+	problems = []
+	def is_blank(row, i):
+		value = row.data[i] if i < len(row.data) else None
+		return value is None or not str(value).strip()
+
+	for row in sheet.data:
+		blank = [required[field] for field, i in index.items() if is_blank(row, i)]
+		if blank:
+			problems.append(_("Row {0}: {1}").format(row.row_number, ", ".join(blank)))
+	if problems:
+		shown = problems[:25]
+		more = len(problems) - len(shown)
+		frappe.throw(
+			_("Fill these mandatory columns and attach the sheet again (delete the rows you are not uploading):")
+			+ "<br><br>"
+			+ "<br>".join(shown)
+			+ ("<br>" + _("…and {0} more row(s).").format(more) if more > 0 else ""),
+			title=_("Mandatory values missing"),
+		)

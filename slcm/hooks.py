@@ -413,6 +413,10 @@ fixtures = [
 boot_session = "slcm.slcm.utils.academics_desktop.filter_boot_icons"
 
 doc_events = {
+    # fee bulk upload: a Fee Payment sheet with blank mandatory cells is rejected when attached
+    "Data Import": {
+        "validate": "slcm.slcm.fee.bulk_upload.validate_data_import",
+    },
     # User Activity Log: every create / update / submit / cancel / delete / rename by a user
     "*": {
         "on_update": "slcm.utils.activity_log.on_update",

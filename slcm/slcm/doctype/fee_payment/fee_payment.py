@@ -19,6 +19,10 @@ class FeePayment(Document):
 			self._validate_demand_allocation()
 		self._validate_unique_reference()
 		self._validate_settlement_date()
+		# Bulk upload (Data Import): the sheet's University bank account column is mandatory. The attached sheet is
+		# checked row by row first (slcm.slcm.fee.bulk_upload.validate_data_import); this guards the insert itself.
+		if frappe.flags.in_import and self.is_new() and not self.university_bank_account:
+			frappe.throw(_("University bank account is mandatory for bulk-uploaded payments."))
 
 	def _validate_settlement_date(self):
 		"""An offline payment settles on or after the day it was paid (form, bulk upload, Student Due Details)."""

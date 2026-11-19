@@ -81,12 +81,16 @@ class StudentFeeManagement {
 
 	route() {
 		const student = decodeURIComponent(frappe.get_route()[1] || "");
+		// a form that sends the user back can ask for a tab (Fee Refund → Excess Breakdown, where refunds are listed)
+		const tab = frappe.route_options && frappe.route_options.sfm_tab;
+		if (tab) frappe.route_options = null;
 		if (student) {
 			if (!this.detail || this.detail.profile.name !== student) {
 				this.dues_filter = "All";
 				this.dues_component = "";
 				this.detail_tab = "dues";
 			}
+			if (tab) this.detail_tab = tab;
 			this.show_student(student);
 		} else {
 			this.show_list();
@@ -1441,6 +1445,7 @@ class StudentFeeManagement {
 				break;
 
 			case "refund":
+				frappe.flags.sfm_refund_return = p.name; // Fee Refund form comes back here once saved
 				frappe.new_doc("Fee Refund", { student: p.name, refund_date: frappe.datetime.get_today() });
 				break;
 
@@ -1486,6 +1491,7 @@ class StudentFeeManagement {
 				if (!(d = this.single_selected())) return;
 				if (d.status === "Cancelled") return frappe.msgprint(__("{0} is cancelled and can no longer be changed.", [d.name]));
 				if (!(flt(d.paid_amount) > 0)) return frappe.msgprint(__("Nothing has been paid against {0} yet.", [d.name]));
+				frappe.flags.sfm_refund_return = p.name; // Fee Refund form comes back here once saved
 				frappe.new_doc("Fee Refund", { student: p.name, fee_demand: d.name, refund_date: frappe.datetime.get_today() });
 				break;
 
@@ -2447,12 +2453,13 @@ class StudentFeeManagement {
 				{ fieldtype: "Currency", fieldname: "waiver_value", label: __("Waiver Value"), reqd: 1, options: "INR",
 					description: __("Pending on this due: {0}", [sfm_money(selected.outstanding_amount)]) },
 				{ fieldtype: "Column Break" },
-				{ fieldtype: "Date", fieldname: "concession_date", label: __("Date of concession"), default: frappe.datetime.get_today() },
+				{ fieldtype: "Date", fieldname: "concession_date", label: __("Date of concession"), reqd: 1, default: frappe.datetime.get_today() },
 				{ fieldtype: "Small Text", fieldname: "reason", label: __("Reason"), reqd: 1 },
 			],
 			primary_action_label: __("Apply Scholarship"),
 			primary_action: (v) => {
 				const d = dues.find((x) => x.name === v.fee_demand);
+				if (!v.concession_date) return frappe.msgprint(__("Date of concession is mandatory."));
 				if (flt(v.waiver_value) <= 0) return frappe.msgprint(__("Waiver Value must be greater than zero."));
 				if (d && flt(v.waiver_value) > flt(d.outstanding_amount)) return frappe.msgprint(__("Waiver Value is more than the pending amount {0}.", [sfm_money(d.outstanding_amount)]));
 				if (!(v.reason || "").trim()) return frappe.msgprint(__("Reason is mandatory."));
@@ -2496,13 +2503,14 @@ class StudentFeeManagement {
 				{ fieldtype: "Select", fieldname: "concession_type", label: __("Concession Type"), reqd: 1, options: types, default: c.concession_type },
 				{ fieldtype: "Currency", fieldname: "waiver_value", label: __("Waiver Value"), reqd: 1, options: "INR", default: c.waiver_value || c.waiver_amount },
 				{ fieldtype: "Column Break" },
-				{ fieldtype: "Date", fieldname: "concession_date", label: __("Date of concession"), default: c.concession_date },
+				{ fieldtype: "Date", fieldname: "concession_date", label: __("Date of concession"), reqd: 1, default: c.concession_date },
 				{ fieldtype: "Small Text", fieldname: "reason", label: __("Reason"), reqd: 1, default: c.reason },
 				{ fieldtype: "Section Break" },
 				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Reason for the change"), reqd: 1, description: SFM_REMARKS_HINT },
 			],
 			primary_action_label: __("Save Changes"),
 			primary_action: (v) => {
+				if (!v.concession_date) return frappe.msgprint(__("Date of concession is mandatory."));
 				if (flt(v.waiver_value) <= 0) return frappe.msgprint(__("Waiver Value must be greater than zero."));
 				if (!(v.reason || "").trim()) return frappe.msgprint(__("Reason is mandatory."));
 				if (sfm_remarks_error(v.remarks, __("Reason for the change"))) return frappe.msgprint(sfm_remarks_error(v.remarks, __("Reason for the change")));
