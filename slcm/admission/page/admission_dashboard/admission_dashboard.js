@@ -17,7 +17,7 @@ frappe.pages["admission-dashboard"].on_page_load = function (wrapper) {
 		single_column: true,
 	});
 
-	// The Vue app draws its own header (title, Academic Year, Settings).
+	// The Vue app draws its own header (title, Admission Cycle, Settings).
 	$(wrapper).find(".page-head").addClass("hide");
 	$(wrapper).addClass("slcm-admission-dashboard-page");
 
@@ -52,6 +52,7 @@ frappe.pages["admission-dashboard"].on_page_load = function (wrapper) {
 
 frappe.pages["admission-dashboard"].on_page_show = function (wrapper) {
 	toggle_styles(wrapper, true);
+	fold_sidebar(wrapper);
 
 	// Frappe has no `on_page_hide` for desk pages (checked on v16.33 and v16.53), but the
 	// container fires `page-change` on every page switch, after `frappe.container.page`
@@ -59,10 +60,61 @@ frappe.pages["admission-dashboard"].on_page_show = function (wrapper) {
 	if (!wrapper.slcm_page_change_bound) {
 		wrapper.slcm_page_change_bound = true;
 		$(document).on("page-change.slcm_admission_dashboard", () => {
-			toggle_styles(wrapper, frappe.container?.page === wrapper);
+			const on_screen = frappe.container?.page === wrapper;
+			toggle_styles(wrapper, on_screen);
+			if (on_screen) fold_sidebar(wrapper);
+			else unfold_sidebar(wrapper);
 		});
 	}
 };
+
+// ---- Desk sidebar: folded on this page only ----
+//
+// The dashboard is wide, so the sidebar starts folded here. Desk saves the sidebar's
+// open/closed state for every page (localStorage "desk-sidebar-collapsed") whenever it is
+// toggled, including from the rail while this page is open. So the user's setting is
+// remembered on the way in and put back on the way out: nothing done here carries over.
+
+const SIDEBAR_PREF_KEY = "desk-sidebar-collapsed";
+
+function read_sidebar_pref() {
+	try {
+		return localStorage.getItem(SIDEBAR_PREF_KEY);
+	} catch {
+		return null;
+	}
+}
+
+function write_sidebar_pref(value) {
+	try {
+		if (value === null) localStorage.removeItem(SIDEBAR_PREF_KEY);
+		else localStorage.setItem(SIDEBAR_PREF_KEY, value);
+	} catch {
+		// storage refused: desk falls back to an open sidebar
+	}
+}
+
+function fold_sidebar(wrapper) {
+	const sidebar = frappe.app?.sidebar;
+	if (!sidebar?.fold_for_page) return;
+	if (!wrapper.slcm_sidebar_folded) {
+		wrapper.slcm_sidebar_pref = read_sidebar_pref();
+		wrapper.slcm_sidebar_folded = true;
+	}
+	sidebar.fold_for_page();
+}
+
+function unfold_sidebar(wrapper) {
+	const sidebar = frappe.app?.sidebar;
+	if (!wrapper.slcm_sidebar_folded || !sidebar) return;
+	wrapper.slcm_sidebar_folded = false;
+	write_sidebar_pref(wrapper.slcm_sidebar_pref);
+	sidebar.unfold_after_leaving_page?.();
+	// Re-read the restored setting and draw it, whichever way the sidebar was left here.
+	sidebar.load_expanded_state?.();
+	sidebar.apply_expanded_state?.();
+	if (sidebar.sidebar_expanded) sidebar.highlight_active_item?.();
+}
 
 function toggle_styles(wrapper, enabled) {
 	(wrapper.slcm_dashboard?.styles || []).forEach((link) => (link.disabled = !enabled));

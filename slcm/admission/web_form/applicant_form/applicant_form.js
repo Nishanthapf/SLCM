@@ -487,6 +487,9 @@ function _injectAdmissionShell() {
 	});
 }
 
+/** Portal primary colour for inline styles; fallback = _buildShell's default primary. */
+var SLCM_PRIMARY_CSS = 'var(--slcm-primary, #920c24)';
+
 function _buildShell(ws, cfg, user, uinfo) {
 	if (document.getElementById('slcm-adm-nav')) return;
 
@@ -4209,6 +4212,7 @@ function _slcmShowProgrammePicker(wf, onConfirm) {
 	_slcmRenderSelectProgrammeButton(wf, onConfirm);
 	frappe.call({
 		method: 'slcm.admission.web_form.applicant_form.applicant_form.get_open_programmes',
+		args: { foriegn_national: _slcmCurrentForeignNational(wf) },
 		callback: function (r) {
 			var programmes = (r && r.message) ? r.message : [];
 			_slcmOpenPickerModal(programmes, wf, onConfirm);
@@ -4222,8 +4226,9 @@ function _slcmShowProgrammePicker(wf, onConfirm) {
 function _slcmOpenPickerModal(programmes, wf, onConfirm) {
 	if (document.getElementById('slcm-prog-picker-overlay')) return;
 
-	var primary = getComputedStyle(document.documentElement)
-		.getPropertyValue('--slcm-primary').trim() || '#1a3c6e';
+	// Live CSS variable: the portal theme sets --slcm-primary asynchronously (applyTheme),
+	// often after this modal opens — reading it once here would freeze the fallback colour.
+	var primary = SLCM_PRIMARY_CSS;
 
 	var optionsHtml = '<option value="">— Select a Programme —</option>';
 	programmes.forEach(function (p) {
@@ -4294,8 +4299,9 @@ function _slcmOpenPickerModal(programmes, wf, onConfirm) {
 function _slcmRenderSelectProgrammeButton(wf, onConfirm) {
 	if (document.getElementById('slcm-select-prog-banner')) return;
 
-	var primary = getComputedStyle(document.documentElement)
-		.getPropertyValue('--slcm-primary').trim() || '#1a3c6e';
+	// Live CSS variable: the portal theme sets --slcm-primary asynchronously (applyTheme),
+	// often after this modal opens — reading it once here would freeze the fallback colour.
+	var primary = SLCM_PRIMARY_CSS;
 
 	var banner = document.createElement('div');
 	banner.id = 'slcm-select-prog-banner';
@@ -4314,12 +4320,203 @@ function _slcmRenderSelectProgrammeButton(wf, onConfirm) {
 		if (document.getElementById('slcm-prog-picker-overlay')) return;
 		frappe.call({
 			method: 'slcm.admission.web_form.applicant_form.applicant_form.get_open_programmes',
+			args: { foriegn_national: _slcmCurrentForeignNational(wf) },
 			callback: function (r) {
 				var programmes = (r && r.message) ? r.message : [];
 				_slcmOpenPickerModal(programmes, wf, onConfirm);
 			}
 		});
 	});
+}
+
+// ───────────────────────────────────────────────────────────────────
+//  APPLICANT TYPE PICKER — Domestic / International (foriegn_national)
+//  Shown when ?foriegn_national= is absent / invalid on /new, or a saved
+//  draft has no value. The field is hidden on the portal, so once set
+//  here the applicant cannot change it (it is also preserved on save).
+// ───────────────────────────────────────────────────────────────────
+
+/** "Yes" / "No" from field or URL style values (yes/true/1, no/false/0); '' when unknown. */
+function _slcmNormalizeForeignNational(v) {
+	var s = String(v === undefined || v === null ? '' : v).trim().toLowerCase();
+	if (s === 'yes' || s === 'true' || s === '1') return 'Yes';
+	if (s === 'no' || s === 'false' || s === '0') return 'No';
+	return '';
+}
+
+/** Current applicant type: the form value first, then ?foriegn_national=. */
+function _slcmCurrentForeignNational(wf) {
+	var v = '';
+	try { v = _slcmNormalizeForeignNational(wf && wf.get_value('foriegn_national')); } catch (e) { }
+	if (!v && wf && wf.doc) v = _slcmNormalizeForeignNational(wf.doc.foriegn_national);
+	if (!v) v = _slcmNormalizeForeignNational(new URLSearchParams(window.location.search).get('foriegn_national'));
+	return v;
+}
+
+/**
+ * Set foriegn_national without the field's change handler re-validating it (the picker
+ * has already checked the choice) and keep ?foriegn_national= in the URL in sync.
+ */
+function _slcmApplyForeignNational(wf, value) {
+	try {
+		var url = new URL(window.location.href);
+		url.searchParams.set('foriegn_national', value);
+		window.history.replaceState({}, '', url.toString());
+	} catch (e) { }
+	wf._slcmFnSilent = true;
+	var p;
+	try { p = wf.set_value('foriegn_national', value); } catch (e) { }
+	return Promise.resolve(p).catch(function () { }).then(function () {
+		wf._slcmFnSilent = false;
+		try { _slcmToggleDegreeCountry(wf); } catch (e) { }
+		return value;
+	});
+}
+
+/**
+ * Make sure the applicant type is known, then call done(value).
+ * If it is missing, ask with the picker. When `program` is known the choice is checked
+ * against the programme's Domestic / International scope before it is accepted.
+ */
+function _slcmEnsureForeignNational(wf, program, done) {
+	var current = _slcmCurrentForeignNational(wf);
+	if (current) {
+		var fieldVal = '';
+		try { fieldVal = wf.get_value('foriegn_national') || ''; } catch (e) { }
+		if (fieldVal === current) { done(current); return; }
+		_slcmApplyForeignNational(wf, current).then(done);
+		return;
+	}
+	_slcmOpenForeignNationalModal(wf, program, function (choice) {
+		_slcmApplyForeignNational(wf, choice).then(done);
+	});
+}
+
+function _slcmOpenForeignNationalModal(wf, program, onConfirm) {
+	if (document.getElementById('slcm-fn-picker-overlay')) return;
+
+	// Live CSS variable: the portal theme sets --slcm-primary asynchronously (applyTheme),
+	// often after this modal opens — reading it once here would freeze the fallback colour.
+	var primary = SLCM_PRIMARY_CSS;
+
+	var OPTIONS = [
+		{ value: 'No', title: __('Domestic applicant'), desc: __('I am not a foreign national.') },
+		{ value: 'Yes', title: __('International applicant'), desc: __('I am a foreign national with a valid passport of a country other than India.') }
+	];
+	var optionsHtml = OPTIONS.map(function (o) {
+		return '<label class="slcm-fn-opt" data-value="' + o.value + '" style="display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border:1.5px solid #e2e8f0;border-radius:12px;background:#f8fafc;cursor:pointer;margin-bottom:10px">' +
+			'<input type="radio" name="slcm-fn-choice" value="' + o.value + '" style="margin-top:3px;accent-color:' + primary + '">' +
+			'<span><span style="display:block;font-size:14px;font-weight:600;color:#0f172a">' + _esc(o.title) + '</span>' +
+			'<span style="display:block;font-size:13px;color:#64748b;line-height:1.5;margin-top:2px">' + _esc(o.desc) + '</span></span>' +
+			'</label>';
+	}).join('');
+
+	var overlay = document.createElement('div');
+	overlay.id = 'slcm-fn-picker-overlay';
+	overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,0.6);backdrop-filter:blur(4px);';
+	overlay.innerHTML =
+		'<div style="background:#fff;border-radius:20px;width:min(500px,92vw);max-height:92vh;overflow:auto;padding:36px 32px;box-shadow:0 24px 60px rgba(0,0,0,0.22);position:relative;animation:slcmPickerIn 0.3s cubic-bezier(0.16,1,0.3,1)">' +
+			'<style>@keyframes slcmPickerIn{from{opacity:0;transform:scale(0.94)}to{opacity:1;transform:scale(1)}}</style>' +
+			'<div style="width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,' + primary + ',color-mix(in srgb,' + primary + ' 70%,#000));display:flex;align-items:center;justify-content:center;margin:0 auto 20px;box-shadow:0 8px 20px rgba(0,0,0,0.15)">' +
+				'<span class="material-symbols-outlined" style="font-size:30px;color:#fff;font-family:\'Material Symbols Outlined\'!important">public</span>' +
+			'</div>' +
+			'<h2 style="font-size:20px;font-weight:700;color:#0f172a;text-align:center;margin:0 0 8px">' + _esc(__('Applicant Type')) + '</h2>' +
+			'<p style="font-size:14px;color:#64748b;text-align:center;margin:0 0 20px;line-height:1.6">' +
+				_esc(__('Are you a foreign national with a valid passport of a country other than India?')) + '<br>' +
+				__('Once confirmed, this <strong>cannot be changed</strong>.') +
+			'</p>' +
+			optionsHtml +
+			'<div id="slcm-fn-error" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 14px;font-size:13px;color:#991b1b;margin:10px 0 0;line-height:1.5"></div>' +
+			'<div style="display:flex;gap:10px;margin-top:20px">' +
+				'<button id="slcm-fn-confirm-btn" type="button" style="flex:1;padding:11px;border-radius:10px;border:none;background:' + primary + ';color:#fff;font-size:14px;font-weight:600;cursor:pointer;opacity:0.45;pointer-events:none">' + _esc(__('Confirm & Proceed')) + '</button>' +
+			'</div>' +
+		'</div>';
+	document.body.appendChild(overlay);
+
+	var confirmBtn = document.getElementById('slcm-fn-confirm-btn');
+	var errBox = document.getElementById('slcm-fn-error');
+	var busy = false;
+
+	function chosen() {
+		var r = overlay.querySelector('input[name="slcm-fn-choice"]:checked');
+		return r ? r.value : '';
+	}
+	function setReady(on) {
+		confirmBtn.style.opacity = on ? '1' : '0.45';
+		confirmBtn.style.pointerEvents = on ? 'auto' : 'none';
+	}
+
+	overlay.addEventListener('change', function (e) {
+		if (!e.target || e.target.name !== 'slcm-fn-choice') return;
+		errBox.style.display = 'none';
+		overlay.querySelectorAll('.slcm-fn-opt').forEach(function (el) {
+			var on = el.getAttribute('data-value') === e.target.value;
+			el.style.borderColor = on ? primary : '#e2e8f0';
+			el.style.background = on ? '#fff' : '#f8fafc';
+		});
+		setReady(!busy);
+	});
+
+	confirmBtn.addEventListener('click', function () {
+		var value = chosen();
+		if (!value || busy) return;
+		function accept() {
+			overlay.remove();
+			onConfirm(value);
+		}
+		if (!program) { accept(); return; }
+		// Programme already known: refuse a choice the programme is not open for, keep the modal open.
+		busy = true;
+		setReady(false);
+		frappe.call({
+			method: 'slcm.admission.web_form.applicant_form.applicant_form.validate_new_application_access',
+			args: {
+				program: program,
+				foriegn_national: value,
+				nationality: (wf && wf.get_value('nationality')) || ''
+			},
+			callback: function (r) {
+				busy = false;
+				var res = r && r.message;
+				if (res && !res.allowed && res.reason === 'scope') {
+					errBox.textContent = res.message || '';
+					errBox.style.display = 'block';
+					setReady(true);
+					return;
+				}
+				// Other refusals (window closed, seats full …) are reported by the normal flow.
+				accept();
+			},
+			error: function () {
+				busy = false;
+				accept();
+			}
+		});
+	});
+}
+
+/**
+ * Saved draft opened with no applicant type: ask for it (checked against the draft's programme).
+ * The value is stored with the next Save Draft / Next.
+ */
+function setupForeignNationalPromptForDraft() {
+	if (isNewApplicantWebForm()) return;
+	var tries = 0;
+	var t = setInterval(function () {
+		var wf = window.frappe && frappe.web_form;
+		if (++tries > 100) { clearInterval(t); return; }
+		if (!wf || typeof wf.set_value !== 'function' || !wf.doc || !wf.doc.name) return;
+		clearInterval(t);
+		// Values load asynchronously into the controls — give them a moment before checking.
+		setTimeout(function () {
+			if (wf.in_view_mode) return;
+			if (typeof slcmApplicationIsDraft === 'function' && !slcmApplicationIsDraft()) return;
+			if (typeof slcmApplicationPortalLocked === 'function' && slcmApplicationPortalLocked()) return;
+			var program = wf.doc.program || '';
+			try { program = wf.get_value('program') || program; } catch (e) { }
+			_slcmEnsureForeignNational(wf, program, function () { });
+		}, 800);
+	}, 150);
 }
 
 /**
@@ -4392,11 +4589,14 @@ function applyQueryStringPrefill() {
 			var wf = window.frappe && frappe.web_form;
 			if (wf && typeof wf.set_value === 'function') {
 				clearInterval(_pickerT);
-				_slcmShowProgrammePicker(wf, function (selectedProg) {
-					var url = new URL(window.location.href);
-					url.searchParams.set('program', selectedProg);
-					window.history.replaceState({}, '', url.toString());
-					_slcmRunPrefillWithProgram(wf, selectedProg);
+				// Applicant type first (the programme list is filtered by it), then the programme
+				_slcmEnsureForeignNational(wf, null, function () {
+					_slcmShowProgrammePicker(wf, function (selectedProg) {
+						var url = new URL(window.location.href);
+						url.searchParams.set('program', selectedProg);
+						window.history.replaceState({}, '', url.toString());
+						_slcmRunPrefillWithProgram(wf, selectedProg);
+					});
 				});
 			}
 			if (_pickerTries > 100) clearInterval(_pickerT);
@@ -4417,12 +4617,16 @@ function applyQueryStringPrefill() {
 		clearInterval(t);
 		if (!isNewApplicantWebForm()) return;
 
+		// Applicant type missing from the URL → ask for it before validating the programme
+		_slcmEnsureForeignNational(wf, params.get('program') || '', validateAccessAndPrefill);
+
 		// ── Validate admission cycle and domestic/international scope before allowing new application ──
+		function validateAccessAndPrefill(foreignNational) {
 		frappe.call({
 			method: 'slcm.admission.web_form.applicant_form.applicant_form.validate_new_application_access',
 			args: {
 				program: params.get('program') || '',
-				foriegn_national: params.get('foriegn_national') || '',
+				foriegn_national: foreignNational || '',
 				nationality: params.get('nationality') || ''
 			},
 			callback: function (r) {
@@ -4457,6 +4661,7 @@ function applyQueryStringPrefill() {
 				runPrefill();
 			}
 		});
+		}
 
 		function applyQueryPairs(res) {
 			if (res) {
@@ -4490,6 +4695,8 @@ function applyQueryStringPrefill() {
 				application_type: 1,
 				intake_type: 1,
 				status: 1,
+				// Chosen (URL / Applicant Type picker) and checked against the programme above
+				foriegn_national: 1,
 			};
 			frappe.call({
 				method: 'slcm.admission.web_form.applicant_form.applicant_form.pop_multiprogram_profile_copy',
@@ -5075,6 +5282,11 @@ function setupPreferenceValidation() {
 				validateNationality();
 				_slcmToggleDegreeCountry(wf);
 				if (_slcmFnReverting) return;
+				// Set by the Applicant Type picker, which has already checked the choice
+				if (wf._slcmFnSilent) {
+					_slcmFnLastChecked = wf.get_value('foriegn_national') || null;
+					return;
+				}
 
 				var prog = wf.get_value('program');
 				var fn = wf.get_value('foriegn_national');
@@ -5621,6 +5833,7 @@ frappe.ready(function () {
 	}, 80);
 
 	applyQueryStringPrefill();
+	setupForeignNationalPromptForDraft();
 
 	// Status badge
 	setupStatusBadge();

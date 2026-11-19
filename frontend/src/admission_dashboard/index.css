@@ -1,20 +1,28 @@
+/* frappe-ui's typeface. The theme already asks for `InterVar`; without this the
+   browser silently falls back to the system font (Segoe UI on Windows). */
+/* (by path: the package's `exports` only publish ./style.css, which would bring far more than the font) */
+@import "../../node_modules/frappe-ui/src/fonts/Inter/inter.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Brand tokens for the admission dashboard (NLSIU maroon). */
+/* Brand tokens for the admission dashboard. The page uses frappe-ui's own type
+   and greys; the NLSIU maroon is kept for active and selected states only. */
 .slcm-fui {
 	--adm-brand: #8a1c2b;
 	--adm-brand-hover: #74151f;
-	--adm-brand-soft: #fbeef0;
-	--adm-serif: "Georgia", "Cambria", "Times New Roman", serif;
+	/* Semantic tones, used sparingly: progress fills and the few readings that need attention. */
+	--adm-success: var(--surface-green-7);
+	--adm-warning: var(--ink-amber-7);
+	--adm-danger: var(--ink-red-7);
 	color: var(--ink-gray-8);
+	-webkit-font-smoothing: antialiased;
 }
 
 [data-theme="dark"] .slcm-fui {
-	--adm-brand: #e0727f;
-	--adm-brand-hover: #ec8d98;
-	--adm-brand-soft: #3a1d22;
+	--adm-brand: #a3293a;
+	--adm-brand-hover: #b83446;
 }
 
 /* Desk adds its own margins/padding around page bodies; let the app own the spacing. */

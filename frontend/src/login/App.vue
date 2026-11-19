@@ -167,6 +167,13 @@ const Divider = () =>
 	]);
 
 // Keep ?tab= in the address bar, so a refresh or a shared link opens the same tab.
+// On arrival too: plain /login shows as /login?tab=staff (the server's default tab).
+const startUrl = new URL(window.location.href);
+if (startUrl.searchParams.get("tab") !== tab.value) {
+	startUrl.searchParams.set("tab", tab.value);
+	window.history.replaceState(null, "", startUrl.pathname + "?" + startUrl.searchParams);
+}
+
 // The server refused a sign-in made on the wrong tab: open the account's own
 // tab and show why there (after the tab watcher below has cleared old errors).
 async function moveToTab({ tab: target, message }) {

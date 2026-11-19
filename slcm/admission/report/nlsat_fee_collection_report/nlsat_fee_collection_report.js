@@ -16,6 +16,13 @@ frappe.query_reports["NLSAT Fee Collection Report"] = {
 			default: frappe.datetime.month_end(),
 		},
 		{
+			fieldname: "date_based_on",
+			label: __("Date Based On"),
+			fieldtype: "Select",
+			options: "Payment Date\nSettlement Date",
+			default: "Payment Date",
+		},
+		{
 			fieldname: "admission_cycle",
 			label: __("Admission Cycle"),
 			fieldtype: "Link",

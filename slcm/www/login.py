@@ -15,7 +15,7 @@ import frappe
 from slcm.security.access import safe_redirect_path
 from slcm.utils.login_page import (
 	SWITCH_ACCOUNT_PARAM,
-	TAB_FACULTY_STUDENT,
+	TAB_STAFF,
 	TABS,
 	check_google_sign_in_tab,
 	get_landing_page,
@@ -42,7 +42,7 @@ def get_context(context):
 		tab = (
 			tab_for_redirect(redirect_to)
 			or getattr(frappe.local.flags, "default_login_tab", None)  # set by intercept_login
-			or TAB_FACULTY_STUDENT
+			or TAB_STAFF
 		)
 
 	error_code = args.get("error") or ""
