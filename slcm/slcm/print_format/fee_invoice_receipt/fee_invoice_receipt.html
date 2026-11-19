@@ -1,4 +1,4 @@
-{% set logo = "/files/nlsiu-logo.jpg" %}
+{% set logo = get_nls_logo() %}
 {% set sm = frappe.get_doc("Student Master", doc.student, ignore_permissions=True) if doc.student else None %}
 {% set student_full = ([sm.first_name, sm.middle_name, sm.last_name] | select | join(" ")) if sm else (doc.student_name or "—") %}
 {% set net_payable = frappe.utils.flt(doc.final_payable_amount or doc.total_amount or 0) %}
@@ -8,11 +8,11 @@
 <style>
   /* One A4 page in every renderer (PDF download and browser print): the shared style's 355mm minimum height is
      taller than A4, so the box sizes to its content and is never split across pages. */
-  /* Full-page box with the footer note pinned to its bottom, on one A4 page in both renderers:
-     345mm suits wkhtmltopdf (PDF download, which shrinks the page to fit); browsers read the min() line instead
-     (258mm of real A4). wkhtmltopdf's engine does not know min(), ignores that line and keeps 345mm. */
+  /* Full-page box with the footer note pinned to its bottom, on ONE A4 page in every renderer. 250mm fits
+     true-scale A4 (patched-Qt wkhtmltopdf on UAT/production, Chrome, browser print: 297mm less margins);
+     unpatched wkhtmltopdf draws it smaller, still one page. Never set this above ~255mm. */
   .print-format .nls-doc .nls-copy.is-page, .nls-copy.is-page {
-    min-height: 345mm !important; min-height: min(258mm, 345mm) !important;
+    min-height: 250mm !important;
     position: relative; padding-bottom: 72px !important;
   }
   .print-format .nls-doc .nls-copy.is-page .nls-note, .nls-copy.is-page .nls-note {

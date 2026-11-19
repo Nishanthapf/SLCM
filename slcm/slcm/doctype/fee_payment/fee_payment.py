@@ -15,9 +15,14 @@ class FeePayment(Document):
 			self.validate_payment_amount()
 		# Validate multi-demand allocation if demands table is used
 		if self.payment_demands:
+			self._fill_demand_allocations()
 			self._validate_demand_allocation()
 		self._validate_unique_reference()
 		self._validate_settlement_date()
+		# Bulk upload (Data Import): the sheet's University bank account column is mandatory. The attached sheet is
+		# checked row by row first (slcm.slcm.fee.bulk_upload.validate_data_import); this guards the insert itself.
+		if frappe.flags.in_import and self.is_new() and not self.university_bank_account:
+			frappe.throw(_("University bank account is mandatory for bulk-uploaded payments."))
 
 	def _validate_settlement_date(self):
 		"""An offline payment settles on or after the day it was paid (form, bulk upload, Student Due Details)."""
@@ -144,6 +149,52 @@ class FeePayment(Document):
 		if sm:
 			self.registration_id = sm.registration_id or sm.application_number
 			self.student_email = sm.official_email_id or sm.email
+
+	def _fill_demand_allocations(self):
+		"""Data Import / hand entry: Fee Demands Covered rows may arrive with only the Fee Demand filled.
+		Fill each row's description and outstanding from the demand, and fill a blank Amount Allocated:
+		- Amount given: share what the filled rows leave, row by row, up to each demand's outstanding.
+		- Amount blank: it becomes the total of the filled Amount Allocated values."""
+		blank_rows = []
+		for row in self.payment_demands:
+			if not row.fee_demand:
+				frappe.throw(_("Row {0}: Fee Demand is required in Fee Demands Covered.").format(row.idx))
+			d = frappe.db.get_value(
+				"Fee Demand", row.fee_demand, ["description", "fee_component", "outstanding_amount"], as_dict=True
+			)
+			if not d:
+				frappe.throw(_("Row {0}: Fee Demand {1} was not found.").format(row.idx, row.fee_demand))
+			row.demand_description = row.demand_description or d.description or d.fee_component
+			if self.docstatus == 0:
+				row.outstanding_amount = d.outstanding_amount
+			if flt(row.amount_allocated) <= 0:
+				blank_rows.append(row)
+
+		if flt(self.amount) <= 0:
+			if blank_rows:
+				frappe.throw(
+					_("Enter the payment Amount, or the Amount Allocated for every row of Fee Demands Covered "
+					  "(row {0} has none).").format(blank_rows[0].idx),
+					title=_("Amount missing"),
+				)
+			self.amount = flt(sum(flt(r.amount_allocated) for r in self.payment_demands), 2)
+			return
+
+		remaining = flt(self.amount, 2) - flt(sum(flt(r.amount_allocated) for r in self.payment_demands), 2)
+		for row in blank_rows:
+			if remaining <= 0:
+				frappe.throw(
+					_("Row {0}: no Amount Allocated, and the payment Amount ({1}) is already used by the other rows. "
+					  "Enter its Amount Allocated, remove the row, or raise the Amount.").format(
+						row.idx, frappe.utils.fmt_money(self.amount, currency="INR")
+					)
+				)
+			if flt(row.outstanding_amount) <= 0:
+				frappe.throw(
+					_("Row {0}: Fee Demand {1} has nothing outstanding. Remove the row.").format(row.idx, row.fee_demand)
+				)
+			row.amount_allocated = flt(min(remaining, flt(row.outstanding_amount)), 2)
+			remaining = flt(remaining - flt(row.amount_allocated), 2)
 
 	def _validate_demand_allocation(self):
 		total_allocated = sum(flt(row.amount_allocated) for row in self.payment_demands)

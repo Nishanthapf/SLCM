@@ -44,6 +44,59 @@ class FeeDemand(Document):
 		self._validate_waiver()
 		self._auto_set_description()
 		self._validate_due_after_creation()
+		self._validate_once_per_year()
+
+	def _validate_once_per_year(self):
+		"""Admission, Re-admission, Tuition and Facilities, Housing and Student Refundable
+		Deposit are charged once per student per Academic Year: a second live demand of the
+		same group (whatever its component is called) is refused. Cancelled and "Moved to
+		Excess" demands don't count, so a corrected demand can still be raised."""
+		if not (self.is_new() and self.student and self.academic_year and self.fee_component):
+			return
+		from slcm.slcm.fee.component_groups import GROUP_LABELS, ONCE_PER_YEAR_GROUPS, component_group
+
+		component_type = frappe.db.get_value("Fee Component", self.fee_component, "component_type")
+		group = component_group(self.fee_component, component_type)
+		if group not in ONCE_PER_YEAR_GROUPS:
+			return
+		existing = frappe.get_all(
+			"Fee Demand",
+			filters={
+				"student": self.student,
+				"academic_year": self.academic_year,
+				"status": ["not in", ["Cancelled", "Moved to Excess"]],
+				"name": ["!=", self.name or ""],
+			},
+			fields=["name", "fee_component", "status"],
+		)
+		if not existing:
+			return
+		types = dict(
+			frappe.get_all(
+				"Fee Component",
+				filters={"name": ["in", list({d.fee_component for d in existing})]},
+				fields=["name", "component_type"],
+				as_list=True,
+			)
+		)
+		duplicate = next(
+			(d for d in existing if component_group(d.fee_component, types.get(d.fee_component)) == group), None
+		)
+		if duplicate:
+			frappe.throw(
+				_(
+					"{0} already has a {1} demand for {2}: {3} ({4}, {5}). It can be raised only once per "
+					"Academic Year; cancel that demand first if this one replaces it."
+				).format(
+					self.student_name or self.student,
+					GROUP_LABELS[group],
+					self.academic_year,
+					frappe.bold(duplicate.name),
+					duplicate.fee_component,
+					duplicate.status,
+				),
+				title=_("Duplicate Fee Demand"),
+			)
 
 	def _validate_due_after_creation(self):
 		"""Dues the office creates (bulk upload; the desk form and Student Due Details check this too) fall due after

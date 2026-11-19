@@ -204,7 +204,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Payment Mode",
-   "options": "Cash\nBank Transfer\nCheque\nCredit Card\nDebit Card\nOnline Payment\nOther",
+   "options": "\nCash\nBank Transfer\nCheque\nCredit Card\nDebit Card\nOnline Payment\nOther",
    "reqd": 1
   },
   {
@@ -349,7 +349,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-11-16 16:00:00.000000",
+ "modified": "2026-11-19 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Fee Payment",

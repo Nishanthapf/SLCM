@@ -206,6 +206,11 @@ def _pay(student, mode, date, allocations, amount=None, bank=None, ref=None):
 	return doc
 
 
+def _first_university_bank():
+	options = frappe.get_meta("Fee Refund").get_field("university_bank_account").options or ""
+	return next((o for o in options.split("\n") if o), None)
+
+
 def _refund(student, demand, amount, refund_type, mode, date):
 	doc = frappe.get_doc(
 		{
@@ -218,6 +223,7 @@ def _refund(student, demand, amount, refund_type, mode, date):
 			"refund_amount": amount,
 			"refund_date": date,
 			"refund_mode": mode,
+			"university_bank_account": _first_university_bank(),
 			"utr_number": f"UTR-REF-{demand}",
 			"reason": f"{DEMO_TAG} {refund_type}",
 		}
