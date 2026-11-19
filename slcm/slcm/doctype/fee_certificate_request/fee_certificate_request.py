@@ -17,6 +17,14 @@ from slcm.slcm.doctype.fee_certificate_settings.fee_certificate_settings import 
 	SINGLE_YEAR_RECEIPT,
 	get_purpose_template,
 )
+from slcm.slcm.fee.component_groups import (
+	ADMISSION,
+	HOUSING,
+	READMISSION,
+	REFUNDABLE,
+	TUITION,
+	component_group as _row_group,
+)
 
 ADMISSION_STAGE = "Admission Stage"
 ORDINALS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII"]
@@ -30,11 +38,8 @@ def _amt(amount):
 	return fmt_money(flt(amount), precision=0, currency="INR").replace("₹", "").strip()
 
 
-# Certificate rows are Fee Components in this order of group, then any other
-# component in the order its demand was raised. Groups are matched on keywords in the
-# component name or its component_type, because sites name their types differently
-# (e.g. "Tuition Fee" vs "Tuition and Facilities Fee").
-ADMISSION, READMISSION, TUITION, HOUSING, REFUNDABLE, OTHER = range(6)
+# Certificate rows are Fee Components in group order (slcm.slcm.fee.component_groups),
+# then any other component in the order its demand was raised.
 # Printed particulars for the per-annum groups; every other component prints as
 # "<name> – one time".
 PER_ANNUM_LABELS = {
@@ -482,23 +487,6 @@ def _component_types(fee_components):
 			as_list=1,
 		)
 	)
-
-
-def _row_group(component, component_type=None):
-	"""ADMISSION / READMISSION / TUITION / HOUSING / REFUNDABLE / OTHER, from keywords
-	in the Fee Component name and its component_type."""
-	text = f"{component or ''} {component_type or ''}".lower()
-	if "re-admission" in text or "readmission" in text or "re admission" in text:
-		return READMISSION
-	if "admission" in text:
-		return ADMISSION
-	if "tuition" in text and "registration" not in text:
-		return TUITION
-	if "hostel" in text or "housing" in text:
-		return HOUSING
-	if "refundable" in text or "deposit" in text:
-		return REFUNDABLE
-	return OTHER
 
 
 def _ordered_components(components):
