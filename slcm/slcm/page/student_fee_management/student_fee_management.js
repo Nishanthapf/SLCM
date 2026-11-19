@@ -855,6 +855,45 @@ class StudentFeeManagement {
 		}
 	}
 
+	// One ZIP with the receipts of the given dues (each receipt once).
+	async download_receipts_zip(dues) {
+		const p = this.detail.profile;
+		const receipts = [...new Set(dues.flatMap((d) => (d.receipts || []).map((r) => r.name)))];
+		if (!receipts.length) return frappe.msgprint(__("The selected dues have no receipts yet."));
+		frappe.dom.freeze(__("Preparing {0} receipt(s)…", [receipts.length]));
+		try {
+			const body = new URLSearchParams({ student: p.name, receipts: JSON.stringify(receipts) });
+			const res = await fetch(`/api/method/${SFM_API}download_receipts_zip`, {
+				method: "POST",
+				credentials: "same-origin",
+				headers: { "X-Frappe-CSRF-Token": frappe.csrf_token },
+				body,
+			});
+			const type = res.headers.get("content-type") || "";
+			if (!res.ok || type.includes("json")) {
+				let msg = __("The receipts could not be downloaded.");
+				try {
+					msg = sfm_server_message(await res.json()) || msg;
+				} catch (e) {
+					// non-JSON error body — keep the generic message
+				}
+				return frappe.msgprint({ title: __("Receipts not available"), message: msg, indicator: "red" });
+			}
+			const url = URL.createObjectURL(await res.blob());
+			const a = document.createElement("a");
+			a.href = url;
+			a.download = `Receipts-${(p.registration_id || p.name).replace(/[\s/]/g, "-")}.zip`;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			setTimeout(() => URL.revokeObjectURL(url), 2000);
+		} catch (e) {
+			frappe.msgprint({ title: __("Receipts not available"), message: __("Network error while downloading the receipts."), indicator: "red" });
+		} finally {
+			frappe.dom.unfreeze();
+		}
+	}
+
 	async receipts_dialog(row) {
 		const r = await frappe.call({ method: SFM_API + "get_student_receipts", args: { student: row.student } });
 		this.receipt_picker(__("Receipts — {0}", [row.student_name || row.student]), r.message || []);
@@ -1072,6 +1111,7 @@ class StudentFeeManagement {
 							aria-haspopup="dialog" aria-expanded="false" title="${__("Show or hide columns")}">
 							${sfm_icon("columns", 15)}<span>${__("Columns")}</span>${n_hidden ? `<span class="sfm-cols-badge">${__("{0} hidden", [n_hidden])}</span>` : ""}
 						</button>
+						<button type="button" class="sfm-btn sfm-btn-secondary" data-act="bulk-receipts" title="${__("Download the receipts of the selected dues (all dues when none are selected) as one ZIP")}">${sfm_icon("download", 15)}<span>${__("Download Receipts")}</span></button>
 						<button type="button" class="sfm-btn sfm-btn-secondary" data-act="multi-pay">${__("Multiple Due Payment")}</button>
 						<div class="dropdown">
 							<button type="button" class="sfm-btn sfm-btn-primary dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">${__("Actions")}</button>
@@ -1353,6 +1393,10 @@ class StudentFeeManagement {
 				frappe.new_doc("Fee Refund", { student: p.name, refund_date: frappe.datetime.get_today() });
 				break;
 
+			case "bulk-receipts":
+				this.download_receipts_zip(sel.length ? sel : this.detail.demands);
+				break;
+
 			case "multi-pay": {
 				const payable = (sel.length ? sel : this.detail.demands).filter(SFM_PAYABLE);
 				if (!payable.length) {
@@ -1380,7 +1424,7 @@ class StudentFeeManagement {
 			case "waiver":
 				if (!(d = this.single_selected())) return;
 				if (!SFM_PAYABLE(d)) return frappe.msgprint(__("A waiver can only be applied to a due with a pending amount."));
-				frappe.new_doc("Fee Concession", { student: p.name, fee_demand: d.name });
+				this.apply_concession_dialog(d.name);
 				break;
 
 			case "refund-demand":
@@ -1428,10 +1472,10 @@ class StudentFeeManagement {
 			  })
 			: demands.map((d) => ({ name: d.name, fee_component: d.fee_component || "", pending: flt(d.outstanding_amount), value: flt(d.outstanding_amount) }));
 
-		const today = frappe.datetime.get_today();
-		const start_payment_date = editing ? payment.payment_date || today : today;
-		const start_settlement_date = editing ? payment.settlement_date || start_payment_date : start_payment_date;
-		// Settlement Date follows Payment Date until staff change it by hand.
+		// Payment Date is entered by staff (never pre-filled for a new payment); Settlement Date follows it until
+		// changed by hand, and may not be earlier than it.
+		const start_payment_date = editing ? payment.payment_date || "" : "";
+		const start_settlement_date = editing ? payment.settlement_date || start_payment_date : "";
 		let auto_settlement = start_payment_date;
 		let dialog = null;
 		const sync_settlement = () => {
@@ -1461,8 +1505,9 @@ class StudentFeeManagement {
 					fieldtype: "Date",
 					fieldname: "settlement_date",
 					label: __("Settlement Date"),
+					reqd: 1,
 					default: start_settlement_date,
-					description: __("Same as the payment date unless changed."),
+					description: __("On or after the payment date; follows it unless changed."),
 				},
 				{
 					fieldtype: "Select",
@@ -1491,6 +1536,13 @@ class StudentFeeManagement {
 			],
 			primary_action_label: editing ? __("Save Changes") : __("Record Payment"),
 			primary_action: (values) => {
+				if (!values.payment_date) return frappe.msgprint(__("Payment Date is mandatory."));
+				if (!values.settlement_date) return frappe.msgprint(__("Settlement Date is mandatory."));
+				if (values.settlement_date < values.payment_date) {
+					return frappe.msgprint(
+						__("Settlement Date ({0}) cannot be before the Payment Date ({1}).", [sfm_date(values.settlement_date), sfm_date(values.payment_date)])
+					);
+				}
 				if (!values.university_bank_account) return frappe.msgprint(__("University bank account is mandatory."));
 				if (!(values.reference_number || "").trim()) return frappe.msgprint(__("Reference / UTR No. is mandatory."));
 				if (sfm_remarks_error(values.remarks)) return frappe.msgprint(sfm_remarks_error(values.remarks));
@@ -1643,7 +1695,7 @@ class StudentFeeManagement {
 				{ fieldtype: "Link", fieldname: "academic_year", label: __("Academic Year"), options: "Academic Year", default: p.academic_year },
 				{ fieldtype: "Column Break" },
 				{ fieldtype: "Date", fieldname: "demand_date", label: __("Date of Creation"), reqd: 1, default: today },
-				{ fieldtype: "Date", fieldname: "due_date", label: __("Due Date"), reqd: 1 },
+				{ fieldtype: "Date", fieldname: "due_date", label: __("Due Date"), reqd: 1, description: __("Must be after the Date of Creation.") },
 				{ fieldtype: "Section Break" },
 				{ fieldtype: "Currency", fieldname: "original_amount", label: __("Amount"), options: "INR", reqd: 1 },
 				{ fieldtype: "Column Break" },
@@ -1651,7 +1703,6 @@ class StudentFeeManagement {
 				{ fieldtype: "Column Break" },
 				{ fieldtype: "Currency", fieldname: "waiver_amount", label: __("Scholarship / Waiver"), options: "INR", default: 0 },
 				{ fieldtype: "Section Break" },
-				{ fieldtype: "Data", fieldname: "description", label: __("Description"), description: __("Defaults to the fee component name") },
 				{ fieldtype: "Check", fieldname: "is_refundable", label: __("Refundable") },
 				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Remarks"), reqd: 1, description: SFM_REMARKS_HINT },
 			],
@@ -1660,19 +1711,19 @@ class StudentFeeManagement {
 				if (sfm_remarks_error(v.remarks)) return frappe.msgprint(sfm_remarks_error(v.remarks));
 				if (flt(v.original_amount) <= 0) return frappe.msgprint(__("Amount must be greater than zero."));
 				if (flt(v.waiver_amount) > flt(v.original_amount)) return frappe.msgprint(__("Waiver cannot exceed the amount."));
-				if (v.due_date < v.demand_date) return frappe.msgprint(__("Due Date cannot be before the Date of Creation."));
+				if (v.due_date <= v.demand_date) {
+					return frappe.msgprint(__("Due Date ({0}) must be after the Date of Creation ({1}).", [sfm_date(v.due_date), sfm_date(v.demand_date)]));
+				}
 				dialog.disable_primary_action();
 				try {
-					const doc = await frappe.db.insert({
-						doctype: "Fee Demand",
-						student: p.name,
-						program: p.programme_of_study,
-						programme: p.batch,
-						...v,
-						description: (v.description || "").trim() || v.fee_component,
+					const r = await frappe.call({
+						method: SFM_API + "create_due",
+						args: { student: p.name, ...v },
+						freeze: true,
+						freeze_message: __("Creating due…"),
 					});
 					dialog.hide();
-					frappe.show_alert({ message: __("Due {0} created", [doc.name]), indicator: "green" });
+					frappe.show_alert({ message: __("Due {0} created", [r.message.fee_demand]), indicator: "green" });
 					this.show_student(p.name);
 				} finally {
 					dialog.enable_primary_action();
@@ -2015,12 +2066,48 @@ class StudentFeeManagement {
 			</div></div>
 		`);
 		$body.find('[data-act="refund-excess"]').on("click", () => this.refund_excess_dialog());
-		$body.find('[data-act="new-credit"]').on("click", () =>
-			frappe.new_doc("Student Credit Note", {
-				student: this.detail.profile.name,
-				academic_year: this.detail.profile.academic_year,
-			})
-		);
+		$body.find('[data-act="new-credit"]').on("click", () => this.add_credit_dialog());
+	}
+
+	// Add excess / credit in a pop-up on this page: a Student Credit Note, submitted (server: add_credit_note).
+	async add_credit_dialog() {
+		const p = this.detail.profile;
+		await frappe.model.with_doctype("Student Credit Note");
+		const opt = (field) => ((frappe.meta.get_docfield("Student Credit Note", field) || {}).options || "").split("\n").filter(Boolean);
+		const not_cash = (doc) => !!doc.received_via && doc.received_via !== "Cash";
+		const dialog = new frappe.ui.Dialog({
+			title: __("Add Excess / Credit — {0}", [p.first_name || p.name]),
+			fields: [
+				{ fieldtype: "Select", fieldname: "credit_type", label: __("Credit Type"), reqd: 1, options: opt("credit_type"), default: opt("credit_type")[0] },
+				{ fieldtype: "Currency", fieldname: "credit_amount", label: __("Credit Amount"), reqd: 1, options: "INR" },
+				{ fieldtype: "Link", fieldname: "academic_year", label: __("Academic Year"), options: "Academic Year", default: p.academic_year },
+				{ fieldtype: "Column Break" },
+				{ fieldtype: "Select", fieldname: "received_via", label: __("Received Via"), options: ["", ...opt("received_via")],
+					description: __("Required for Overpayment / Advance Deposit: how the money reached the university.") },
+				{ fieldtype: "Select", fieldname: "received_bank_account", label: __("Received Bank Account"), options: ["", ...opt("received_bank_account")], depends_on: not_cash },
+				{ fieldtype: "Date", fieldname: "received_date", label: __("Received Date"), depends_on: (doc) => !!doc.received_via, mandatory_depends_on: (doc) => !!doc.received_via },
+				{ fieldtype: "Data", fieldname: "received_reference", label: __("Reference / UTR No."), depends_on: (doc) => !!doc.received_via },
+				{ fieldtype: "Section Break" },
+				{ fieldtype: "Small Text", fieldname: "remarks", label: __("Remarks") },
+			],
+			primary_action_label: __("Add Excess"),
+			primary_action: (v) => {
+				if (flt(v.credit_amount) <= 0) return frappe.msgprint(__("Credit Amount must be greater than zero."));
+				frappe.confirm(__("Add a {0} credit of <b>{1}</b> for {2}?", [sfm_esc(v.credit_type), sfm_money(v.credit_amount), sfm_esc(p.first_name || p.name)]), async () => {
+					const r = await frappe.call({
+						method: SFM_API + "add_credit_note",
+						args: { student: p.name, ...v },
+						freeze: true,
+						freeze_message: __("Adding excess…"),
+					});
+					dialog.hide();
+					frappe.show_alert({ message: __("Credit note {0} added", [r.message.credit_note]), indicator: "green" }, 7);
+					this.show_student(p.name);
+				});
+			},
+		});
+		dialog.$wrapper.addClass("sfm-dialog");
+		dialog.show();
 	}
 
 	// ── Scholarship / Stipend ────────────────────────────────────────────
@@ -2193,9 +2280,7 @@ class StudentFeeManagement {
 			e.preventDefault();
 			$body.find(".sfm-subtab").not(e.currentTarget).trigger("click");
 		});
-		$body.find('[data-act="new-scholarship"]').on("click", () =>
-			frappe.new_doc("Fee Concession", { student: p.name })
-		);
+		$body.find('[data-act="new-scholarship"]').on("click", () => this.apply_concession_dialog());
 		$body.find('[data-act="new-stipend"]').on("click", () => this.stipend_dialog());
 		$body.on("click", "[data-con-act]", (e) => {
 			const $btn = $(e.currentTarget);
@@ -2263,6 +2348,55 @@ class StudentFeeManagement {
 						},
 						7
 					);
+					this.show_student(p.name);
+				});
+			},
+		});
+		dialog.$wrapper.addClass("sfm-dialog");
+		dialog.show();
+	}
+
+	// Apply a scholarship / waiver to one pending due, in a pop-up on this page (server: apply_concession).
+	async apply_concession_dialog(fee_demand = null) {
+		const p = this.detail.profile;
+		const dues = (this.detail.demands || []).filter(SFM_PAYABLE);
+		if (!dues.length) return frappe.msgprint(__("{0} has no due with a pending amount to apply a scholarship to.", [sfm_esc(p.first_name || p.name)]));
+		await frappe.model.with_doctype("Fee Concession");
+		const types = ((frappe.meta.get_docfield("Fee Concession", "concession_type") || {}).options || "").split("\n").filter(Boolean);
+		const label = (d) => `${d.name} · ${d.fee_component || ""} · ${d.academic_year || ""} · ${__("pending")} ${format_currency(d.outstanding_amount, "INR")}`;
+		const options = dues.map((d) => ({ value: d.name, label: label(d) }));
+		const selected = dues.find((d) => d.name === fee_demand) || dues[0];
+		const dialog = new frappe.ui.Dialog({
+			title: __("Apply Scholarship — {0}", [p.first_name || p.name]),
+			fields: [
+				{ fieldtype: "Select", fieldname: "fee_demand", label: __("Due"), reqd: 1, options, default: selected.name,
+					change: () => {
+						const d = dues.find((x) => x.name === dialog.get_value("fee_demand"));
+						dialog.set_df_property("waiver_value", "description", d ? __("Pending on this due: {0}", [sfm_money(d.outstanding_amount)]) : "");
+					},
+				},
+				{ fieldtype: "Select", fieldname: "concession_type", label: __("Concession Type"), reqd: 1, options: types, default: types[0] },
+				{ fieldtype: "Currency", fieldname: "waiver_value", label: __("Waiver Value"), reqd: 1, options: "INR",
+					description: __("Pending on this due: {0}", [sfm_money(selected.outstanding_amount)]) },
+				{ fieldtype: "Column Break" },
+				{ fieldtype: "Date", fieldname: "concession_date", label: __("Date of concession"), default: frappe.datetime.get_today() },
+				{ fieldtype: "Small Text", fieldname: "reason", label: __("Reason"), reqd: 1 },
+			],
+			primary_action_label: __("Apply Scholarship"),
+			primary_action: (v) => {
+				const d = dues.find((x) => x.name === v.fee_demand);
+				if (flt(v.waiver_value) <= 0) return frappe.msgprint(__("Waiver Value must be greater than zero."));
+				if (d && flt(v.waiver_value) > flt(d.outstanding_amount)) return frappe.msgprint(__("Waiver Value is more than the pending amount {0}.", [sfm_money(d.outstanding_amount)]));
+				if (!(v.reason || "").trim()) return frappe.msgprint(__("Reason is mandatory."));
+				frappe.confirm(__("Apply a {0} of <b>{1}</b> to {2}?", [sfm_esc(v.concession_type), sfm_money(v.waiver_value), sfm_esc(v.fee_demand)]), async () => {
+					const r = await frappe.call({
+						method: SFM_API + "apply_concession",
+						args: { student: p.name, ...v },
+						freeze: true,
+						freeze_message: __("Applying scholarship…"),
+					});
+					dialog.hide();
+					frappe.show_alert({ message: __("Concession {0} applied", [r.message.concession]), indicator: "green" }, 7);
 					this.show_student(p.name);
 				});
 			},

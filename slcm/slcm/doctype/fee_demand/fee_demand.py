@@ -43,6 +43,20 @@ class FeeDemand(Document):
 		self._calculate_amounts()
 		self._validate_waiver()
 		self._auto_set_description()
+		self._validate_due_after_creation()
+
+	def _validate_due_after_creation(self):
+		"""Dues the office creates (bulk upload; the desk form and Student Due Details check this too) fall due after
+		the day they are created. Dues raised by events (re-exam, fines ...) may be due the same day, so this only
+		applies to imports."""
+		if not (self.is_new() and frappe.flags.in_import and self.due_date and self.demand_date):
+			return
+		if getdate(self.due_date) <= getdate(self.demand_date):
+			frappe.throw(
+				_("Due Date ({0}) must be after the Date of Creation ({1}).").format(
+					frappe.utils.formatdate(self.due_date), frappe.utils.formatdate(self.demand_date)
+				)
+			)
 
 	def before_save(self):
 		self._update_status()

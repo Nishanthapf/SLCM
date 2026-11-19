@@ -17,6 +17,13 @@ _STUDENT = (
 	"studying in {{ current_year }} year {{ programme }} programme for the Academic Year (AY) {{ academic_year }} "
 	"in this University "
 )
+# The receipt's opening describes the student now (current year of study, current
+# Academic Year); the closing names the year the receipt is for.
+_STUDENT_NOW = (
+	"<p>This is to certify that <strong>{{ student_name }}</strong> (student ID: <strong>{{ student_id }}</strong>) "
+	"studying in {{ studying_year }} year {{ programme }} programme for the Academic Year (AY) "
+	"{{ current_academic_year }} in this University "
+)
 _APPLICANT = (
 	"<p>This is to certify that <strong>{{ student_name }}</strong> (application number: "
 	"<strong>{{ application_number }}</strong>) has applied for {{ programme_duration }} {{ programme }} "
@@ -77,7 +84,7 @@ DEFAULT_PURPOSES = [
 		"include_bank_details": 0,
 		"require_full_payment": 1,
 		"heading": "Fee Receipt",
-		"body_text": _STUDENT
+		"body_text": _STUDENT_NOW
 		+ "and has paid the following course fee for {{ current_year }} year i.e. AY {{ academic_year }}.</p>",
 		"applicant_body_text": _APPLICANT + "and has paid the following fee.</p>",
 		"total_label": "Total fee paid",
