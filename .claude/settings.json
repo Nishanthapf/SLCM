@@ -175,7 +175,9 @@
       "Bash(export MSYS_NO_PATHCONV=1; wsl -d Ubuntu-24.04 -- python3 /tmp/overview_patch.py && rm //wsl.localhost/Ubuntu-24.04/tmp/overview_patch.py //wsl.localhost/Ubuntu-24.04/tmp/overview_template.vue)",
       "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 --cd /home/n_l_s_i_u/frappe-bench/apps/slcm/frontend -- bash -lc 'yarn build 2>&1 | grep -E \"built|rror\" | head -3; node --check ../slcm/admission/page/admission_dashboard/admission_dashboard.js && echo JS_OK')",
       "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc \"cd ~/frappe-bench/apps/slcm/frontend && yarn build 2>&1 | tail -2\")",
-      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc 'cd ~/frappe-bench/apps/slcm && for f in slcm/admission/doctype/applicant/applicant.json slcm/slcm/doctype/slcm_payment_request/slcm_payment_request.json; do grep -n \"^ \\\\\"modified\\\\\":\" $f; done')"
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc 'cd ~/frappe-bench/apps/slcm && for f in slcm/admission/doctype/applicant/applicant.json slcm/slcm/doctype/slcm_payment_request/slcm_payment_request.json; do grep -n \"^ \\\\\"modified\\\\\":\" $f; done')",
+      "Bash(export MSYS_NO_PATHCONV=1; wsl -d Ubuntu-24.04 -- bash -lc \"cd ~/frappe-bench && bench --site slcm.com execute slcm.scratch.regcheck.run\" 2>&1 | tail -20; rm \"//wsl.localhost/Ubuntu-24.04/home/n_l_s_i_u/frappe-bench/apps/slcm/slcm/scratch/regcheck.py\")",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && ls sites | grep -v -E \"\\\\.json|assets|apps.txt\"; cat sites/currentsite.txt 2>/dev/null')"
     ],
     "additionalDirectories": [
       "\\tmp",

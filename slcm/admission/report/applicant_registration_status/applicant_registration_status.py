@@ -1,4 +1,5 @@
 import frappe
+from frappe.utils import add_days, getdate
 
 
 def execute(filters=None):
@@ -42,14 +43,22 @@ def build_conditions(filters):
     conditions = ["u.enabled = 1", "u.user_type = 'Website User'"]
     values = {}
 
-    if filters.get("from_date"):
-        conditions.append("u.creation >= %(from_date)s")
-        values["from_date"] = filters["from_date"]
+    from_date = getdate(filters["from_date"]) if filters.get("from_date") else None
+    to_date = getdate(filters["to_date"]) if filters.get("to_date") else None
 
-    if filters.get("to_date"):
-        # include the whole To Date, not just its midnight
-        conditions.append("u.creation <= %(to_date)s")
-        values["to_date"] = f"{filters['to_date']} 23:59:59"
+    if from_date and to_date and from_date > to_date:
+        frappe.throw("'Registered On or After' cannot be later than 'Registered On or Before'.")
+
+    if from_date:
+        # On or After: from the start (00:00:00) of that day
+        conditions.append("u.creation >= %(from_date)s")
+        values["from_date"] = from_date
+
+    if to_date:
+        # On or Before: the whole of that day, i.e. everything before the next day's midnight
+        # (comparing with the bare date would stop at the day's 00:00:00)
+        conditions.append("u.creation < %(to_date)s")
+        values["to_date"] = add_days(to_date, 1)
 
     if filters.get("user"):
         conditions.append("u.name = %(user)s")
