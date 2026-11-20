@@ -38,6 +38,11 @@ class FeeDemand(Document):
 
 	def validate(self):
 		self._block_edit_if_cancelled()
+		if self.is_new():
+			# bulk upload may give the student by Registration ID only (or both, which must agree)
+			from slcm.slcm.doctype.student_credit_note.student_credit_note import resolve_student_from_registration_id
+
+			resolve_student_from_registration_id(self)
 		self._fill_from_student()
 		self._set_demand_type()
 		self._calculate_amounts()

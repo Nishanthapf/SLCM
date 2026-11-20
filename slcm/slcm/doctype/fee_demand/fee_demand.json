@@ -87,7 +87,8 @@
    "in_standard_filter": 1,
    "label": "Registration ID",
    "read_only": 1,
-   "search_index": 1
+   "search_index": 1,
+   "fetch_if_empty": 1
   },
   {
    "fieldname": "student_email",
@@ -403,7 +404,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-19 12:49:02.728793",
+ "modified": "2026-11-20 15:08:16.814940",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Fee Demand",
