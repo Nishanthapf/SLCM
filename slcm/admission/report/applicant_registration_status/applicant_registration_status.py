@@ -67,7 +67,7 @@ def build_conditions(filters):
     return " AND ".join(conditions), values
 
 
-def get_registered_users(filters):
+def get_registered_users(filters, sort=True):
     """Applicant-role users with their application status (Enrolled / Applied / Not Applied).
 
     A user "has applied" when any Applicant carries their email or their user id. That used to
@@ -85,7 +85,7 @@ def get_registered_users(filters):
             ON hr.parent = u.name AND hr.role = 'Applicant' AND hr.parenttype = 'User'
         WHERE {condition_str}
         GROUP BY u.name
-        ORDER BY u.full_name
+        {"ORDER BY u.full_name" if sort else ""}
         """,
         values,
         as_dict=True,
@@ -147,7 +147,8 @@ def get_registration_counts(from_date=None, to_date=None):
 
     Also used by the Admission Dashboard, so its cards match this report.
     """
-    rows = get_registered_users({"from_date": from_date, "to_date": to_date})
+    # Only counted, so skip sorting every user by name.
+    rows = get_registered_users({"from_date": from_date, "to_date": to_date}, sort=False)
 
     total = len(rows)
     enrolled = len([r for r in rows if r.application_status == "Enrolled"])

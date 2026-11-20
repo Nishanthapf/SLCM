@@ -25,7 +25,8 @@ from datetime import timedelta
 import frappe
 from frappe import _
 from frappe.query_builder import DocType
-from frappe.query_builder.functions import Coalesce
+from frappe.query_builder.functions import Coalesce, Count
+from pypika.terms import Case
 from frappe.utils import add_days, cint, flt, get_datetime, getdate, nowdate
 
 from slcm.admission.report.applicant_registration_status.applicant_registration_status import (
@@ -247,9 +248,34 @@ def get_admission_cycles():
 
 CYCLE_PARTS = ("applications", "fees", "registrations")
 
+# Dashboard figures are kept in Redis for this long, so several people opening the page (or one
+# person switching tabs back and forth) don't each re-run the queries. The page's Refresh button
+# passes `refresh=1` to skip the cache.
+CACHE_TTL = 5 * 60
+CACHE_PREFIX = "slcm:admission_dashboard:"
+
+
+def _cached(method, params, refresh, compute):
+	"""`compute()` memoised in Redis by method + params for CACHE_TTL seconds.
+
+	The figures don't depend on the user (access is checked before this, and the queries don't
+	apply user permissions), so one entry serves everyone.
+	"""
+	key = CACHE_PREFIX + method + ":" + frappe.as_json(params, indent=None)
+	cache = frappe.cache
+	if not cint(refresh):
+		hit = cache.get_value(key)
+		if hit is not None:
+			return hit
+	value = compute()
+	cache.set_value(key, value, expires_in_sec=CACHE_TTL)
+	return value
+
 
 @frappe.whitelist()
-def get_cycle_overview(admission_cycle, applicant_type=DOMESTIC, from_date=None, to_date=None, part=None):
+def get_cycle_overview(
+	admission_cycle, applicant_type=DOMESTIC, from_date=None, to_date=None, part=None, refresh=0
+):
 	"""Summary cards, programme cards with their numbers, and the two cross-programme charts.
 
 	`part` returns one slice, so the page can load the three in parallel and show real progress:
@@ -265,6 +291,13 @@ def get_cycle_overview(admission_cycle, applicant_type=DOMESTIC, from_date=None,
 	if part and part not in CYCLE_PARTS:
 		frappe.throw(_("Unknown part: {0}").format(part))
 
+	params = [cycle.name, applicant_type, window.from_date, window.to_date, part]
+	return _cached(
+		"cycle_overview", params, refresh, lambda: _cycle_overview(cycle, applicant_type, window, part)
+	)
+
+
+def _cycle_overview(cycle, applicant_type, window, part):
 	out = {}
 	if part in (None, "applications"):
 		out.update(_cycle_applications(cycle, applicant_type, window))
@@ -287,35 +320,40 @@ def _cycle_applications(cycle, applicant_type, window):
 	programmes = _cycle_programmes(cycle.name, applicant_type)
 	names = {p["name"] for p in programmes}
 
-	# Applications: one light row per applicant of the cycle (both types, for the comparison chart).
+	# Applications, counted by the database: one row per programme x status x Domestic/International
+	# (both types, for the comparison chart) instead of one row per applicant.
 	A = DocType("Applicant")
-	applicants = (
+	is_international = Case().when(A.foriegn_national == "Yes", 1).else_(0)
+	query = (
 		frappe.qb.from_(A)
-		.select(A.program, A.status, A.creation, A.foriegn_national)
+		.select(A.program, A.status, is_international.as_("international"), Count("*").as_("n"))
 		.where(A.admission_cycle == cycle.name)
-		.run(as_dict=True)
+		.groupby(A.program, A.status, is_international)
 	)
+	if window.start:
+		query = query.where(A.creation >= window.start)
+	if window.end:
+		query = query.where(A.creation < window.end)
 
 	stats = {name: _empty_programme_stats() for name in names}
 	by_programme = OrderedDict()
-	for row in applicants:
-		if not window.contains(row.creation):
-			continue
-		row_type = INTERNATIONAL if row.foriegn_national == "Yes" else DOMESTIC
+	for row in query.run(as_dict=True):
+		n = cint(row.n)
+		row_type = INTERNATIONAL if cint(row.international) else DOMESTIC
 		if row.program:
 			split = by_programme.setdefault(row.program, {DOMESTIC: 0, INTERNATIONAL: 0})
-			split[row_type] += 1
+			split[row_type] += n
 		if row_type != applicant_type or row.program not in stats:
 			continue
 		stage, exited = status_stage(row.status)
 		s = stats[row.program]
-		s["total"] += 1
+		s["total"] += n
 		if stage == DRAFT and not exited:
-			s["draft"] += 1
+			s["draft"] += n
 		if stage >= SUBMITTED:
-			s["submitted"] += 1
+			s["submitted"] += n
 		if stage == ENROLLED and not exited:
-			s["enrolled"] += 1
+			s["enrolled"] += n
 
 	for p in programmes:
 		p["stats"] = stats[p["name"]]
@@ -447,6 +485,7 @@ def get_programme_overview(
 	category=None,
 	gender=None,
 	fee_status=None,
+	refresh=0,
 ):
 	"""Cards and charts for one or more programmes of a cycle."""
 	_check_access()
@@ -457,6 +496,16 @@ def get_programme_overview(
 		frappe.throw(_("Select at least one programme."))
 	window = _Window(from_date, to_date)
 
+	params = [cycle.name, programs, applicant_type, window.from_date, window.to_date, category, gender, fee_status]
+	return _cached(
+		"programme_overview",
+		params,
+		refresh,
+		lambda: _programme_overview(cycle, programs, applicant_type, window, category, gender, fee_status),
+	)
+
+
+def _programme_overview(cycle, programs, applicant_type, window, category, gender, fee_status):
 	A = DocType("Applicant")
 	query = (
 		frappe.qb.from_(A)

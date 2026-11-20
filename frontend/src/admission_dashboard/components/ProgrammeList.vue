@@ -19,11 +19,21 @@
 					@click="setType(t.value)"
 				/>
 			</div>
-			<DateRange :model-value="range" :today="today" @update:model-value="emit('update:range', $event)" />
+			<div class="flex flex-wrap items-center gap-2">
+				<DateRange :model-value="range" :today="today" @update:model-value="emit('update:range', $event)" />
+				<Button
+					icon="lucide-rotate-cw"
+					variant="outline"
+					title="Refresh: fetch the latest figures (they are otherwise kept for up to 5 minutes)"
+					aria-label="Refresh"
+					:loading="anyLoading"
+					@click="reloadAll(true)"
+				/>
+			</div>
 		</div>
 
 		<LoadProgress :steps="steps" label="Dashboard loaded" />
-		<ErrorMessage v-if="error" class="mt-6" :message="error" />
+		<LoadError :error="error" :retrying="anyLoading" @retry="reloadAll(false)" />
 
 		<!-- Portal registrations -->
 		<SectionTitle
@@ -252,10 +262,11 @@
 
 <script setup>
 import { computed, h, watch } from "vue";
-import { Button, ErrorMessage, createResource } from "frappe-ui";
+import { Button, createResource } from "frappe-ui";
 import { BarChart } from "frappe-ui/charts";
 import DashChart from "./DashChart.vue";
 import DateRange from "./DateRange.vue";
+import LoadError from "./LoadError.vue";
 import LoadProgress from "./LoadProgress.vue";
 import StatCard from "./StatCard.vue";
 import { programmeIcon } from "../icons";
@@ -307,7 +318,9 @@ const types = [
 ];
 
 // The page loads in three parallel requests, so each section fills in as soon as its own data
-// arrives and the progress bar can show a real percentage.
+// arrives and the progress bar can show a real percentage. The server keeps the figures for a
+// few minutes; `fresh` (the Refresh button) asks it to recompute them.
+let fresh = false;
 const part = (name) =>
 	createResource({
 		url: `${props.api}.get_cycle_overview`,
@@ -317,6 +330,7 @@ const part = (name) =>
 			from_date: props.range[0] || null,
 			to_date: props.range[1] || null,
 			part: name,
+			refresh: fresh ? 1 : 0,
 		}),
 		auto: true,
 	});
@@ -324,10 +338,17 @@ const apps = part("applications");
 const fees = part("fees");
 const regs = part("registrations");
 const parts = [apps, fees, regs];
+// Retry only re-asks for the parts that failed; Refresh reloads everything from the database.
+function reloadAll(refresh) {
+	fresh = refresh;
+	parts.filter((r) => refresh || r.error || !r.data).forEach((r) => r.reload());
+	fresh = false;
+}
 watch(
 	() => [props.cycle, props.applicantType, props.range.join()],
 	() => parts.forEach((r) => r.reload())
 );
+const anyLoading = computed(() => parts.some((r) => r.loading));
 
 const isDone = (r) => !r.loading && (r.data != null || r.error != null);
 const steps = computed(() => [

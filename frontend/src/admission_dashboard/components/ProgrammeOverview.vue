@@ -38,10 +38,18 @@
 			<Select v-model="gender" class="w-44" :options="withAll('All genders', GENDERS)" />
 			<Select v-model="feeStatus" class="w-44" :options="withAll('Any fee status', FEE_STATUSES)" />
 			<Button v-if="hasFilters" label="Clear filters" icon-left="lucide-x" variant="ghost" @click="clearFilters" />
+			<Button
+				icon="lucide-rotate-cw"
+				variant="outline"
+				title="Refresh: fetch the latest figures (they are otherwise kept for up to 5 minutes)"
+				aria-label="Refresh"
+				:loading="overview.loading"
+				@click="reload(true)"
+			/>
 		</div>
 
 		<LoadProgress :loading="overview.loading" label="Loading programme data" />
-		<ErrorMessage v-if="overview.error" class="mt-6" :message="overview.error" />
+		<LoadError v-if="overview.error" :error="overview.error" :retrying="overview.loading" @retry="reload(false)" />
 
 		<template v-else>
 			<!-- Number cards (order and visibility from Dashboard Settings) -->
@@ -270,10 +278,11 @@
 
 <script setup>
 import { computed, ref, watch } from "vue";
-import { Badge, Button, ErrorMessage, Select, Skeleton, TabButtons, createResource } from "frappe-ui";
+import { Badge, Button, Select, Skeleton, TabButtons, createResource } from "frappe-ui";
 import { AreaChart, BarChart, ChartCard, DonutChart, FunnelChart, OTHERS_KEY, PercentageBarChart } from "frappe-ui/charts";
 import DashChart from "./DashChart.vue";
 import DateRange from "./DateRange.vue";
+import LoadError from "./LoadError.vue";
 import LoadProgress from "./LoadProgress.vue";
 import StatCard from "./StatCard.vue";
 import { formatDate, formatINR, formatNumber, percent } from "../format";
@@ -345,9 +354,17 @@ function clearFilters() {
 	category.value = gender.value = feeStatus.value = "";
 }
 
+// The server keeps the figures for a few minutes; `fresh` (the Refresh button) asks it to recompute.
+let fresh = false;
+function reload(refresh) {
+	fresh = refresh;
+	overview.reload();
+	fresh = false;
+}
 const overview = createResource({
 	url: `${props.api}.get_programme_overview`,
 	makeParams: () => ({
+		refresh: fresh ? 1 : 0,
 		admission_cycle: props.cycle,
 		programs: JSON.stringify(props.programmes.map((p) => p.name)),
 		applicant_type: props.applicantType,
