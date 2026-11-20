@@ -1,5 +1,5 @@
 <template>
-	<div class="relative mx-auto max-w-[1400px] px-5 pb-10 pt-5 sm:px-8">
+	<div ref="root" class="relative mx-auto max-w-[1400px] px-5 pb-10 pt-5 sm:px-8">
 		<BuildingArt v-if="!programmes" class="pointer-events-none absolute right-8 top-16 h-28 w-60 max-lg:!hidden" />
 
 		<!-- Sidebar toggle and breadcrumbs -->
@@ -86,7 +86,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { Breadcrumbs, Button, Select } from "frappe-ui";
 import BuildingArt from "./components/BuildingArt.vue";
 import ProgrammeList from "./components/ProgrammeList.vue";
@@ -154,15 +154,33 @@ function toggleSidebar() {
 const sync = () => (sidebarOpen.value = Boolean(deskSidebar()?.sidebar_expanded));
 document.addEventListener("click", () => setTimeout(sync, 0), true);
 
+// ---- scroll: the overview opens at the top; going back returns to where the list was.
+const root = ref(null);
+let listScroll = 0;
+// Whatever scrolls the page: desk's own container if it has one, else the document.
+function scroller() {
+	for (let el = root.value?.parentElement; el; el = el.parentElement) {
+		const { overflowY } = getComputedStyle(el);
+		if (/(auto|scroll)/.test(overflowY) && el.scrollHeight > el.clientHeight) return el;
+	}
+	return document.scrollingElement || document.documentElement;
+}
+function scrollToY(top) {
+	nextTick(() => scroller().scrollTo({ top, behavior: "instant" }));
+}
+
 function openProgrammes({ open, all }) {
+	listScroll = scroller().scrollTop;
 	openProgrammeList.value = all;
 	programmes.value = open;
+	scrollToY(0);
 }
 
 function backToList() {
 	// Coming back from a combined view keeps those programmes ticked.
 	if (programmes.value?.length > 1) selected.value = programmes.value.map((p) => p.name);
 	programmes.value = null;
+	scrollToY(listScroll);
 }
 
 // Another cycle has its own programmes and dates: start over on the list.

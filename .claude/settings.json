@@ -178,7 +178,8 @@
       "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc 'cd ~/frappe-bench/apps/slcm && for f in slcm/admission/doctype/applicant/applicant.json slcm/slcm/doctype/slcm_payment_request/slcm_payment_request.json; do grep -n \"^ \\\\\"modified\\\\\":\" $f; done')",
       "Bash(export MSYS_NO_PATHCONV=1; wsl -d Ubuntu-24.04 -- bash -lc \"cd ~/frappe-bench && bench --site slcm.com execute slcm.scratch.regcheck.run\" 2>&1 | tail -20; rm \"//wsl.localhost/Ubuntu-24.04/home/n_l_s_i_u/frappe-bench/apps/slcm/slcm/scratch/regcheck.py\")",
       "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 bash -lc 'cd ~/frappe-bench && ls sites | grep -v -E \"\\\\.json|assets|apps.txt\"; cat sites/currentsite.txt 2>/dev/null')",
-      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc 'cd ~/frappe-bench && ls sites && cat sites/currentsite.txt 2>/dev/null; cat ~/.claude/projects/*/memory/wsl-bench-from-windows.md 2>/dev/null | head -5')"
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc 'cd ~/frappe-bench && ls sites && cat sites/currentsite.txt 2>/dev/null; cat ~/.claude/projects/*/memory/wsl-bench-from-windows.md 2>/dev/null | head -5')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl -d Ubuntu-24.04 -- bash -lc 'cd ~/frappe-bench && bench build --app slcm 2>&1 | grep -iE \"error|built in|admission_dashboard-\" | head')"
     ],
     "additionalDirectories": [
       "\\tmp",
