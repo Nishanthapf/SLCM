@@ -22,6 +22,7 @@
 			<div class="flex flex-wrap items-center gap-2">
 				<DateRange :model-value="range" :today="today" @update:model-value="emit('update:range', $event)" />
 				<Button
+					data-print-hide
 					icon="lucide-rotate-cw"
 					variant="outline"
 					title="Refresh: fetch the latest figures (they are otherwise kept for up to 5 minutes)"
@@ -34,22 +35,6 @@
 
 		<LoadProgress :steps="steps" label="Dashboard loaded" />
 		<LoadError :error="error" :retrying="anyLoading" @retry="reloadAll(false)" />
-
-		<!-- Portal registrations -->
-		<SectionTitle
-			title="Portal registrations"
-			hint="All applicant accounts, by registration date. Not split by programme or Domestic / International."
-		/>
-		<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-			<StatCard
-				v-for="card in registrationCards"
-				:key="card.key"
-				v-bind="card"
-				:loading="regsLoading"
-				hint="Open the Applicant Registration Status report"
-				@open="openRegistrations(card.case)"
-			/>
-		</div>
 
 		<!-- Applications and NLSAT fee -->
 		<SectionTitle
@@ -120,6 +105,23 @@
 			</div>
 		</SectionTitle>
 
+		<!-- Applicants no programme card counts: their programme isn't one of the cycle's, or is blank -->
+		<div
+			v-if="unlisted.count"
+			class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-outline-amber-3 bg-surface-amber-2 px-4 py-2.5 text-p-sm text-ink-gray-8"
+			role="status"
+		>
+			<span class="lucide-triangle-alert size-4 shrink-0 text-ink-amber-5" />
+			<span class="min-w-0 flex-1">
+				<b>{{ formatNumber(unlisted.count) }}</b>
+				{{ applicantType.toLowerCase() }} {{ unlisted.count === 1 ? "applicant is" : "applicants are" }} in this cycle
+				under a programme that isn't on its programme list, so the cards and charts don't count
+				{{ unlisted.count === 1 ? "it" : "them" }}:
+				{{ unlisted.programmes.map((p) => `${p.label} (${p.count})`).join(", ") }}.
+			</span>
+			<Button label="View applicants" variant="ghost" icon-right="lucide-arrow-right" @click="openUnlisted" />
+		</div>
+
 		<div v-if="loading" class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
 			<div v-for="i in 3" :key="i" class="h-[300px] animate-pulse rounded-[10px] bg-surface-gray-2" />
 		</div>
@@ -181,7 +183,11 @@
 					<div class="grid grid-cols-4 gap-3">
 						<Stat label="Total" :value="count(p.stats.total)" />
 						<Stat label="Draft" :value="count(p.stats.draft)" />
-						<Stat label="Submitted" :value="count(p.stats.submitted)" />
+						<Stat
+							label="Submitted"
+							:value="count(p.stats.submitted)"
+							title="Applications that reached Submitted, including ones later rejected, offered or withdrawn"
+						/>
 						<Stat label="Enrolled" :value="count(p.stats.enrolled)" />
 					</div>
 				</div>
@@ -256,6 +262,13 @@
 				]"
 				:loading="feesLoading"
 			/>
+			<SourceChart
+				card-class="lg:col-span-2"
+				:rows="apps.data?.source || []"
+				:series="SOURCE_SERIES"
+				:subtitle="`Number of applications by answer · Domestic and International · ${rangeLabel}`"
+				:loading="loading"
+			/>
 		</div>
 	</section>
 </template>
@@ -268,6 +281,7 @@ import DashChart from "./DashChart.vue";
 import DateRange from "./DateRange.vue";
 import LoadError from "./LoadError.vue";
 import LoadProgress from "./LoadProgress.vue";
+import SourceChart from "./SourceChart.vue";
 import StatCard from "./StatCard.vue";
 import { programmeIcon } from "../icons";
 import { formatDate, formatINR, formatNumber, percent } from "../format";
@@ -336,8 +350,7 @@ const part = (name) =>
 	});
 const apps = part("applications");
 const fees = part("fees");
-const regs = part("registrations");
-const parts = [apps, fees, regs];
+const parts = [apps, fees];
 // Retry only re-asks for the parts that failed; Refresh reloads everything from the database.
 function reloadAll(refresh) {
 	fresh = refresh;
@@ -354,13 +367,11 @@ const isDone = (r) => !r.loading && (r.data != null || r.error != null);
 const steps = computed(() => [
 	{ label: "Applications", done: isDone(apps) },
 	{ label: "Application fees", done: isDone(fees) },
-	{ label: "Portal registrations", done: isDone(regs) },
 ]);
 const error = computed(() => parts.map((r) => r.error).find(Boolean));
 const firstLoad = (r) => r.loading && !r.data;
 const loading = computed(() => firstLoad(apps));
 const feesLoading = computed(() => firstLoad(fees));
-const regsLoading = computed(() => firstLoad(regs));
 
 const EMPTY_FEES = { paid_count: 0, collected: 0, settled_count: 0, settled_amount: 0, awaiting_count: 0, awaiting_amount: 0 };
 const programmes = computed(() =>
@@ -380,35 +391,18 @@ const totals = computed(() => {
 });
 const hasPayments = computed(() => Boolean(totals.value.paid_count || totals.value.settled_count));
 
-// With nobody registered in the period every card shows the empty state.
-const registrationCards = computed(() => {
-	const r = regs.data?.registrations || {};
-	const v = (n) => (r.total ? n || 0 : null);
-	return [
-		{ key: "total", title: "Total Registered", value: v(r.total), case: "All", caption: rangeLabel.value },
-		{
-			key: "applied",
-			title: "Registered & Applied",
-			value: v(r.applied),
-			case: "With Application",
-			progress: percent(r.applied, r.total),
-			tone: "success",
-			caption: `${percent(r.applied, r.total)}% of registered`,
-		},
-		{
-			key: "not_applied",
-			title: "Registered & Not Applied",
-			value: v(r.not_applied),
-			case: "Without Application",
-			progress: percent(r.not_applied, r.total),
-			tone: r.not_applied ? "warning" : "",
-			caption: `${percent(r.not_applied, r.total)}% of registered`,
-		},
-		{ key: "enrolled", title: "Enrolled", value: v(r.enrolled), case: "Enrolled", caption: "With an enrolled application" },
-	];
-});
-
 const byProgramme = computed(() => apps.data?.by_programme || []);
+const unlisted = computed(() => apps.data?.unlisted || { count: 0, programmes: [], listed: [] });
+// Both shapes on the list page, whichever tab is open (the overview draws only its own type).
+const SOURCE_SERIES = [
+	{ key: "domestic", label: "Domestic" },
+	{ key: "international", label: "International" },
+];
+
+function openUnlisted() {
+	const listed = unlisted.value.listed;
+	openApplicants(scope([]), listed.length ? { program: ["not in", listed] } : {});
+}
 const feeDaily = computed(() => fees.data?.fee_daily || []);
 // A fee figure on a programme card while the fees are still on their way.
 const fee = (n, fmt) => (feesLoading.value ? "…" : fmt(n));
@@ -442,15 +436,6 @@ const scope = (programs) => ({
 	programs,
 	range: props.range,
 });
-
-function openRegistrations(caseName) {
-	const r = regs.data?.registrations || {};
-	openReport("Applicant Registration Status", {
-		from_date: r.from_date || "",
-		to_date: r.to_date || "",
-		case: caseName,
-	});
-}
 
 function openFeeReport(extra) {
 	// "" clears the report's month-to-date default when the dashboard shows the entire cycle.

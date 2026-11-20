@@ -14,8 +14,6 @@ Everything is read for one Admission Cycle:
 * Application-fee figures follow the "NLSAT Fee Collection Report": SLCM Payment
   Requests raised against those Applicants. A payment is dated by its payment
   date and a settlement by its settlement date.
-* Portal registrations follow the "Applicant Registration Status" report and are
-  not tied to a programme or to Domestic / International.
 """
 
 import json
@@ -29,9 +27,6 @@ from frappe.query_builder.functions import Coalesce, Count
 from pypika.terms import Case
 from frappe.utils import add_days, cint, flt, get_datetime, getdate, nowdate
 
-from slcm.admission.report.applicant_registration_status.applicant_registration_status import (
-	get_registration_counts,
-)
 from slcm.utils.vite_assets import get_entry_assets
 
 DOMESTIC = "Domestic"
@@ -181,6 +176,7 @@ CHARTS = OrderedDict(
 		("geo", "State / Country"),
 		("city", "Entrance test city"),
 		("kapwd", "Karnataka Category & PWD"),
+		("source", "Where did you hear about the programme?"),
 	]
 )
 
@@ -246,7 +242,7 @@ def get_admission_cycles():
 # --------------------------------------------------------------------------- #
 
 
-CYCLE_PARTS = ("applications", "fees", "registrations")
+CYCLE_PARTS = ("applications", "fees")
 
 # Dashboard figures are kept in Redis for this long, so several people opening the page (or one
 # person switching tabs back and forth) don't each re-run the queries. The page's Refresh button
@@ -278,10 +274,9 @@ def get_cycle_overview(
 ):
 	"""Summary cards, programme cards with their numbers, and the two cross-programme charts.
 
-	`part` returns one slice, so the page can load the three in parallel and show real progress:
-	  applications  -> programmes (application counts), by_programme
+	`part` returns one slice, so the page can load both in parallel and show real progress:
+	  applications  -> programmes (application counts), by_programme, source, unlisted
 	  fees          -> fee_stats (per programme), fee_daily
-	  registrations -> registrations
 	Without `part` everything comes back in one response, with the fee figures inside each programme.
 	"""
 	_check_access()
@@ -303,13 +298,6 @@ def _cycle_overview(cycle, applicant_type, window, part):
 		out.update(_cycle_applications(cycle, applicant_type, window))
 	if part in (None, "fees"):
 		out.update(_cycle_fees(cycle, applicant_type, window))
-	if part in (None, "registrations"):
-		registration_from = window.from_date or _cycle_start(cycle)
-		out["registrations"] = {
-			**get_registration_counts(registration_from, window.to_date),
-			"from_date": registration_from,
-			"to_date": window.to_date,
-		}
 	if part is None:
 		for p in out["programmes"]:
 			p["stats"].update(out["fee_stats"].get(p["name"], _empty_fee_stats()))
@@ -335,14 +323,20 @@ def _cycle_applications(cycle, applicant_type, window):
 	if window.end:
 		query = query.where(A.creation < window.end)
 
+	labels = {p["name"]: p["label"] for p in _cycle_programmes(cycle.name, None)}
 	stats = {name: _empty_programme_stats() for name in names}
 	by_programme = OrderedDict()
+	# Applicants of this tab whose programme isn't one of the cycle's (active) programmes, or is
+	# blank: no card or chart counts them, so the page warns about them instead.
+	unlisted = Counter()
 	for row in query.run(as_dict=True):
 		n = cint(row.n)
 		row_type = INTERNATIONAL if cint(row.international) else DOMESTIC
 		if row.program:
 			split = by_programme.setdefault(row.program, {DOMESTIC: 0, INTERNATIONAL: 0})
 			split[row_type] += n
+		if row_type == applicant_type and row.program not in labels:
+			unlisted[row.program or NOT_SET] += n
 		if row_type != applicant_type or row.program not in stats:
 			continue
 		stage, exited = status_stage(row.status)
@@ -358,9 +352,14 @@ def _cycle_applications(cycle, applicant_type, window):
 	for p in programmes:
 		p["stats"] = stats[p["name"]]
 
-	labels = {p["name"]: p["label"] for p in _cycle_programmes(cycle.name, None)}
 	return {
 		"programmes": programmes,
+		"source": _source_counts(cycle.name, window, list(labels)),
+		"unlisted": {
+			"count": sum(unlisted.values()),
+			"programmes": [{"label": k, "count": v} for k, v in unlisted.most_common()],
+			"listed": sorted(labels),
+		},
 		"by_programme": [
 			{
 				"programme": labels.get(name, name),
@@ -372,6 +371,49 @@ def _cycle_applications(cycle, applicant_type, window):
 			if name in labels
 		],
 	}
+
+
+def _source_counts(cycle, window, programs):
+	"""'Where did you hear about the programme?' for the list page's radar: one row per answer
+	with the Domestic and International counts, over all of the cycle's programmes."""
+	counts = {DOMESTIC: Counter(), INTERNATIONAL: Counter()}
+	if programs:
+		A = DocType("Applicant")
+		is_international = Case().when(A.foriegn_national == "Yes", 1).else_(0)
+		query = (
+			frappe.qb.from_(A)
+			.select(A.source_of_information.as_("label"), is_international.as_("international"), Count("*").as_("n"))
+			.where(A.admission_cycle == cycle)
+			.where(A.program.isin(programs))
+			.groupby(A.source_of_information, is_international)
+		)
+		if window.start:
+			query = query.where(A.creation >= window.start)
+		if window.end:
+			query = query.where(A.creation < window.end)
+		for row in query.run(as_dict=True):
+			row_type = INTERNATIONAL if cint(row.international) else DOMESTIC
+			counts[row_type][(row.label or "").strip() or NOT_SET] += cint(row.n)
+	return [
+		{"label": answer, "domestic": counts[DOMESTIC][answer], "international": counts[INTERNATIONAL][answer]}
+		for answer in _source_answers(counts[DOMESTIC] + counts[INTERNATIONAL])
+	]
+
+
+def _source_rows(counter):
+	"""Overview radar: every answer with its count (0 included, so each one keeps its spoke)."""
+	return [{"label": answer, "count": counter[answer]} for answer in _source_answers(counter)]
+
+
+def _source_answers(counter):
+	"""The radar's spokes: the field's options in form order, then any other value found in the
+	data, then "Not set" when some applicants left it blank."""
+	options = frappe.get_meta("Applicant").get_options("source_of_information") or ""
+	answers = [o.strip() for o in options.split("\n") if o.strip()]
+	answers += sorted(k for k in counter if k not in answers and k != NOT_SET)
+	if counter.get(NOT_SET):
+		answers.append(NOT_SET)
+	return answers
 
 
 def _cycle_fees(cycle, applicant_type, window):
@@ -472,6 +514,7 @@ OVERVIEW_FIELDS = (
 	"first_preference",
 	"karnataka_category",
 	"pwd",
+	"source_of_information",
 )
 
 
@@ -482,12 +525,12 @@ def get_programme_overview(
 	applicant_type=DOMESTIC,
 	from_date=None,
 	to_date=None,
-	category=None,
-	gender=None,
-	fee_status=None,
 	refresh=0,
 ):
-	"""Cards and charts for one or more programmes of a cycle."""
+	"""Cards and charts for one or more programmes of a cycle.
+
+	There are no category / gender / fee-status filters: the page shows a chart for each instead.
+	"""
 	_check_access()
 	applicant_type = _validate_applicant_type(applicant_type)
 	cycle = _get_cycle(admission_cycle)
@@ -496,16 +539,16 @@ def get_programme_overview(
 		frappe.throw(_("Select at least one programme."))
 	window = _Window(from_date, to_date)
 
-	params = [cycle.name, programs, applicant_type, window.from_date, window.to_date, category, gender, fee_status]
+	params = [cycle.name, programs, applicant_type, window.from_date, window.to_date]
 	return _cached(
 		"programme_overview",
 		params,
 		refresh,
-		lambda: _programme_overview(cycle, programs, applicant_type, window, category, gender, fee_status),
+		lambda: _programme_overview(cycle, programs, applicant_type, window),
 	)
 
 
-def _programme_overview(cycle, programs, applicant_type, window, category, gender, fee_status):
+def _programme_overview(cycle, programs, applicant_type, window):
 	A = DocType("Applicant")
 	query = (
 		frappe.qb.from_(A)
@@ -524,12 +567,7 @@ def _programme_overview(cycle, programs, applicant_type, window, category, gende
 		row.category = (row.whether_scstobc_ncl or "").strip() or NOT_SET
 		row.gender = (row.gender or "").strip() or NOT_SET
 		row.fee = (row.application_fee_status or "").strip() or "Pending"
-		if category and row.category != category:
-			continue
-		if gender and row.gender != gender:
-			continue
-		if fee_status and row.fee != fee_status:
-			continue
+		row.source = (row.source_of_information or "").strip() or NOT_SET
 		row.stage, row.exited = status_stage(row.status)
 		# A paid (or waived) fee proves the Fee Paid stage even when the status doesn't, e.g. "Rejected".
 		if row.stage == SUBMITTED and row.fee in ("Paid", "Waived"):
@@ -549,6 +587,7 @@ def _programme_overview(cycle, programs, applicant_type, window, category, gende
 		"geo": _top(rows, "state" if applicant_type == DOMESTIC else "country"),
 		"city": _top([r for r in rows if r.stage >= SUBMITTED], "first_preference"),
 		"kapwd": _yes_no(rows, applicant_type),
+		"source": _source_rows(Counter(r.source for r in rows)),
 		"compare": [
 			{"name": p, "label": labels.get(p, p), **_overview_cards([r for r in rows if r.program == p])}
 			for p in programs
@@ -701,8 +740,8 @@ def _load_saved_layout():
 def _merge_items(saved_items, available):
 	"""Saved order first (dropping keys that no longer exist), then any keys added since.
 
-	Keys added after a layout was saved start hidden; with no usable saved layout
-	(none yet, or one from an older version of the page) everything is shown.
+	Keys added after a layout was saved are appended and shown, so a new card or chart appears
+	without anyone having to find it in Settings; it can be hidden there like any other.
 	"""
 	valid = [i for i in (saved_items or []) if isinstance(i, dict) and i.get("key") in available]
 	items, seen = [], set()
@@ -712,7 +751,7 @@ def _merge_items(saved_items, available):
 			seen.add(item["key"])
 	for key, label in available.items():
 		if key not in seen:
-			items.append({"key": key, "label": label, "enabled": 0 if valid else 1})
+			items.append({"key": key, "label": label, "enabled": 1})
 	return items
 
 
