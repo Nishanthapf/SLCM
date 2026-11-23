@@ -84,7 +84,6 @@
   "login_required_for_application",
   "hero_cta2_label",
   "section_break_messages",
-  "document_upload_note",
   "col_break_5",
   "submission_message",
   "submission_email_template",
@@ -93,6 +92,14 @@
   "contact_phone",
   "col_break_6",
   "footer_text",
+  "documents_page_section",
+  "enable_documents_sidebar_menu",
+  "document_upload_note",
+  "sample_question_paper_page_section",
+  "enable_sample_question_paper_sidebar_menu",
+  "sample_question_paper",
+  "announcements_page_section",
+  "enable_announcements_sidebar_menu",
   "international_admission_tab",
   "intl_portal_section",
   "intl_title_suffix",
@@ -116,6 +123,14 @@
   "intl_portal_active",
   "intl_col_break_2",
   "intl_maintenance_message",
+  "intl_documents_page_section",
+  "intl_enable_documents_sidebar_menu",
+  "intl_document_upload_note",
+  "intl_sample_question_paper_page_section",
+  "intl_enable_sample_question_paper_sidebar_menu",
+  "intl_sample_question_paper",
+  "intl_announcements_page_section",
+  "intl_enable_announcements_sidebar_menu",
   "pace_admission_tab",
   "section_break_oiuy",
   "pace_support_email",
@@ -484,11 +499,6 @@
    "fieldtype": "Section Break",
    "hidden": 1,
    "label": "Applicant Messages"
-  },
-  {
-   "fieldname": "document_upload_note",
-   "fieldtype": "Text Editor",
-   "label": "Document Upload Instructions"
   },
   {
    "fieldname": "col_break_5",
@@ -924,12 +934,117 @@
    "fieldname": "intl_maintenance_message",
    "fieldtype": "Text Editor",
    "label": "Maintenance message"
+  },
+  {
+   "fieldname": "documents_page_section",
+   "fieldtype": "Section Break",
+   "label": "Documents Page"
+  },
+  {
+   "default": "0",
+   "description": "Shows Documents in the applicant sidebar of this portal. When off, the menu and the page are hidden.",
+   "fieldname": "enable_documents_sidebar_menu",
+   "fieldtype": "Check",
+   "label": "Enable Documents Sidebar Menu"
+  },
+  {
+   "depends_on": "eval:doc.enable_documents_sidebar_menu",
+   "description": "Shown on the applicant's Documents page exactly as written. List each document, the proofs accepted, the file formats and the maximum file size.",
+   "fieldname": "document_upload_note",
+   "fieldtype": "Text Editor",
+   "label": "Document Upload Instructions",
+   "mandatory_depends_on": "eval:doc.enable_documents_sidebar_menu"
+  },
+  {
+   "fieldname": "sample_question_paper_page_section",
+   "fieldtype": "Section Break",
+   "label": "Sample Question Paper Page"
+  },
+  {
+   "default": "0",
+   "description": "Shows Sample Question Papers in the applicant sidebar of this portal. When off, the menu and the page are hidden.",
+   "fieldname": "enable_sample_question_paper_sidebar_menu",
+   "fieldtype": "Check",
+   "label": "Enable Sample Question Paper Sidebar Menu"
+  },
+  {
+   "depends_on": "eval:doc.enable_sample_question_paper_sidebar_menu",
+   "description": "Shown on the applicant's Sample Question Papers page exactly as written. To add a paper: upload the file, copy its link, select the paper's name here and click the Link button.",
+   "fieldname": "sample_question_paper",
+   "fieldtype": "Text Editor",
+   "label": "Sample Question Paper",
+   "mandatory_depends_on": "eval:doc.enable_sample_question_paper_sidebar_menu"
+  },
+  {
+   "fieldname": "announcements_page_section",
+   "fieldtype": "Section Break",
+   "label": "Announcements Page"
+  },
+  {
+   "default": "0",
+   "description": "Shows Announcements in the applicant sidebar of this portal. The page lists published Portal Announcements whose Target Audience includes this portal.",
+   "fieldname": "enable_announcements_sidebar_menu",
+   "fieldtype": "Check",
+   "label": "Enable Announcements Sidebar Menu"
+  },
+  {
+   "fieldname": "intl_documents_page_section",
+   "fieldtype": "Section Break",
+   "label": "Documents Page"
+  },
+  {
+   "default": "0",
+   "description": "Shows Documents in the applicant sidebar of this portal. When off, the menu and the page are hidden.",
+   "fieldname": "intl_enable_documents_sidebar_menu",
+   "fieldtype": "Check",
+   "label": "Enable Documents Sidebar Menu"
+  },
+  {
+   "depends_on": "eval:doc.intl_enable_documents_sidebar_menu",
+   "description": "Shown on the applicant's Documents page exactly as written. List each document, the proofs accepted, the file formats and the maximum file size.",
+   "fieldname": "intl_document_upload_note",
+   "fieldtype": "Text Editor",
+   "label": "Document Upload Instructions",
+   "mandatory_depends_on": "eval:doc.intl_enable_documents_sidebar_menu"
+  },
+  {
+   "fieldname": "intl_sample_question_paper_page_section",
+   "fieldtype": "Section Break",
+   "label": "Sample Question Paper Page"
+  },
+  {
+   "default": "0",
+   "description": "Shows Sample Question Papers in the applicant sidebar of this portal. When off, the menu and the page are hidden.",
+   "fieldname": "intl_enable_sample_question_paper_sidebar_menu",
+   "fieldtype": "Check",
+   "label": "Enable Sample Question Paper Sidebar Menu"
+  },
+  {
+   "depends_on": "eval:doc.intl_enable_sample_question_paper_sidebar_menu",
+   "description": "Shown on the applicant's Sample Question Papers page exactly as written. To add a paper: upload the file, copy its link, select the paper's name here and click the Link button.",
+   "fieldname": "intl_sample_question_paper",
+   "fieldtype": "Text Editor",
+   "label": "Sample Question Paper",
+   "mandatory_depends_on": "eval:doc.intl_enable_sample_question_paper_sidebar_menu"
+  },
+  {
+   "fieldname": "intl_announcements_page_section",
+   "fieldtype": "Section Break",
+   "label": "Announcements Page"
+  },
+  {
+   "default": "0",
+   "description": "Shows Announcements in the applicant sidebar of this portal. The page lists published Portal Announcements whose Target Audience includes this portal.",
+   "fieldname": "intl_enable_announcements_sidebar_menu",
+   "fieldtype": "Check",
+   "label": "Enable Announcements Sidebar Menu"
   }
  ],
  "issingle": 1,
+ "link_display_mode": "Search",
  "links": [],
  "make_attachments_public": 1,
- "modified": "2026-11-12 12:00:00.000000",
+ "modified": "2026-11-23 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "Admission",
  "name": "Applicant Portal Config",
@@ -944,6 +1059,12 @@
   {
    "read": 1,
    "role": "Admission Admin",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "NLSIU Admin",
    "write": 1
   }
  ],

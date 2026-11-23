@@ -52,3 +52,15 @@ def get_context(context):
         context.announcement_marked_done = ann.name in _get_portal_announcement_read_ids(user)
     else:
         context.announcement_marked_done = False
+
+    # Logged-in candidates see the page inside the portal sidebar layout; visitors who
+    # open it from the public landing page get it without the sidebar.
+    context.hide_sidebar = not context.portal_user_logged_in
+    context.sidebar_active = "announcements"
+
+    # "Back" goes to the Announcements page when the NLSAT portal has it switched on
+    context.back_url = ""
+    if context.portal_user_logged_in and not is_pace:
+        from slcm.admission.utils.portal import get_portal_sidebar_pages
+        if get_portal_sidebar_pages().get("announcements"):
+            context.back_url = "/nlsat/announcements"

@@ -171,6 +171,52 @@ def mark_portal_announcement_read(name=None):
         return {"success": False}
 
 
+DOMESTIC_AUDIENCES = [
+    "Global",
+    "NLSAT – Domestic",
+    "NLSAT - Domestic",
+    "NLSAT – Domestic & International",
+    "NLSAT - Domestic & International",
+    "NLSAT – Domestic and International",
+    "NLSAT - Domestic and International",
+]
+INTERNATIONAL_AUDIENCES = [
+    "Global",
+    "NLSAT – International",
+    "NLSAT - International",
+    "NLSAT – Domestic & International",
+    "NLSAT - Domestic & International",
+    "NLSAT – Domestic and International",
+    "NLSAT - Domestic and International",
+]
+PACE_AUDIENCES = ["Global", "PACE"]
+
+
+def get_portal_announcement_filters(user, portal_type=None):
+    """Filters for the Portal Announcements this user's portal (Domestic / International /
+    PACE) may see, by Target Audience. Shared by the bell and the Announcements page."""
+    from slcm.admission.utils.nlsat_portal import (
+        INTERNATIONAL, get_applicant_portal_type, get_current_portal_type,
+        get_candidate_prefix, PACE_PREFIX,
+    )
+    user_app_type = get_applicant_portal_type(user) if user and user != "Guest" else None
+    resolved_portal = (portal_type or "").strip() or user_app_type or get_current_portal_type()
+    is_pace = (get_candidate_prefix(user) == PACE_PREFIX) or (resolved_portal == "PACE")
+
+    if is_pace:
+        audiences = PACE_AUDIENCES
+    elif resolved_portal == INTERNATIONAL:
+        audiences = INTERNATIONAL_AUDIENCES
+    else:
+        audiences = DOMESTIC_AUDIENCES
+
+    return {
+        "is_active": 1,
+        "status": "Published",
+        "target_audience": ["in", audiences],
+    }
+
+
 @frappe.whitelist(methods=["POST", "GET"])
 def get_portal_notifications(notif_page=None, ann_page=None, page_length=None, portal_type=None):
     """
@@ -199,47 +245,7 @@ def get_portal_notifications(notif_page=None, ann_page=None, page_length=None, p
         )
 
         # ── Determine which announcements are visible for this portal/user ──
-        from slcm.admission.utils.nlsat_portal import (
-            DOMESTIC, INTERNATIONAL, get_applicant_portal_type, get_current_portal_type,
-            get_candidate_prefix, PACE_PREFIX,
-        )
-        user_app_type = get_applicant_portal_type(user) if user and user != "Guest" else None
-        _resolved_portal = (portal_type or "").strip() or user_app_type or get_current_portal_type()
-        _prefix = get_candidate_prefix(user)
-        _is_pace = (_prefix == PACE_PREFIX) or (_resolved_portal == "PACE")
-
-        DOMESTIC_AUDIENCES = [
-            "Global",
-            "NLSAT \u2013 Domestic",
-            "NLSAT - Domestic",
-            "NLSAT \u2013 Domestic & International",
-            "NLSAT - Domestic & International",
-            "NLSAT \u2013 Domestic and International",
-            "NLSAT - Domestic and International",
-        ]
-        INTERNATIONAL_AUDIENCES = [
-            "Global",
-            "NLSAT \u2013 International",
-            "NLSAT - International",
-            "NLSAT \u2013 Domestic & International",
-            "NLSAT - Domestic & International",
-            "NLSAT \u2013 Domestic and International",
-            "NLSAT - Domestic and International",
-        ]
-        PACE_AUDIENCES = ["Global", "PACE"]
-
-        if _is_pace:
-            _allowed_audiences = PACE_AUDIENCES
-        elif _resolved_portal == INTERNATIONAL:
-            _allowed_audiences = INTERNATIONAL_AUDIENCES
-        else:
-            _allowed_audiences = DOMESTIC_AUDIENCES
-
-        ann_filters = {
-            "is_active": 1,
-            "status": "Published",
-            "target_audience": ["in", _allowed_audiences],
-        }
+        ann_filters = get_portal_announcement_filters(user, portal_type)
         ann_total = frappe.db.count("Portal Announcement", filters=ann_filters)
         ann_all_names = frappe.get_all(
             "Portal Announcement",

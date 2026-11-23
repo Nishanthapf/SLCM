@@ -1,0 +1,178 @@
+{#
+  Base layout for the NLSAT applicant sidebar pages (Documents, Sample Question Papers,
+  Announcements). Context comes from slcm.admission.utils.portal_pages.prepare_sidebar_page:
+    sidebar_active  — sidebar key of this page
+    title           — page heading
+    page_subtitle   — one line under the heading
+    page_content    — Text Editor HTML from Applicant Portal Config (Documents / Sample Questions)
+    hide_sidebar    — optional; true renders the page without the sidebar (logged-out visitors)
+  Override {% block pp_body %} for pages that render their own content (Announcements), and
+  {% block pp_header %} to replace the heading (announcement detail).
+  Colours and fonts come from Applicant Portal Config, like the other portal pages.
+#}
+{% extends "slcm/www/admission/admission_base.html" %}
+{% from "slcm/www/admission/_sidebar.html" import portal_sidebar_css, portal_sidebar_html, portal_sidebar_js %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block adm_container_extra_class %}portal-layout-container{% endblock %}
+
+{% block theme_vars %}
+<style>
+  :root {
+    --primary:   {{ portal_config.get('primary_color') or '#920C24' }};
+    --secondary: {{ portal_config.get('secondary_color') or '#FFFFFF' }};
+    --navbar-color: {{ portal_config.get('navbar_color') or '#2B2E4A' }};
+    --primary-light: color-mix(in srgb, var(--primary) 10%, transparent);
+    --primary-mid:   color-mix(in srgb, var(--primary) 22%, transparent);
+    --text-1: #1f2937;
+    --text-2: #374151;
+    --text-3: #6b7280;
+    --border: #e5e7eb;
+    --bg:     #f5f7f8;
+    --card-bg:#ffffff;
+    --radius: 14px;
+  }
+</style>
+{% endblock %}
+
+{% block page_css %}
+{{ get_typography_style_block(
+    portal_config.font_family,
+    font_size_heading=portal_config.font_size_heading,
+    font_size_subheading=portal_config.font_size_subheading,
+    font_size_body=portal_config.font_size_body,
+    font_size_form_title=portal_config.font_size_form_title,
+    font_size_toast=portal_config.font_size_toast,
+    primary_color=portal_config.primary_color,
+    secondary_color=portal_config.secondary_color,
+    navbar_color=portal_config.navbar_color,
+    footer_color=portal_config.footer_color,
+    button_border_radius=portal_config.button_border_radius
+) }}
+<style>
+  body, .adm-main, .adm-container { background: var(--bg) !important; }
+
+  {{ portal_sidebar_css() }}
+
+  /* ── Page header ─────────────────────────────────────────── */
+  .pp-header { margin-bottom: 20px; }
+  .pp-header h1 {
+    font-size: var(--font-size-heading, 26px); color: var(--primary);
+    margin: 0 0 4px; line-height: 1.2;
+  }
+  .pp-header p { margin: 0; color: var(--text-3); font-size: var(--font-size-body, 14px); }
+
+  /* ── Content card ────────────────────────────────────────── */
+  .pp-card {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 28px 32px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  }
+  .pp-empty { text-align: center; color: var(--text-3); padding: 40px 16px; }
+  .pp-empty .ms-icon { font-size: 40px; color: var(--primary-mid); display: block; margin-bottom: 8px; }
+
+  /* ── Text Editor content ─────────────────────────────────── */
+  .pp-rte { color: var(--text-1); font-size: var(--font-size-body, 14px); line-height: 1.7; max-width: 920px; }
+  .pp-rte > :first-child { margin-top: 0; }
+  .pp-rte > :last-child { margin-bottom: 0; }
+  .pp-rte h1, .pp-rte h2, .pp-rte h3, .pp-rte h4 {
+    color: var(--text-1); font-size: var(--font-size-subheading, 18px);
+    margin: 24px 0 10px; line-height: 1.35;
+  }
+  .pp-rte p { margin: 0 0 12px; }
+  .pp-rte ul, .pp-rte ol { margin: 0 0 14px; padding-left: 22px; }
+  .pp-rte li { margin-bottom: 6px; }
+  .pp-rte li[data-list="bullet"] { list-style-type: disc; }
+  .pp-rte li[data-list="ordered"] { list-style-type: decimal; }
+  .pp-rte .ql-indent-1 { margin-left: 1.5em; }
+  .pp-rte .ql-indent-2 { margin-left: 3em; }
+  .pp-rte .ql-align-center { text-align: center; }
+  .pp-rte .ql-align-right { text-align: right; }
+  .pp-rte a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; word-break: break-word; }
+  .pp-rte blockquote {
+    margin: 0 0 16px; padding: 12px 16px; border-radius: 10px;
+    background: var(--primary-light); border-left: 3px solid var(--primary);
+  }
+  .pp-rte img { max-width: 100%; height: auto; border-radius: 8px; }
+  .pp-table { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; margin: 0 0 16px; }
+  .pp-rte table { border-collapse: collapse; width: 100%; min-width: 520px; }
+  .pp-rte th, .pp-rte td { padding: 10px 14px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  .pp-rte tr:first-child td, .pp-rte th { background: #fafafa; font-weight: 600; color: var(--text-2); }
+  .pp-rte tr:last-child td { border-bottom: 0; }
+
+  /* Let the content column shrink to the screen: wide content (tables) scrolls inside its
+     own box instead of pushing the page wider than a phone. */
+  .portal-page-inner { grid-template-columns: 220px minmax(0, 1fr); }
+  .portal-content-col { min-width: 0; }
+  @media (max-width: 1024px) {
+    .portal-page-inner { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  /* Logged-out visitors (e.g. an announcement opened from the public page): no sidebar */
+  .portal-page-inner.pp-no-sidebar { grid-template-columns: minmax(0, 1fr); }
+  .pp-no-sidebar .portal-content-col { padding-top: 24px !important; }
+
+  @media (max-width: 640px) {
+    .pp-card { padding: 20px 16px; }
+  }
+
+  {% block pp_css %}{% endblock %}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="portal-page-wrapper">
+  <div class="portal-page-inner {{ 'pp-no-sidebar' if hide_sidebar else '' }}">
+
+    {% if not hide_sidebar %}
+    {{ portal_sidebar_html(active=sidebar_active, portal_config=portal_config, mission_txt='') }}
+    {% endif %}
+
+    <main class="portal-content-col">
+      {% block pp_header %}
+      <div class="pp-header">
+        <h1>{{ title }}</h1>
+        {% if page_subtitle %}<p>{{ page_subtitle }}</p>{% endif %}
+      </div>
+      {% endblock %}
+
+      {% block pp_body %}
+      <div class="pp-card">
+        {% if page_content and page_content | striptags | trim %}
+        <div class="pp-rte">{{ page_content | safe }}</div>
+        {% else %}
+        <div class="pp-empty">
+          <span class="ms-icon">hourglass_empty</span>
+          Nothing has been added here yet. Please check back later.
+        </div>
+        {% endif %}
+      </div>
+      {% endblock %}
+    </main>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+{{ portal_sidebar_js() }}
+(function () {
+  // Tables from the Text Editor scroll sideways on small screens instead of widening the page
+  document.querySelectorAll('.pp-rte table').forEach(function (t) {
+    if (t.parentElement && t.parentElement.classList.contains('pp-table')) return;
+    var wrap = document.createElement('div');
+    wrap.className = 'pp-table';
+    t.parentNode.insertBefore(wrap, t);
+    wrap.appendChild(t);
+  });
+  // Links (e.g. question paper files) open in a new tab so the applicant keeps this page
+  document.querySelectorAll('.pp-rte a[href]').forEach(function (a) {
+    var href = a.getAttribute('href') || '';
+    if (href.charAt(0) === '#') return;
+    a.setAttribute('target', '_blank');
+    a.setAttribute('rel', 'noopener');
+  });
+})();
+</script>
+{% endblock %}
