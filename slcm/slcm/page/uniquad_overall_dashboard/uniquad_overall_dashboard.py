@@ -23,7 +23,7 @@ from statistics import median
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, cint, date_diff, flt, get_datetime, getdate, now_datetime, nowdate
+from frappe.utils import add_days, add_to_date, cint, date_diff, flt, get_datetime, getdate, now_datetime, nowdate
 
 APP = "Applicant"
 STU = "Student Master"
@@ -97,7 +97,7 @@ def reached(rank):
 STEPS = [
 	("total", _("Total applications"), None),
 	("submitted", _("Submitted"), sorted(set(reached(1)) - set(G["withdrawn"]))),
-	("test", _("Entrance test stage"), reached(2)),
+	("test", _("NLSAT stage"), reached(2)),
 	("interview", _("Interview stage"), reached(3)),
 	("merit", _("Merit selected"), sorted(set(G["merit_selected"]) | set(reached(5)))),
 	("offer", _("Offer issued"), reached(6)),
@@ -200,10 +200,12 @@ def _classes_of(ctx):
 #   the student's programme), "@class" (scope via Classes.programme) or None.
 # year / date / gender / category / cycle: fields the filters map onto.
 # columns: (field, label, type) — type drives rendering on the client.
+# unit: field the drilldown groups by when it is not a Programme link (e.g. PACE
+#   Programme). It never takes the Programme filter.
 def _src(doctype, label, columns, search, sort, prog=None, year=None, date=None,
-		gender=None, category=None, cycle=None, base=None, person=None):
+		gender=None, category=None, cycle=None, base=None, person=None, unit=None):
 	return {"doctype": doctype, "label": label, "columns": columns, "search": search, "sort": sort,
-		"prog": prog, "year": year, "date": date, "gender": gender,
+		"prog": prog, "unit": unit, "year": year, "date": date, "gender": gender,
 		"category": category, "cycle": cycle, "base": base or [], "person": person}
 
 
@@ -297,7 +299,7 @@ SOURCES = {
 			("timetable_published", _("Timetable published"), "check")],
 		["name", "exam_name"], "modified"),
 	"marks": _src("Student Course Marks", _("Course marks"),
-		[("student", _("Student ID"), "student"), ("student_id", _("Registration no."), "text"), ("course", _("Course"), "text"),
+		[("student", _("Student ID"), "student"), ("student_id", _("Registration ID"), "text"), ("course", _("Course"), "text"),
 			("exam_plan", _("Exam plan"), "text"), ("total_marks", _("Marks"), "text"), ("grade", _("Grade"), "text"),
 			("status", _("Status"), "text")],
 		["student", "student_id", "course", "exam_plan"], "modified", prog="@student"),
@@ -327,7 +329,7 @@ SOURCES = {
 			("refund_mode", _("Mode"), "text"), ("refund_date", _("Refunded on"), "date"), ("status", _("Status"), "text")],
 		["name", "student", "student_name"], "refund_date", prog="@student", date="refund_date", base=[["docstatus", "=", 1]]),
 	"con": _src("Fee Concession", _("Fee concessions"),
-		[("name", _("Concession"), "id"), ("student", _("Student ID"), "student"), ("registration_id", _("Registration no."), "text"),
+		[("name", _("Concession"), "id"), ("student", _("Student ID"), "student"), ("registration_id", _("Registration ID"), "text"),
 			("concession_type", _("Type"), "text"), ("waiver_value", _("Waiver"), "currency"), ("concession_date", _("Date"), "date"),
 			("status", _("Status"), "text")],
 		["name", "student", "registration_id"], "concession_date", prog="@student", year="academic_year",
@@ -347,16 +349,16 @@ SOURCES = {
 		[("name", _("Application"), "id"), ("applicant_name", _("Applicant"), "text"), ("programme", _("PACE programme"), "text"),
 			("academic_year", _("Academic year"), "text"), ("email_address", _("Email"), "text"),
 			("submission_date", _("Submitted"), "date"), ("status", _("Status"), "text")],
-		["name", "applicant_name", "email_address"], "modified", year="academic_year", date="creation"),
+		["name", "applicant_name", "email_address"], "modified", year="academic_year", date="creation", unit="programme"),
 	"penq": _src("PACE Enquiry", _("PACE enquiries"),
 		[("name", _("Enquiry"), "id"), ("full_name", _("Name"), "text"), ("email", _("Email"), "text"), ("phone", _("Phone"), "text"),
 			("programme_of_interest", _("Programme"), "text"), ("submitted_on", _("Submitted"), "datetime"), ("status", _("Status"), "text")],
-		["name", "full_name", "email"], "submitted_on", date="submitted_on"),
+		["name", "full_name", "email"], "submitted_on", date="submitted_on", unit="programme_of_interest"),
 	"pdv": _src("PACE Document Verification", _("PACE document checks"),
 		[("name", _("Verification"), "id"), ("application", _("Application"), "text"), ("applicant_name", _("Applicant"), "text"),
 			("programme", _("PACE programme"), "text"), ("assigned_verifier", _("Verifier"), "text"),
 			("due_date", _("Due"), "date"), ("status", _("Status"), "text")],
-		["name", "applicant_name", "application"], "due_date", year="academic_year"),
+		["name", "applicant_name", "application"], "due_date", year="academic_year", unit="programme"),
 	"treq": _src("Transcript Request", _("Transcript requests"),
 		[("name", _("Request"), "id")] + C_STUDENT + [("programme", _("Programme"), "programme"), ("transcript_type", _("Type"), "text"),
 			("num_copies", _("Copies"), "text"), ("delivery_mode", _("Delivery"), "text"), ("urgency", _("Urgency"), "text"),
@@ -387,12 +389,48 @@ SOURCES = {
 			("program", _("PACE programme"), "text"), ("fee_type", _("Fee"), "text"), ("nationality_type", _("Nationality"), "text"),
 			("final_payable_amount", _("Payable"), "currency"), ("assignment_date", _("Assigned on"), "date"),
 			("payment_date", _("Paid on"), "date"), ("status", _("Status"), "text")],
-		["name", "applicant", "applicant_name", "transaction_id"], "assignment_date", year="academic_year", date="assignment_date"),
+		["name", "applicant", "applicant_name", "transaction_id"], "assignment_date", year="academic_year", date="assignment_date",
+		unit="program"),
 	"prc": _src("PACE Receipt", _("PACE receipts"),
 		[("name", _("Receipt"), "id"), ("pace_application", _("Application"), "text"), ("applicant_name", _("Applicant"), "text"),
 			("program", _("PACE programme"), "text"), ("fee_type", _("Fee"), "text"), ("amount", _("Amount"), "currency"),
 			("payment_date", _("Paid on"), "date"), ("transaction_id", _("Transaction"), "text")],
-		["name", "pace_application", "applicant_name", "transaction_id"], "payment_date", year="academic_year", date="payment_date"),
+		["name", "pace_application", "applicant_name", "transaction_id"], "payment_date", year="academic_year", date="payment_date",
+		unit="program"),
+	"alog": _src("Attendance Log", _("RFID swipes"),
+		[("swipe_time", _("Swiped at"), "datetime"), ("student", _("Student ID"), "student"), ("rfid_uid", _("Card UID"), "text"),
+			("programme", _("Programme"), "programme"), ("terminal_alias", _("Terminal"), "text"), ("device_id", _("Device"), "text"),
+			("location", _("Location"), "text"), ("source", _("Source"), "text"), ("match_status", _("Match"), "text"),
+			("processed", _("Processed"), "check"), ("name", _("Log"), "id")],
+		["name", "rfid_uid", "student", "device_id", "terminal_alias", "location"], "swipe_time",
+		prog="programme", year="academic_year", date="swipe_time"),
+	"plog": _src("RFID SQL Punch Log", _("RFID punches (SQL feed)"),
+		[("punch_time", _("Punched at"), "datetime"), ("emp_code", _("Card / emp code"), "text"), ("student", _("Student ID"), "student"),
+			("terminal_alias", _("Terminal"), "text"), ("sync_status", _("Sync"), "text"), ("error_detail", _("Detail"), "text"), ("name", _("Log"), "id")],
+		["name", "emp_code", "student", "terminal_alias"], "punch_time", prog="@student", date="punch_time"),
+	"rdev": _src("RFID Device", _("RFID devices"),
+		[("name", _("Device"), "id"), ("device_name", _("Name"), "text"), ("device_type", _("Type"), "text"), ("location", _("Location"), "text"),
+			("current_venue", _("Venue"), "text"), ("is_active", _("Active"), "check"), ("last_seen", _("Last seen"), "datetime"),
+			("ip_address", _("IP"), "text")],
+		["name", "device_name", "location", "ip_address"], "last_seen"),
+	"rcard": _src("Student RFID Card", _("Student RFID cards"),
+		[("name", _("Card"), "id"), ("student", _("Student ID"), "student"), ("rfid_uid", _("Card UID"), "text"),
+			("card_status", _("Status"), "text"), ("issued_date", _("Issued"), "date"), ("deactivated_date", _("Deactivated"), "date")],
+		["name", "student", "rfid_uid"], "issued_date", prog="@student"),
+	"pprog": _src("PACE Programme", _("PACE programmes"),
+		[("name", _("PACE programme"), "id"), ("programme_code", _("Code"), "text"), ("admission_status", _("Admission"), "text"),
+			("duration", _("Duration"), "text"), ("duration_type", _("Unit"), "text"), ("published", _("Published"), "check")],
+		["name", "programme_name", "programme_code"], "name"),
+	"pcourse": _src("PACE Programme Course", _("PACE courses"),
+		[("name", _("PACE course"), "id"), ("course_title", _("Title"), "text"), ("modified", _("Updated"), "datetime")],
+		["name", "course_title"], "name"),
+	"apr": _src("Applicant Payment Receipt", _("Admission fee receipts"),
+		[("name", _("Receipt"), "id"), ("applicant", _("Applicant ID"), "applicant"), ("applicant_name", _("Applicant"), "text"),
+			("program", _("Programme"), "programme"), ("fee_type", _("Fee"), "text"), ("net_amount", _("Net paid"), "currency"),
+			("total_amount", _("Fee amount"), "currency"), ("scholarship_amount", _("Scholarship"), "currency"),
+			("payment_mode", _("Mode"), "text"), ("payment_date", _("Paid on"), "date"), ("transaction_id", _("Transaction"), "text")],
+		["name", "applicant", "applicant_name", "transaction_id"], "payment_date", prog="program", year="academic_year",
+		date="payment_date"),
 	"spr": _src("SLCM Payment Request", _("PACE online payments"),
 		[("name", _("Payment request"), "id"), ("reference_name", _("Fee assignment"), "text"), ("email_to", _("Payer"), "text"),
 			("amount", _("Amount"), "currency"), ("status", _("Status"), "text"), ("gateway_status", _("Gateway"), "text"),
@@ -412,6 +450,29 @@ SOURCES = {
 			("enrollment_status", _("Enrolment"), "text"), ("payment_status", _("Payment"), "text"), ("paid_amount", _("Paid"), "currency")],
 		["name", "candidate_name", "candidate_email_id"], "timestamp", date="timestamp"),
 }
+
+
+# Registration ID (Student Master.registration_id) is added next to the first
+# student / applicant column of every table.
+REG_COL = "_reg"
+
+
+def _add_reg_columns():
+	for kind, s in SOURCES.items():
+		if kind == "stu":
+			s["columns"].insert(1, ("registration_id", _("Registration ID"), "text"))
+			s["search"].append("registration_id")
+			continue
+		# A copy kept on the record itself (often blank) gives way to the Student Master value.
+		s["columns"] = [c for c in s["columns"] if c[0] not in ("registration_id", "student_id")]
+		for i, c in enumerate(s["columns"]):
+			if c[2] in ("student", "applicant"):
+				s["columns"].insert(i + 1, (REG_COL, _("Registration ID"), "text"))
+				s["reg_from"] = (c[0], c[2])
+				break
+
+
+_add_reg_columns()
 
 
 def _is_date_field(doctype, field):
@@ -492,10 +553,13 @@ def f_stu(ctx, with_dates=True):
 # unused_if: key of the "positive" card of a pair. When that card is 0 the field
 # is not being filled in at all, so this card would claim 100% — it is shown as
 # "not recorded yet" instead.
+# sum may be a tuple (preferred, fallback): each row adds the first non-zero field.
+# money: the card's headline figure is the amount, the count becomes the sub line.
 def _card(key, label, tone, kind="app", statuses=None, filters=None, or_filters=None, sub=None, guide=None,
-		pct=True, dates=True, sum=None, unused_if=None):
+		pct=True, dates=True, sum=None, unused_if=None, money=False):
 	return {"key": key, "label": label, "tone": tone, "kind": kind, "statuses": statuses, "filters": filters,
-		"or_filters": or_filters, "sub": sub, "guide": guide, "pct": pct, "dates": dates, "sum": sum, "unused_if": unused_if}
+		"or_filters": or_filters, "sub": sub, "guide": guide, "pct": pct, "dates": dates, "sum": sum, "unused_if": unused_if,
+		"money": money}
 
 
 CARDS = {}
@@ -524,6 +588,56 @@ def _pace_statuses(kind):
 	return sorted({r.name for r in rows} - enrolled - closed)
 
 
+# ── Programme-type scope helpers (cached per request) ───────────────────────
+def _scope_cache():
+	c = getattr(frappe.local, "uod_scope", None)
+	if c is None:
+		c = frappe.local.uod_scope = {}
+	return c
+
+
+def _scope_progs(ctx, scope):
+	"""Programmes of a type: nlsat = uses the entrance test, regular = does not (∩ the Programme filter)."""
+	key = ("progs", scope, tuple(ctx.programmes or ()))
+	cache = _scope_cache()
+	if key not in cache:
+		f = [["entrance_test", "=", 1 if scope == "nlsat" else 0]]
+		if ctx.programmes:
+			f.append(["name", "in", ctx.programmes])
+		cache[key] = frappe.get_all("Programme", filters=f, pluck="name")
+	return cache[key]
+
+
+def _scope_linked(ctx, scope, what):
+	"""Courses / faculty (via Classes) or batches (via Student Enrollment) of a programme type."""
+	key = ("linked", scope, what, tuple(ctx.programmes or ()), tuple(ctx.academic_years or ()))
+	cache = _scope_cache()
+	if key not in cache:
+		progs = _scope_progs(ctx, scope)
+		if not progs:
+			cache[key] = []
+		elif what == "batch":
+			rows = frappe.get_all("Student Enrollment", filters=[["program", "in", progs], ["batch", "is", "set"]],
+				pluck="batch", distinct=True)
+			cache[key] = sorted(set(rows))
+		else:
+			f = [["programme", "in", progs], [what, "is", "set"]]
+			if ctx.academic_years:
+				f.append(["academic_year", "in", ctx.academic_years])
+			cache[key] = sorted(set(frappe.get_all("Classes", filters=f, pluck=what, distinct=True)))
+	return cache[key]
+
+
+def _pace_linked(child, field):
+	"""Values listed in a PACE Programme child table (courses / faculty)."""
+	key = ("pace", child, field)
+	cache = _scope_cache()
+	if key not in cache:
+		cache[key] = sorted(set(frappe.get_all(child, filters={"parenttype": "PACE Programme", field: ["is", "set"]},
+			pluck=field, distinct=True)))
+	return cache[key]
+
+
 def _build_registry():
 	def h(key, label, tone, statuses, sub, guide):
 		HEADLINE.append(_register(_card(key, label, tone, statuses=statuses, sub=sub, guide=guide)))
@@ -541,8 +655,8 @@ def _build_registry():
 	h("not_admitted", _("All rejected"), "bad", NOT_ADMITTED, _("of total applications"),
 		_("Turned down or dropped out at any step: Rejected, Withdrawn, Entrance Test Rejected, Interview Rejected, Merit Rejected, Seat Rejected, Offer Declined, Offer Expired."))
 
-	def section(key, title, tiles):
-		BOARD.append({"key": key, "title": title, "tiles": tiles})
+	def section(key, title, tiles, scope=None):
+		BOARD.append({"key": key, "title": title, "tiles": tiles, "scope": scope})
 
 	def tile(title, icon, cards):
 		return {"title": title, "icon": icon, "cards": [_register(c) for c in cards]}
@@ -550,49 +664,59 @@ def _build_registry():
 	def app(key, label, tone, statuses, guide, sub=None):
 		return _card(key, label, tone, statuses=statuses, guide=guide, sub=sub)
 
-	# ── At a glance (one figure per programme family, above the admission funnel) ──
-	section("overview", _("At a glance"), [
-		tile(_("Students"), "users", [_card("ov_students", _("Active students"), "good", kind="stu", pct=False, dates=False,
-			filters=_f(["student_status", "=", "Active"]), sub=_("Student Master, status Active"), guide=_("All active students in scope (any date)."))]),
-		tile(_("Regular admission"), "file", [_card("ov_apps", _("Applications"), "neutral", pct=False, sub=_("Applicant records in the dates"),
-			guide=_("Regular admission applications (Applicant) created in the selected dates."))]),
+	# ── Overview: students + one tile per admission type, then money received ──
+	section("overview", _("Students & admissions"), [
+		tile(_("Students"), "users", [
+			_card("ov_students", _("Active"), "good", kind="stu", pct=False, dates=False,
+				filters=_f(["student_status", "=", "Active"]), guide=_("All active students in scope (any date).")),
+			_card("ov_stu_done", _("Registration completed"), "info", kind="stu", pct=False, dates=False,
+				filters=_f(["registration_status", "=", "Completed"]), guide=_("Student records whose registration status is Completed (any date)."))]),
+		tile(_("Regular admission"), "file", [
+			_card("ov_apps", _("Applications"), "info", pct=False,
+				guide=_("Regular admission applications (Applicant) created in the selected dates.")),
+			_card("ov_reg_enr", _("Enrolled"), "good", statuses=G["enrolled"], pct=False,
+				guide=_("Regular admission applications with status Enrolled."))]),
 		tile(_("PACE"), "award", [
 			_card("ov_pace_apps", _("Applications"), "info", kind="pace", pct=False, filters=_f(["status", "!=", "Draft"]),
 				guide=_("PACE applications created in the selected dates and submitted (not Draft).")),
 			_card("ov_pace_enr", _("Enrolled"), "good", kind="pace", pct=False, filters=lambda c: [_in("status", _pace_statuses("enrolled"))],
 				guide=_("PACE applications at an enrolment stage."))]),
-		tile(_("FLE"), "users", [
+		tile(_("FLE"), "pen", [
 			_card("ov_fle", _("Registrations"), "info", kind="fle", pct=False, guide=_("FLE registrations in the selected dates.")),
 			_card("ov_fle_paid", _("Paid"), "good", kind="fle", pct=False, filters=_f(["payment_status", "in", FLE_PAID]),
 				guide=_("FLE registrations whose payment is Authorized or Captured."))]),
-		tile(_("Money received"), "coins", [
-			_card("ov_pace_money", _("PACE"), "good", kind="spr", pct=False, filters=_f(["status", "=", "Paid"]), sum="amount",
-				guide=_("PACE online payments (SLCM Payment Request) with status Paid, created in the selected dates.")),
-			_card("ov_fle_money", _("FLE"), "good", kind="flp", pct=False, filters=_f(["payment_status", "in", FLE_PAID]), sum="paid_amount",
+	])
+	section("overview", _("Money received"), [
+		tile(_("Received in the selected dates"), "coins", [
+			_card("ov_reg_money", _("Regular admission"), "good", kind="apr", pct=False, sum=("net_amount", "total_amount"), money=True,
+				guide=_("Admission fee receipts (Applicant Payment Receipt) dated in the selected range: application, confirmation and admission fees. Net amount after scholarship.")),
+			_card("ov_pace_money", _("PACE"), "good", kind="prc", pct=False, sum="amount", money=True,
+				guide=_("PACE receipts (application and course fees) with payment date in the selected range.")),
+			_card("ov_fle_money", _("FLE"), "good", kind="flp", pct=False, filters=_f(["payment_status", "in", FLE_PAID]), sum="paid_amount", money=True,
 				guide=_("FLE payments (FLE Payment Log) Authorized or Captured, in the selected dates."))]),
 	])
 
 	# ── Admission ──
-	section("admission", _("Admission · application & test"), [
+	section("admission", _("Application & NLSAT"), [
 		tile(_("Draft applications"), "pen", [app("draft", _("Draft"), "action", G["draft"], _("Started but not submitted (status Draft)."), _("not yet submitted"))]),
 		tile(_("Application review"), "file", [app("awaiting_review", _("Awaiting review"), "info", G["submitted"],
 			_("Status Submitted or Submitted and Paid — waiting for the test / interview / merit step."), _("submitted, no next step yet"))]),
 		tile(_("Application fee"), "coins", [
-			_card("appfee_paid", _("Fee paid"), "good", filters=_f(["status", "!=", "Draft"], ["application_fee_status", "in", ["Paid", "Waived"]]),
+			_card("appfee_paid", _("Application fee paid"), "good", filters=_f(["status", "!=", "Draft"], ["application_fee_status", "in", ["Paid", "Waived"]]),
 				guide=_("Submitted applications whose application fee is Paid or Waived.")),
-			_card("appfee_pending", _("Fee pending"), "action", filters=_f(["status", "!=", "Draft"], ["application_fee_status", "in", ["Pending", "Requested"]]),
+			_card("appfee_pending", _("Application fee pending"), "action", filters=_f(["status", "!=", "Draft"], ["application_fee_status", "in", ["Pending", "Requested"]]),
 				guide=_("Submitted applications whose application fee is Pending or Requested."))]),
-		tile(_("Entrance test"), "pen", [
-			app("test_scheduled", _("Test scheduled"), "info", G["test_scheduled"], _("Status Entrance Test Allocated or Entrance Test Scheduled.")),
-			app("test_done", _("Test done"), "good", G["test_done"], _("Status Entrance Test Completed, or exempted from the entrance test."))]),
+		tile(_("NLSAT (entrance test)"), "pen", [
+			app("test_scheduled", _("NLSAT scheduled"), "info", G["test_scheduled"], _("NLSAT: status Entrance Test Allocated or Entrance Test Scheduled.")),
+			app("test_done", _("NLSAT done / exempted"), "good", G["test_done"], _("NLSAT: status Entrance Test Completed, or exempted from the entrance test."))]),
 	])
-	section("admission", _("Admission · interviews & merit"), [
+	section("admission", _("Interviews & merit"), [
 		tile(_("Interview"), "mic", [
 			app("iv_scheduled", _("Interview scheduled"), "info", G["iv_scheduled"], _("Status Interview Scheduled.")),
 			app("iv_done", _("Interview completed"), "good", G["iv_done"], _("Status Interview Completed."))]),
 		tile(_("Interview outcome"), "check", [
-			app("iv_exempted", _("Exempted"), "info", G["iv_exempted"], _("Status Interview Exempted.")),
-			app("iv_rejected", _("Rejected"), "bad", G["iv_rejected"], _("Status Interview Rejected."))]),
+			app("iv_exempted", _("Interview exempted"), "info", G["iv_exempted"], _("Status Interview Exempted.")),
+			app("iv_rejected", _("Interview rejected"), "bad", G["iv_rejected"], _("Status Interview Rejected."))]),
 		tile(_("Interviews today"), "clock", [
 			_card("iv_today", _("Interviews today"), "time", kind="isa", dates=False, pct=False, sub=_("scheduled for today"),
 				filters=lambda c: [["interview_date", "=", nowdate()], ["interview_slot_status", "!=", "Cancelled"]],
@@ -604,14 +728,14 @@ def _build_registry():
 				guide=_("Interview slots in the next 7 days, not cancelled."))]),
 		tile(_("Merit list"), "award", [
 			app("merit_selected", _("Merit selected"), "good", G["merit_selected"], _("Status Merit Selected, Merit Published or Selected — on a merit list, seat not yet allocated.")),
-			app("merit_waitlisted", _("Waitlisted"), "action", G["merit_waitlisted"], _("Status Merit Waitlisted or Waitlisted."))]),
-		tile(_("Merit rejected"), "xcircle", [app("merit_rejected", _("Merit rejected"), "bad", G["merit_rejected"] + G["test_rejected"],
+			app("merit_waitlisted", _("Merit waitlisted"), "action", G["merit_waitlisted"], _("Status Merit Waitlisted or Waitlisted."))]),
+		tile(_("Merit rejected"), "xcircle", [app("merit_rejected", _("Merit / NLSAT rejected"), "bad", G["merit_rejected"] + G["test_rejected"],
 			_("Status Merit Rejected or Entrance Test Rejected."))]),
 	])
-	section("admission", _("Admission · seat, offer & fees"), [
+	section("admission", _("Seat, offer & fees"), [
 		tile(_("Seat allocation"), "handshake", [
 			app("seat_selected", _("Seat selected"), "good", G["seat_selected"], _("Status Seat Selected — seat allocated, offer not yet issued.")),
-			app("seat_waitlisted", _("Seat waitlisted"), "action", G["seat_waitlisted"] + G["seat_rejected"], _("Status Seat Waitlisted or Seat Rejected."))]),
+			app("seat_waitlisted", _("Seat waitlisted / rejected"), "action", G["seat_waitlisted"] + G["seat_rejected"], _("Status Seat Waitlisted or Seat Rejected."))]),
 		tile(_("Offer letter"), "send", [
 			app("offer_issued", _("Offer issued"), "info", G["offer_issued"], _("Status Offer Issued — the applicant has not replied yet."), _("awaiting reply")),
 			app("offer_expired", _("Offer expired"), "bad", G["offer_expired"], _("Status Offer Expired."))]),
@@ -622,7 +746,7 @@ def _build_registry():
 			app("conf_fee", _("Confirmation fee paid"), "good", G["conf_fee"], _("Status Confirmation Fee Paid.")),
 			app("full_fee", _("Full fee paid"), "good", G["full_fee"], _("Status Full Fee Paid or Fee Paid."))]),
 		tile(_("Enrolled"), "door", [app("enrolled_now", _("Enrolled"), "good", G["enrolled"], _("Status Enrolled."))]),
-		tile(_("Withdrawn"), "xcircle", [app("withdrawn", _("Withdrawn"), "bad", G["withdrawn"] + G["rejected"], _("Status Withdrawn or Rejected."))]),
+		tile(_("Withdrawn"), "xcircle", [app("withdrawn", _("Withdrawn / rejected"), "bad", G["withdrawn"] + G["rejected"], _("Status Withdrawn or Rejected."))]),
 	])
 
 	# ── Student Registration ──
@@ -695,6 +819,85 @@ def _build_registry():
 			card("enr_pending", _("Pending"), "action", "enr", [["status", "=", "Pending"]], _("Student Enrollment status Pending, enrolment date in range."))]),
 	])
 
+	# ── Programme management by programme type (NLSAT / Regular / PACE) ──
+	# NLSAT = Programmes that use the entrance test; Regular = the rest. Courses,
+	# faculty and batches follow their programmes through Classes / Student Enrollment.
+	for scope, title in (("nlsat", _("NLSAT programmes")), ("regular", _("Regular programmes"))):
+		def progs(c, scope=scope):
+			return _in("name", _scope_progs(c, scope))
+		section("programme", title, [
+			tile(_("Programmes"), "award", [
+				_card(f"pm_{scope}_prog_active", _("Active"), "good", kind="prog", pct=False, dates=False,
+					filters=lambda c, scope=scope: [_in("name", _scope_progs(c, scope)), ["program_status", "=", "Active"]],
+					guide=_("Programmes of this type with status Active.")),
+				_card(f"pm_{scope}_prog_inactive", _("Inactive"), "neutral", kind="prog", pct=False, dates=False,
+					filters=lambda c, scope=scope: [_in("name", _scope_progs(c, scope)), ["program_status", "!=", "Active"]],
+					guide=_("Programmes of this type with status Inactive or empty."))]),
+			tile(_("Courses"), "file", [
+				_card(f"pm_{scope}_course_active", _("Active"), "good", kind="course", pct=False, dates=False,
+					filters=lambda c, scope=scope: [_in("name", _scope_linked(c, scope, "course")), ["status", "=", "Active"]],
+					guide=_("Active courses offered (in Classes) in programmes of this type.")),
+				_card(f"pm_{scope}_course_inactive", _("Inactive"), "neutral", kind="course", pct=False, dates=False,
+					filters=lambda c, scope=scope: [_in("name", _scope_linked(c, scope, "course")), ["status", "!=", "Active"]],
+					guide=_("Inactive courses offered (in Classes) in programmes of this type."))]),
+			tile(_("Classes"), "users", [
+				_card(f"pm_{scope}_classes", _("Classes"), "info", kind="cls", pct=False, dates=False, sub=_("course offerings"),
+					filters=lambda c, scope=scope: [_in("programme", _scope_progs(c, scope))],
+					guide=_("Course offerings (Classes) in programmes of this type."))]),
+			tile(_("Batches"), "calendar", [
+				_card(f"pm_{scope}_batch_active", _("Active"), "good", kind="batch", pct=False, dates=False,
+					filters=lambda c, scope=scope: [_in("name", _scope_linked(c, scope, "batch")), ["status", "=", "Active"]],
+					guide=_("Active batches with students enrolled in programmes of this type.")),
+				_card(f"pm_{scope}_batch_planned", _("Planned"), "info", kind="batch", pct=False, dates=False,
+					filters=lambda c, scope=scope: [_in("name", _scope_linked(c, scope, "batch")), ["status", "=", "Planned"]],
+					guide=_("Planned batches with students enrolled in programmes of this type."))]),
+			tile(_("Faculty"), "users", [
+				_card(f"pm_{scope}_fac_active", _("Active"), "good", kind="fac", pct=False, dates=False,
+					filters=lambda c, scope=scope: [_in("name", _scope_linked(c, scope, "faculty")), ["status", "=", "Active"]],
+					guide=_("Active faculty teaching Classes in programmes of this type.")),
+				_card(f"pm_{scope}_fac_inactive", _("Inactive"), "neutral", kind="fac", pct=False, dates=False,
+					filters=lambda c, scope=scope: [_in("name", _scope_linked(c, scope, "faculty")), ["status", "=", "Inactive"]],
+					guide=_("Inactive faculty assigned to Classes in programmes of this type."))]),
+			tile(_("Enrolments"), "check", [
+				_card(f"pm_{scope}_enr_enrolled", _("Enrolled"), "good", kind="enr", pct=False,
+					filters=lambda c, scope=scope: [_in("program", _scope_progs(c, scope)), ["status", "=", "Enrolled"]],
+					guide=_("Student Enrollment status Enrolled in programmes of this type, enrolment date in range.")),
+				_card(f"pm_{scope}_enr_pending", _("Pending"), "action", kind="enr", pct=False,
+					filters=lambda c, scope=scope: [_in("program", _scope_progs(c, scope)), ["status", "=", "Pending"]],
+					guide=_("Student Enrollment status Pending in programmes of this type, enrolment date in range."))]),
+		], scope=scope)
+
+	section("programme", _("PACE programmes"), [
+		tile(_("Programmes"), "award", [
+			card("pm_pace_prog_open", _("Open for admission"), "good", "pprog", [["admission_status", "=", "Open"]],
+				_("PACE programmes whose admission status is Open."), dates=False),
+			card("pm_pace_prog_closed", _("Closed"), "neutral", "pprog", [["admission_status", "!=", "Open"]],
+				_("PACE programmes whose admission status is Closed or empty."), dates=False)]),
+		tile(_("Published"), "send", [
+			card("pm_pace_prog_pub", _("Published"), "info", "pprog", [["published", "=", 1]],
+				_("PACE programmes published on the website."), dates=False, sub=_("on the website"))]),
+		tile(_("Courses"), "file", [
+			_card("pm_pace_course_linked", _("Linked to a programme"), "good", kind="pcourse", pct=False, dates=False,
+				filters=lambda c: [_in("name", _pace_linked("PACE Programme Course Table", "course"))],
+				guide=_("PACE courses listed under at least one PACE programme.")),
+			_card("pm_pace_course_free", _("Not linked yet"), "neutral", kind="pcourse", pct=False, dates=False,
+				filters=lambda c: [["name", "not in", _pace_linked("PACE Programme Course Table", "course") or [NONE]]],
+				guide=_("PACE courses not listed under any PACE programme."))]),
+		tile(_("Faculty"), "users", [
+			_card("pm_pace_fac_active", _("Active"), "good", kind="fac", pct=False, dates=False,
+				filters=lambda c: [_in("name", _pace_linked("PACE Faculty Table", "faculty")), ["status", "=", "Active"]],
+				guide=_("Active faculty listed under a PACE programme.")),
+			_card("pm_pace_fac_inactive", _("Inactive"), "neutral", kind="fac", pct=False, dates=False,
+				filters=lambda c: [_in("name", _pace_linked("PACE Faculty Table", "faculty")), ["status", "=", "Inactive"]],
+				guide=_("Inactive faculty listed under a PACE programme."))]),
+		tile(_("Enrolments"), "check", [
+			_card("pm_pace_enr", _("Enrolled"), "good", kind="pace", pct=False,
+				filters=lambda c: [_in("status", _pace_statuses("enrolled"))], guide=_("PACE applications at an enrolment stage.")),
+			_card("pm_pace_enr_progress", _("In progress"), "info", kind="pace", pct=False,
+				filters=lambda c: [_in("status", [x for x in _pace_statuses("progress") if x != "Draft"])],
+				guide=_("PACE applications submitted and still moving."))]),
+	], scope="pace")
+
 	# ── Attendance ──
 	section("attendance", _("Attendance"), [
 		tile(_("Sessions"), "calendar", [
@@ -721,6 +924,39 @@ def _build_registry():
 			card("tt_next7", _("Next 7 days"), "neutral", "tt", [["schedule_date", ">", nowdate()], ["schedule_date", "<=", add_days(nowdate(), 7)],
 				["session_status", "!=", "Cancelled"]], _("Timetable slots in the next 7 days, not cancelled."), dates=False)]),
 	])
+
+	# ── Attendance · RFID swipes (shown under the Attendance tab's "RFID swipes" switch) ──
+	def ago(hours):
+		return str(add_to_date(now_datetime(), hours=-hours))
+	section("attendance", _("RFID swipes"), [
+		tile(_("Swipes"), "idcard", [
+			card("alog_all", _("In the dates"), "info", "alog", [], _("RFID / manual / QR swipes (Attendance Log) in the selected dates.")),
+			_card("alog_today", _("Today"), "time", kind="alog", pct=False, dates=False,
+				filters=lambda c: [["swipe_time", ">=", f"{nowdate()} 00:00:00"]], guide=_("Swipes recorded today."))]),
+		tile(_("Matched to a class"), "check", [
+			card("alog_matched", _("Matched"), "good", "alog", [["match_status", "=", "Matched"]],
+				_("Swipes matched to a class session (attendance marked from them).")),
+			card("alog_unmatched", _("Not matched"), "action", "alog", [["match_status", "!=", "Matched"]],
+				_("Swipes not matched to a session: unknown card, no session running, or an early tap."))]),
+		tile(_("Unknown cards"), "alert", [card("alog_nostudent", _("No student linked"), "action", "alog", [["student", "is", "not set"]],
+			_("Swipes whose card is not mapped to any student (check Student RFID Card)."))]),
+		tile(_("Feed from the RFID server"), "send", [
+			_card("plog_24h", _("Received in last 24 h"), "info", kind="plog", pct=False, dates=False,
+				filters=lambda c: [["punch_time", ">=", ago(24)]],
+				guide=_("Punches pulled from the RFID SQL server in the last 24 hours. 0 on a working day usually means the feed is down.")),
+			card("plog_unmatched", _("Unmatched punches"), "bad", "plog", [["sync_status", "=", "Unmatched"]],
+				_("Punches in the selected dates that could not be matched to a student."))]),
+		tile(_("Devices"), "door", [
+			card("rdev_active", _("Active"), "good", "rdev", [["is_active", "=", 1]], _("RFID devices marked active."), dates=False),
+			_card("rdev_stale", _("Not seen in 24 h"), "action", kind="rdev", pct=False, dates=False,
+				filters=lambda c: [["is_active", "=", 1]],
+				or_filters=lambda c: [["last_seen", "<", ago(24)], ["last_seen", "is", "not set"]],
+				guide=_("Active devices that have not reported in the last 24 hours (or never)."))]),
+		tile(_("Student RFID cards"), "idcard", [
+			card("rcard_active", _("Active"), "good", "rcard", [["card_status", "=", "Active"]], _("Student RFID cards with status Active."), dates=False),
+			card("rcard_off", _("Blocked / lost / replaced"), "neutral", "rcard", [["card_status", "!=", "Active"]],
+				_("Cards Blocked, Lost, Damaged or Replaced."), dates=False)]),
+	], scope="rfid")
 
 	# ── ID Card ──
 	section("idcard", _("ID card"), [
@@ -767,7 +1003,7 @@ def _build_registry():
 	])
 
 	# ── PACE ──
-	section("pace", _("PACE"), [
+	section("pace", _("PACE · enquiries, applications & documents"), [
 		tile(_("Enquiries"), "mic", [
 			card("penq_new", _("New"), "action", "penq", [["status", "=", "New"]], _("PACE enquiries not yet contacted (any date)."), dates=False),
 			card("penq_contacted", _("Contacted"), "good", "penq", [["status", "=", "Contacted"]], _("PACE enquiries contacted, submitted in the selected dates."))]),
@@ -785,10 +1021,10 @@ def _build_registry():
 			card("pdv_verified", _("Verified"), "good", "pdv", [["status", "=", "Verified"]], _("PACE document verifications completed."), dates=False),
 			card("pdv_returned", _("Returned for correction"), "bad", "pdv", [["status", "=", "Returned for Correction"]],
 				_("PACE document verifications sent back to the applicant."), dates=False)]),
-		tile(_("Documents pending"), "clock", [card("pdv_pending", _("Pending"), "action", "pdv", [["status", "=", "Pending"]],
+		tile(_("Documents pending"), "clock", [card("pdv_pending", _("Waiting for a verifier"), "action", "pdv", [["status", "=", "Pending"]],
 			_("PACE document verifications waiting for a verifier."), dates=False)]),
 	])
-	section("pace", _("PACE · fees"), [
+	section("pace", _("PACE · fees & payments"), [
 		tile(_("Application fee"), "coins", [
 			card("pfa_app_paid", _("Paid"), "good", "pfa", [["fee_type", "=", "Application Fee"], ["status", "in", ["Paid", "Enrolled"]]],
 				_("PACE application-fee assignments Paid, assigned in the selected dates."), sum="final_payable_amount"),
@@ -814,7 +1050,7 @@ def _build_registry():
 	])
 
 	# ── FLE ──
-	section("fle", _("FLE · Foundations for a Legal Education"), [
+	section("fle", _("FLE · registrations & enrolment"), [
 		tile(_("Registrations"), "users", [card("fle_all", _("Registrations"), "info", "fle", [], _("FLE registrations in the selected dates."))]),
 		tile(_("Enrolment"), "check", [
 			card("fle_enrolled", _("Enrolled"), "good", "fle", [["enrollment_status", "in", ["Enrolled", "Completed", "Certificate Issued"]]],
@@ -830,7 +1066,7 @@ def _build_registry():
 		tile(_("Certificates"), "award", [card("fle_cert", _("Certificate issued"), "good", "fle", [["enrollment_status", "=", "Certificate Issued"]],
 			_("FLE candidates whose certificate has been issued."))]),
 	])
-	section("fle", _("FLE · fees"), [
+	section("fle", _("FLE · fees & payments"), [
 		tile(_("Amount collected"), "coins", [
 			card("flp_paid", _("Collected"), "good", "flp", [["payment_status", "in", FLE_PAID]],
 				_("FLE payments (FLE Payment Log) Authorized or Captured, in the selected dates."), sum="paid_amount"),
@@ -930,6 +1166,27 @@ def _group(doctype, filters, field, or_filters=None, sum_field=None):
 	return by, amount
 
 
+def _group_pref(doctype, filters, field, or_filters, sums):
+	"""Count per ``field`` and the total of the first non-zero of ``sums`` per row."""
+	rows = frappe.get_list(doctype, filters=filters, or_filters=or_filters, fields=[field or "name"] + list(sums),
+		order_by=None, limit_page_length=0)
+	by, by_amount = defaultdict(int), defaultdict(float)
+	for r in rows:
+		k = (r.get(field) or "") if field else ""
+		by[k] += 1
+		by_amount[k] += next((flt(r.get(f)) for f in sums if flt(r.get(f))), 0.0)
+	return dict(by), sum(by_amount.values()), dict(by_amount)
+
+
+def _group_amounts(doctype, filters, field, or_filters, sum_field):
+	"""Like _group, plus the summed amount per group (for the programme filter)."""
+	rows = frappe.get_list(doctype, filters=filters, or_filters=or_filters,
+		fields=[field, {"COUNT": "*", "as": "n"}, {"SUM": sum_field, "as": "s"}], group_by=field, order_by=None)
+	by = {(r.get(field) or ""): cint(r.n) for r in rows}
+	by_amount = {(r.get(field) or ""): flt(r.get("s")) for r in rows}
+	return by, sum(by_amount.values()), by_amount
+
+
 def _card_filters(card, ctx):
 	filters = src_filters(card["kind"], ctx, with_dates=card["dates"])
 	if card["statuses"] is not None:
@@ -942,7 +1199,7 @@ def _card_filters(card, ctx):
 
 def _group_field(kind):
 	p = SOURCES[kind]["prog"]
-	return p if p and not p.startswith("@") else None
+	return p if p and not p.startswith("@") else SOURCES[kind].get("unit")
 
 
 def _cache_key(name, payload):
@@ -996,8 +1253,13 @@ def _dashboard(ctx):
 			continue
 		doctype, filters, or_filters = _card_filters(card, ctx)
 		field = _group_field(kind)
-		if field:
-			by, amount = _group(doctype, filters, field, or_filters, card["sum"])
+		by_amount = None
+		if isinstance(card["sum"], tuple):
+			by, amount, by_amount = _group_pref(doctype, filters, field, or_filters, card["sum"])
+		elif field and card["sum"]:
+			by, amount, by_amount = _group_amounts(doctype, filters, field, or_filters, card["sum"])
+		elif field:
+			by, amount = _group(doctype, filters, field, or_filters)
 		else:
 			by = {"": _count(doctype, filters, or_filters)}
 			amount = None
@@ -1005,6 +1267,8 @@ def _dashboard(ctx):
 				rows = frappe.get_list(doctype, filters=filters, or_filters=or_filters, fields=[{"SUM": card["sum"], "as": "s"}], order_by=None)
 				amount = flt(rows[0].s) if rows else 0
 		cards[key] = {"total": sum(by.values()), "by": by, "amount": amount}
+		if by_amount is not None and field:
+			cards[key]["by_amount"] = by_amount
 
 	for key, card in CARDS.items():
 		ref = cards.get(card["unused_if"]) if card["unused_if"] else None
@@ -1028,6 +1292,53 @@ def _dashboard(ctx):
 	}
 
 
+MONEY_CARDS = ["ov_reg_money", "ov_pace_money", "ov_fle_money"]
+
+
+@frappe.whitelist()
+def get_money_breakdown(filters=None, refresh=0):
+	"""Money received, programme-wise, for each admission type the user can read."""
+	ctx = _ctx(filters)
+	return _cached("money", ctx, lambda: _money(ctx), refresh=cint(refresh))
+
+
+def _money(ctx):
+	out = []
+	for key in MONEY_CARDS:
+		card = CARDS[key]
+		kind = card["kind"]
+		if not _can_read(SOURCES[kind]["doctype"]):
+			continue
+		doctype, filters, or_filters = _card_filters(card, ctx)
+		field = _group_field(kind)
+		sums = card["sum"] if isinstance(card["sum"], tuple) else (card["sum"],)
+		rows = frappe.get_list(doctype, filters=filters, or_filters=or_filters, fields=[field or "name"] + list(sums),
+			order_by=None, limit_page_length=0)
+		units = defaultdict(lambda: {"n": 0, "amount": 0.0})
+		# Every programme gets a row, even with nothing received yet.
+		for k in _money_units(kind, ctx):
+			units[k]
+		for r in rows:
+			u = units[(r.get(field) or "") if field else ""]
+			u["n"] += 1
+			u["amount"] += next((flt(r.get(f)) for f in sums if flt(r.get(f))), 0.0)
+		out.append({
+			"card": key, "label": card["label"], "kind": kind, "grouped": bool(field),
+			"n": sum(u["n"] for u in units.values()), "amount": sum(u["amount"] for u in units.values()),
+			"units": sorted(({"key": k, **v} for k, v in units.items()), key=lambda u: -u["amount"]),
+		})
+	return out
+
+
+def _money_units(kind, ctx):
+	"""All programmes a money source can be split by (for the zero rows)."""
+	if kind == "apr":
+		return ctx.programmes or (frappe.get_list("Programme", pluck="name", limit_page_length=0) if _can_read("Programme") else [])
+	if kind == "prc" and _can_read("PACE Programme"):
+		return frappe.get_list("PACE Programme", pluck="name", limit_page_length=0)
+	return []
+
+
 def _programme_names():
 	return {p.name: (p.program_name or p.name) for p in frappe.get_all("Programme", fields=["name", "program_name"])}
 
@@ -1036,14 +1347,14 @@ def _programme_names():
 def get_meta():
 	"""Board layout, guide text, funnel steps and filter options."""
 	def strip(c):
-		return {k: c[k] for k in ("key", "label", "tone", "kind", "sub", "guide", "pct", "sum")}
+		return {k: c[k] for k in ("key", "label", "tone", "kind", "sub", "guide", "pct", "sum", "money")}
 
 	return {
 		"headline": [strip(c) for c in HEADLINE],
-		"board": [{"key": s["key"], "title": s["title"], "tiles": [{"title": t["title"], "icon": t["icon"],
+		"board": [{"key": s["key"], "title": s["title"], "scope": s.get("scope"), "tiles": [{"title": t["title"], "icon": t["icon"],
 			"cards": [strip(c) for c in t["cards"]]} for t in s["tiles"]]} for s in BOARD],
 		"modules": [{"key": k, "label": l} for k, l in MODULES],
-		"sources": {k: {"label": s["label"], "honours": honours(k)} for k, s in SOURCES.items()},
+		"sources": {k: {"label": s["label"], "honours": honours(k), "grouped": bool(_group_field(k))} for k, s in SOURCES.items()},
 		"steps": [{"key": k, "label": l, "statuses": s} for k, l, s in STEPS],
 		"stages": [{"name": n, "statuses": s} for n, s in STAGES],
 		"options": _filter_options(),
@@ -1177,6 +1488,27 @@ def _group_by2(doctype, filters, a, b):
 COMPUTED = {"app": {"stage", "days"}}
 
 
+def _computed(kind):
+	return COMPUTED.get(kind, set()) | {REG_COL}
+
+
+def _reg_lookup(col_type, values, like=None):
+	"""{student or applicant ID: Registration ID}. Only for users who can read
+	Student Master; ``like`` instead searches registration IDs."""
+	if not _can_read(STU):
+		return {}
+	key = "name" if col_type == "student" else "application_number"
+	if like is not None:
+		f = [["registration_id", "like", f"%{like}%"], [key, "is", "set"]]
+	else:
+		values = [v for v in set(values) if v]
+		if not values:
+			return {}
+		f = [[key, "in", values]]
+	rows = frappe.get_all(STU, filters=f, fields=[key, "registration_id"], limit_page_length=500 if like else 0)
+	return {r.get(key): r.registration_id for r in rows}
+
+
 def _table_filters(kind, ctx, x):
 	"""Base filters for a table + the extras the client may send (whitelisted)."""
 	or_filters = None
@@ -1219,17 +1551,43 @@ def _table_filters(kind, ctx, x):
 			filters.append(["interview_date", "<=", x["to"]])
 
 	prog_field = _group_field(kind)
-	if prog_field and x.get("programme") is not None and x.get("programme") != "__all__":
-		p = x.get("programme")
-		filters = filters + ([[prog_field, "=", p]] if p else [[prog_field, "is", "not set"]])
+	if prog_field:
+		filters = _prog_pick(SOURCES[kind]["doctype"], prog_field, filters, or_filters, x.get("programme"))
 	return filters, or_filters, prog_field
+
+
+def _prog_pick(doctype, field, filters, or_filters, pick):
+	"""Narrow to the programmes picked in a drilldown: one value or a list;
+	"" means "programme not set"; "__all__" / None / [] means no narrowing."""
+	if pick is None or pick == "__all__":
+		return filters
+	vals = [str(v) for v in (pick if isinstance(pick, list) else [pick])][:200]
+	if not vals:
+		return filters
+	named = [v for v in vals if v]
+	if "" not in vals:
+		return filters + [[field, "in", named]]
+	if not named:
+		return filters + [[field, "is", "not set"]]
+	# "Not set" plus named programmes is an OR across two conditions: resolve to names.
+	names = frappe.get_list(doctype, filters=filters + [[field, "is", "not set"]], or_filters=or_filters,
+		pluck="name", limit_page_length=0)
+	names += frappe.get_list(doctype, filters=filters + [[field, "in", named]], or_filters=or_filters,
+		pluck="name", limit_page_length=0)
+	return filters + [_in("name", names)]
 
 
 def _search_or(spec, q):
 	q = (q or "").strip()
 	if not q:
 		return None
-	return [[f, "like", f"%{q}%"] for f in spec["search"]]
+	out = [[f, "like", f"%{q}%"] for f in spec["search"]]
+	if spec.get("reg_from"):
+		field, col_type = spec["reg_from"]
+		ids = list(_reg_lookup(col_type, None, like=q))
+		if ids:
+			out.append([field, "in", ids])
+	return out
 
 
 def _merge_or(spec, filters, or_filters, search_or):
@@ -1243,7 +1601,7 @@ def _merge_or(spec, filters, or_filters, search_or):
 
 def _fetch(kind, filters, or_filters, order_by, start, length):
 	spec = SOURCES[kind]
-	computed = COMPUTED.get(kind, set())
+	computed = _computed(kind)
 	fields = ["name"] + [c[0] for c in spec["columns"] if c[0] not in computed and c[0] != "name"]
 	if kind == "app":
 		fields.append("modified")
@@ -1255,6 +1613,11 @@ def _fetch(kind, filters, or_filters, order_by, start, length):
 			r["stage"] = STAGE_OF.get(r.status, "Applying")
 			r["days"] = _days_in(r, today)
 			r.pop("modified", None)
+	if spec.get("reg_from"):
+		field, col_type = spec["reg_from"]
+		reg = _reg_lookup(col_type, [r.get(field) for r in rows])
+		for r in rows:
+			r[REG_COL] = reg.get(r.get(field)) or ""
 	return rows
 
 
@@ -1269,7 +1632,7 @@ def _resolve(kind, filters, extra, search, sort, order):
 	x = x or {}
 	f, or_f, prog_field = _table_filters(kind, ctx, x)
 	f, or_f = _merge_or(spec, f, or_f, _search_or(spec, search))
-	computed = COMPUTED.get(kind, set())
+	computed = _computed(kind)
 	sortable = {c[0] for c in spec["columns"] if c[0] not in computed}
 	sort = sort if sort in sortable else spec["sort"]
 	order = "asc" if order == "asc" else "desc"
@@ -1405,7 +1768,7 @@ def get_timeline(kind, name):
 		s = frappe.get_doc(STU, stu_name)
 		head.setdefault("name", s.first_name)
 		head.setdefault("programme", s.programme_of_study)
-		head.update(student=s.name, registration_status=s.registration_status, student_status=s.student_status, batch=s.batch)
+		head.update(student=s.name, registration_id=s.registration_id, registration_status=s.registration_status, student_status=s.student_status, batch=s.batch)
 		ev(s.creation, "student", _("Student record created"), s.batch, "good", STU, s.name)
 		if s.date_of_registration:
 			ev(s.date_of_registration, "student", _("Registered"), "", "good", STU, s.name)
