@@ -1,8 +1,6 @@
 # Copyright (c) 2026, TFSS and contributors
 # For license information, please see license.txt
 
-import re
-
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -17,6 +15,14 @@ from slcm.slcm.doctype.fee_certificate_settings.fee_certificate_settings import 
 	SINGLE_YEAR_RECEIPT,
 	get_purpose_template,
 )
+from slcm.slcm.fee.component_groups import (
+	ADMISSION,
+	HOUSING,
+	READMISSION,
+	REFUNDABLE,
+	TUITION,
+	component_group as _row_group,
+)
 
 ADMISSION_STAGE = "Admission Stage"
 ORDINALS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII"]
@@ -30,11 +36,8 @@ def _amt(amount):
 	return fmt_money(flt(amount), precision=0, currency="INR").replace("₹", "").strip()
 
 
-# Certificate rows are Fee Components in this order of group, then any other
-# component in the order its demand was raised. Groups are matched on keywords in the
-# component name or its component_type, because sites name their types differently
-# (e.g. "Tuition Fee" vs "Tuition and Facilities Fee").
-ADMISSION, READMISSION, TUITION, HOUSING, REFUNDABLE, OTHER = range(6)
+# Certificate rows are Fee Components in group order (slcm.slcm.fee.component_groups),
+# then any other component in the order its demand was raised.
 # Printed particulars for the per-annum groups; every other component prints as
 # "<name> – one time".
 PER_ANNUM_LABELS = {
@@ -277,63 +280,15 @@ def _year_offset(student, academic_year_doc):
 
 
 def _ordinal_year_for(student, academic_year_doc):
-	"""Roman-numeral ordinal (I/II/III...) of the student's year of study."""
+	"""Roman-numeral ordinal (I/II/III...) of the student's year of study in
+	academic_year_doc, counted from their joining year (Student Master academic_year):
+	joined 2023-24 -> 2023-24 I, 2024-25 II, 2025-26 III, 2026-27 IV."""
 	diff = _year_offset(student, academic_year_doc)
-	if diff is None:
+	if diff is None or diff < 0:
 		return ""
 	if 0 <= diff < len(ORDINALS):
 		return ORDINALS[diff]
 	return str(diff + 1)
-
-
-def _roman_to_int(text):
-	values = {"I": 1, "V": 5, "X": 10, "L": 50}
-	total, prev = 0, 0
-	for ch in reversed(text.upper()):
-		value = values.get(ch, 0)
-		total = total - value if value < prev else total + value
-		prev = max(prev, value)
-	return total
-
-
-def _student_year_now(student):
-	"""The year of study the student is in now, as a number (0 if unknown).
-
-	Student Master "Current Year No" holds either a number ("1") or the trimester /
-	semester the student is in ("Trimester VII - AY 2023-2024": three trimesters a
-	year, so III year). "Current Year" ("2nd Year") is used when it is a plain year."""
-	if student.get("is_applicant"):
-		return 0
-	text = (student.get("current_year") or "").strip()
-	term = re.match(r"(trimester|semester)\s+([ivxl]+|\d+)\b", text, re.I)
-	if term:
-		number = cint(term.group(2)) or _roman_to_int(term.group(2))
-		per_year = 3 if term.group(1).lower() == "trimester" else 2
-		return (number + per_year - 1) // per_year if number else 0
-	if re.fullmatch(r"\d{1,2}", text):
-		return cint(text)
-	plain = re.fullmatch(r"\s*(\d{1,2})(st|nd|rd|th)?\s*year\s*", student.get("year_of_study") or "", re.I)
-	return cint(plain.group(1)) if plain else 0
-
-
-def _ordinal(number):
-	if 0 < number <= len(ORDINALS):
-		return ORDINALS[number - 1]
-	return str(number) if number > 0 else ""
-
-
-def _student_year_for(student, academic_year_doc):
-	"""Roman numeral of the student's year of study in academic_year_doc, counted back
-	(or forward) from their year now in the current Academic Year: III year now means
-	I year two academic years ago. "" when unknown (callers fall back to the batch offset)."""
-	number = _student_year_now(student)
-	current_ay = get_current_academic_year()
-	if not number or not current_ay or not academic_year_doc.year_start_date:
-		return ""
-	current_start = frappe.db.get_value("Academic Year", current_ay, "year_start_date")
-	if not current_start:
-		return ""
-	return _ordinal(number - (getdate(current_start).year - getdate(academic_year_doc.year_start_date).year))
 
 
 def _duration_words(years):
@@ -482,23 +437,6 @@ def _component_types(fee_components):
 			as_list=1,
 		)
 	)
-
-
-def _row_group(component, component_type=None):
-	"""ADMISSION / READMISSION / TUITION / HOUSING / REFUNDABLE / OTHER, from keywords
-	in the Fee Component name and its component_type."""
-	text = f"{component or ''} {component_type or ''}".lower()
-	if "re-admission" in text or "readmission" in text or "re admission" in text:
-		return READMISSION
-	if "admission" in text:
-		return ADMISSION
-	if "tuition" in text and "registration" not in text:
-		return TUITION
-	if "hostel" in text or "housing" in text:
-		return HOUSING
-	if "refundable" in text or "deposit" in text:
-		return REFUNDABLE
-	return OTHER
 
 
 def _ordered_components(components):
@@ -698,12 +636,10 @@ def get_fee_certificate_context(request_name):
 		"programme": programme,
 		"programme_duration": _duration_words(_programme_duration(student)),
 		"academic_year": _short_ay_label(first_ay),
-		"current_year": (
-			(certificate_type == SINGLE_YEAR_RECEIPT and _student_year_for(student, first_ay))
-			or _ordinal_year_for(student, first_ay)
-		),
-		# The student now: year of study from Student Master and the current Academic Year.
-		"studying_year": _ordinal(_student_year_now(student)) or _ordinal_year_for(student, current_ay_doc),
+		# Year of study in the requested Academic Year, and now (the current Academic Year),
+		# both counted from the student's joining year.
+		"current_year": _ordinal_year_for(student, first_ay),
+		"studying_year": _ordinal_year_for(student, current_ay_doc),
 		"current_academic_year": _short_ay_label(current_ay_doc),
 		"due_year": (
 			(ORDINALS[due["programme_year"] - 1] if 0 < due["programme_year"] <= len(ORDINALS) else str(due["programme_year"]))

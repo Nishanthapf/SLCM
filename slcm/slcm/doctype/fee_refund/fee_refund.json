@@ -26,6 +26,7 @@
   "column_break_2",
   "refund_date",
   "refund_mode",
+  "university_bank_account",
   "section_bank",
   "account_holder_name",
   "bank_name",
@@ -189,6 +190,14 @@
    "reqd": 1
   },
   {
+   "description": "The university account the refund is paid from (same list as Fee Payment).",
+   "fieldname": "university_bank_account",
+   "fieldtype": "Select",
+   "label": "University Bank Account",
+   "options": "\nHDFC Bank General 50100508244465\nICICI Bank General 231701001061\nUBI Bank General 520101045114133\nUBI Bank Scholarship 520101045115105",
+   "reqd": 1
+  },
+  {
    "description": "Required for NEFT, Cheque and Online refunds. Pre-filled from the student's savings account.",
    "fieldname": "section_bank",
    "fieldtype": "Section Break",
@@ -291,7 +300,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-11-17 10:30:00.000000",
+ "modified": "2026-11-19 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Fee Refund",

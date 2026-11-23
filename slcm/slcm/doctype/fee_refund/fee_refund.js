@@ -3,6 +3,24 @@ frappe.ui.form.on("Fee Refund", {
 		_show_available_excess(frm);
 	},
 
+	// Opened from Student Due Details (Issue Refund for Due / Issue Refund): go back there once saved.
+	after_save(frm) {
+		const student = frappe.flags.sfm_refund_return;
+		if (!student || student !== frm.doc.student) return;
+		frappe.flags.sfm_refund_return = null;
+		frappe.show_alert({
+			message: frm.doc.docstatus === 0
+				? __("Refund {0} saved as Draft. Open it from the Refunds list to submit it.", [frm.doc.name])
+				: __("Refund {0} saved.", [frm.doc.name]),
+			indicator: frm.doc.docstatus === 0 ? "orange" : "green",
+		}, 7);
+		// after the form's own save work (renaming new-fee-refund-… to its real name re-routes to the form)
+		frappe.after_ajax(() => {
+			frappe.route_options = { sfm_tab: "excess" };
+			frappe.set_route("student-fee-management", student);
+		});
+	},
+
 	refund_source(frm) {
 		if (frm.doc.refund_source === "Excess Amount") {
 			frm.set_value("fee_demand", "");

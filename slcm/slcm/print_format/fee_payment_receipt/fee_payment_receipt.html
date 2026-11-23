@@ -1,5 +1,5 @@
 {% set org_name = "NATIONAL LAW SCHOOL OF INDIA UNIVERSITY" %}
-{% set logo     = "/files/nlsiu-logo.jpg" %}
+{% set logo     = get_nls_logo() %}
 
 {% set sm = frappe.get_doc("Student Master", doc.student, ignore_permissions=True) if doc.student else None %}
 {% set student_full     = ([sm.first_name or "", sm.middle_name or "", sm.last_name or ""] | select | join(" ")) if sm else (doc.student_name or doc.student or "—") %}

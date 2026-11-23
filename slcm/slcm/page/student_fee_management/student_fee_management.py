@@ -167,7 +167,9 @@ def _student_base(academic_year=None, academic_term=None, programme=None, dues_s
 	if search:
 		conditions.append(
 			"(sm.name LIKE %(search)s OR sm.first_name LIKE %(search)s "
-			"OR sm.registration_id LIKE %(search)s OR sm.official_email_id LIKE %(search)s)"
+			"OR sm.registration_id LIKE %(search)s OR sm.application_number LIKE %(search)s "
+			# a student's address may be in any of the three email fields
+			"OR sm.official_email_id LIKE %(search)s OR sm.email LIKE %(search)s OR sm.personal_email LIKE %(search)s)"
 		)
 		values["search"] = f"%{search.strip()}%"
 
@@ -353,6 +355,168 @@ def download_receipts_zip(student, receipts):
 		frappe.throw(_("None of the selected receipts could be downloaded.") + ("<br>" + "<br>".join(errors) if errors else ""))
 	reg = frappe.db.get_value("Student Master", student, "registration_id") or student
 	frappe.local.response.filename = f"Receipts-{reg}.zip".replace(" ", "-").replace("/", "-")
+	frappe.local.response.filecontent = buffer.getvalue()
+	frappe.local.response.type = "download"
+
+
+@frappe.whitelist()
+def export_student_dues(student, demands, view=None):
+	"""Excel (.xlsx) of the student's dues as shown on Manage Dues (the current filter, or the selected rows).
+	demands: JSON list of Fee Demand names in on-screen order; each must belong to the student.
+	view: short text describing what was exported (e.g. "Pending · Tuition Fee"), printed above the table."""
+	import io
+	import json
+
+	from openpyxl import Workbook
+	from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+	from openpyxl.utils import get_column_letter
+
+	_check_access()
+	if not frappe.db.exists("Student Master", student):
+		frappe.throw(_("Student {0} not found.").format(student))
+	names = list(dict.fromkeys(json.loads(demands) if isinstance(demands, str) else demands or []))
+	if not names:
+		frappe.throw(_("There are no dues to export."))
+
+	rows = {
+		d.name: d
+		for d in frappe.get_all(
+			"Fee Demand",
+			filters={"name": ["in", names], "student": student},
+			fields=[
+				"name", "demand_type", "fee_component", "description", "status", "demand_date", "due_date",
+				"creation", "academic_year", "original_amount", "penalty_amount", "waiver_amount", "net_payable",
+				"paid_amount", "credit_adjusted", "outstanding_amount", "moved_to_excess_amount", "remarks",
+			],
+		)
+	}
+	ordered = [rows[n] for n in names if n in rows]  # names of another student are dropped
+	if not ordered:
+		frappe.throw(_("None of the selected dues belong to this student."))
+
+	receipts = {}
+	for r in frappe.db.sql(
+		"""SELECT rdp.fee_demand, fr.name
+		FROM `tabFee Receipt Demands Paid` rdp
+		JOIN `tabFee Receipt` fr ON fr.name = rdp.parent AND rdp.parenttype = 'Fee Receipt'
+		WHERE fr.student = %s AND IFNULL(fr.status, '') != 'Cancelled'
+		ORDER BY fr.receipt_date, fr.creation""",
+		student,
+		as_dict=True,
+	):
+		receipts.setdefault(r.fee_demand, [])
+		if r.name not in receipts[r.fee_demand]:
+			receipts[r.fee_demand].append(r.name)
+
+	sm = frappe.db.get_value(
+		"Student Master", student, ["first_name", "registration_id", "programme_of_study"], as_dict=True
+	)
+	programme = (
+		frappe.db.get_value("Programme", sm.programme_of_study, "program_name") or sm.programme_of_study
+		if sm.programme_of_study
+		else ""
+	)
+
+	def status_of(d):
+		# Same rule as sfm_demand_status on the page
+		if d.status == "Cancelled" and flt(d.moved_to_excess_amount) > 0:
+			return "Cancelled & Moved to Excess"
+		return d.status or ""
+
+	columns = [
+		# (header, width, value, is_amount)
+		("Sl No.", 7, None, False),
+		("Fee Component", 28, lambda d: d.fee_component or "", False),
+		("Demand Type", 16, lambda d: d.demand_type or "", False),
+		("Academic Year", 15, lambda d: d.academic_year or "", False),
+		("Voucher No.", 17, lambda d: d.name, False),
+		("Due Status", 18, status_of, False),
+		("Date of Creation", 15, lambda d: getdate(d.demand_date or d.creation), False),
+		("Due Date", 12, lambda d: getdate(d.due_date) if d.due_date else None, False),
+		("Total Fee Payable", 16, lambda d: flt(d.original_amount, 2), True),
+		("Penalty", 12, lambda d: flt(d.penalty_amount, 2), True),
+		("Scholarship / Waiver", 18, lambda d: flt(d.waiver_amount, 2), True),
+		("Net Fee Payable", 16, lambda d: flt(d.net_payable, 2), True),
+		("Paid Amount", 15, lambda d: flt(flt(d.paid_amount) + flt(d.credit_adjusted), 2), True),
+		("Pending Amount", 15, lambda d: flt(d.outstanding_amount, 2), True),
+		("Remark", 40, lambda d: d.remarks or d.description or "", False),
+		("Receipt No(s).", 24, lambda d: ", ".join(receipts.get(d.name, [])), False),
+	]
+	n_cols = len(columns)
+	money_fmt = "#,##0.00"
+	bold = Font(bold=True)
+	thin = Side(style="thin", color="BFBFBF")
+	border = Border(left=thin, right=thin, top=thin, bottom=thin)
+	head_fill = PatternFill("solid", fgColor="920C24")
+
+	wb = Workbook()
+	ws = wb.active
+	ws.title = "Dues"
+
+	ws.append(["Student Due Details"])
+	ws["A1"].font = Font(bold=True, size=14, color="920C24")
+	info = [
+		("Student", f"{sm.first_name or ''} ({student})".strip()),
+		("Registration ID", sm.registration_id or "—"),
+		("Programme", programme or "—"),
+		("Showing", (view or "All dues").strip()[:140]),
+		("Exported on", frappe.utils.format_datetime(frappe.utils.now_datetime(), "dd-MM-yyyy hh:mm a")),
+	]
+	# One cell per line ("Label: value"), so it spills over the empty cells beside it instead of being cut off
+	# by the narrow Sl No. column.
+	for label, value in info:
+		ws.append([f"{label}: {value}"])
+	ws.append([])
+
+	ws.append([c[0] for c in columns])
+	header_row = ws.max_row  # read after appending: an empty append() above does not move max_row
+	for i in range(1, n_cols + 1):
+		cell = ws.cell(row=header_row, column=i)
+		cell.font = Font(bold=True, color="FFFFFF")
+		cell.fill = head_fill
+		cell.border = border
+		cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+	ws.row_dimensions[header_row].height = 30
+
+	for idx, d in enumerate(ordered, 1):
+		ws.append([idx] + [c[2](d) for c in columns[1:]])
+		r = ws.max_row
+		for i, c in enumerate(columns, 1):
+			cell = ws.cell(row=r, column=i)
+			cell.border = border
+			cell.alignment = Alignment(vertical="top", wrap_text=(c[0] == "Remark"))
+			if c[3]:
+				cell.number_format = money_fmt
+			elif c[0] in ("Due Date", "Date of Creation"):
+				cell.number_format = "DD-MM-YYYY"
+
+	first, last = header_row + 1, ws.max_row
+	total = ["Total"] + [""] * (n_cols - 1)
+	ws.append(total)
+	tr = ws.max_row
+	for i, c in enumerate(columns, 1):
+		cell = ws.cell(row=tr, column=i)
+		cell.font = bold
+		cell.border = Border(top=Side(style="medium"), bottom=Side(style="double"))
+		if c[3]:
+			col = get_column_letter(i)
+			cell.value = f"=SUM({col}{first}:{col}{last})"
+			cell.number_format = money_fmt
+
+	for i, c in enumerate(columns, 1):
+		ws.column_dimensions[get_column_letter(i)].width = c[1]
+	ws.freeze_panes = ws.cell(row=header_row + 1, column=3)
+	ws.auto_filter.ref = f"A{header_row}:{get_column_letter(n_cols)}{last}"
+	ws.page_setup.orientation = "landscape"
+	ws.page_setup.fitToWidth = 1
+	ws.page_setup.fitToHeight = 0
+	ws.sheet_properties.pageSetUpPr.fitToPage = True
+	ws.print_title_rows = f"{header_row}:{header_row}"
+
+	buffer = io.BytesIO()
+	wb.save(buffer)
+	reg = sm.registration_id or student
+	frappe.local.response.filename = f"Dues-{reg}-{frappe.utils.today()}.xlsx".replace(" ", "-").replace("/", "-")
 	frappe.local.response.filecontent = buffer.getvalue()
 	frappe.local.response.type = "download"
 
@@ -1075,6 +1239,8 @@ def apply_concession(student, fee_demand, concession_type, waiver_value, reason,
 	reason = (reason or "").strip()
 	if not reason:
 		frappe.throw(_("Reason is mandatory."))
+	if not concession_date:
+		frappe.throw(_("Date of concession is mandatory."))
 	if flt(waiver_value) <= 0:
 		frappe.throw(_("Waiver Value must be greater than zero."))
 	demand = frappe.db.get_value(
@@ -1096,7 +1262,7 @@ def apply_concession(student, fee_demand, concession_type, waiver_value, reason,
 		"fee_demand": fee_demand,
 		"concession_type": concession_type,
 		"waiver_value": flt(waiver_value),
-		"concession_date": concession_date or frappe.utils.today(),
+		"concession_date": concession_date,
 		"reason": reason,
 	})
 	doc.flags.ignore_permissions = True
@@ -1115,6 +1281,8 @@ def edit_concession(student, concession, concession_type, waiver_value, reason, 
 	reason = (reason or "").strip()
 	if not reason:
 		frappe.throw(_("Reason is mandatory."))
+	if not concession_date:
+		frappe.throw(_("Date of concession is mandatory."))
 	if flt(waiver_value) <= 0:
 		frappe.throw(_("Waiver Value must be greater than zero."))
 	doc = _active_concession(concession, student)
@@ -1128,7 +1296,7 @@ def edit_concession(student, concession, concession_type, waiver_value, reason, 
 			"fee_demand": doc.fee_demand,
 			"concession_type": concession_type,
 			"waiver_value": flt(waiver_value),
-			"concession_date": concession_date or doc.concession_date,
+			"concession_date": concession_date,
 			"reason": reason,
 			"amended_from": doc.name,
 		})
@@ -1184,11 +1352,14 @@ def refund_from_excess(
 	transaction_date=None,
 	remarks=None,
 	account_holder_name=None,
+	university_bank_account=None,
 ):
 	"""Refund part or all of the student's excess: a submitted Fee Refund (source Excess Amount)
 	that draws down their active Student Credit Notes, oldest first."""
 	_check_access()
 	remarks = _require_remarks(remarks, _("Reason for Refund"))
+	if not university_bank_account:
+		frappe.throw(_("University Bank Account is mandatory."))
 	if flt(amount) <= 0:
 		frappe.throw(_("Amount must be greater than zero."))
 	if refund_mode in ("NEFT", "Cheque", "Online") and not (account_holder_name and bank_name and account_number and ifsc_code):
@@ -1205,6 +1376,7 @@ def refund_from_excess(
 		"refund_amount": flt(amount),
 		"refund_date": refund_date or today(),
 		"refund_mode": refund_mode,
+		"university_bank_account": university_bank_account,
 		"account_holder_name": account_holder_name,
 		"bank_name": bank_name,
 		"account_number": account_number,

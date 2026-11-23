@@ -434,6 +434,7 @@
    "collapsible": 1,
    "fieldname": "fee_structure_history_section",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Fee Structure Change History"
   },
   {
@@ -1795,7 +1796,7 @@
  ],
  "image_field": "passport_size_photo",
  "links": [],
- "modified": "2026-11-17 14:25:56.450423",
+ "modified": "2026-11-19 11:36:25.720503",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Student Master",

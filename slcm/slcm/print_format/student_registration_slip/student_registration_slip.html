@@ -1,6 +1,6 @@
 {%- set full_name = [doc.first_name, doc.middle_name, doc.last_name] | select | join(' ') -%}
 {%- set photo = doc.passport_size_photo or doc.student_image or '' -%}
-{%- set logo_url = '/files/nlsiu-logo.jpg' -%}
+{%- set logo_url = get_nls_logo() -%}
 
 <style>
   /* ── Base ── */
