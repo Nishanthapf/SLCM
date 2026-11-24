@@ -1259,7 +1259,7 @@ class ExamPlanner {
 				</div>
 				<div class="xp-table"><table class="table table-sm xp-ct"><thead><tr>
 					<th>${__('Course')}</th><th class="num">${__('Students')}</th><th class="num">${__('Detained')}</th><th class="num">${__('Barcodes')}</th>
-					<th>${__('Marks entered')}</th><th>${__('Evaluators')}</th><th>${__('Status')}</th><th></th></tr></thead><tbody>
+					<th class="num">${__('Marks entered')}</th><th>${__('Evaluators')}</th><th>${__('Status')}</th><th></th></tr></thead><tbody>
 				${rows.map((r) => {
 					const m = r.mk || {}, n = m.students || 0, [cls, label] = status(r);
 					const missing = r.in_classes - r.synced;
@@ -1684,7 +1684,7 @@ class ExamPlanner {
 			.xp-pub-bar.on b{color:var(--text-on-green,#1d6b3a)}
 			.xp-rx-tt{border:1px solid var(--border-color);border-radius:10px;padding:14px;margin-bottom:16px}
 			.xp-ct tbody tr.xp-crow{cursor:pointer}.xp-ct tbody tr.xp-crow:hover td{background:var(--er-brand-softest,#FBEEF0)}
-			.xp-ct td.act{text-align:right;white-space:nowrap}.xp-ct td small{color:var(--text-muted)}.xp-warn-text{color:var(--text-on-yellow,#8a5a00)!important}
+			.xp-ct th.num,.xp-ct td.num{text-align:center;width:110px;white-space:nowrap;font-variant-numeric:tabular-nums}.xp-ct th,.xp-ct td{padding-left:14px;padding-right:14px}.xp-ct th:nth-child(6),.xp-ct td:nth-child(6){min-width:140px}.xp-ct th:nth-child(7),.xp-ct td:nth-child(7){width:130px;white-space:nowrap}.xp-ct td:nth-child(7) .xp-pill{margin-left:-7px}.xp-ct td.act{text-align:right;white-space:nowrap;width:1%}.xp-ct td small{color:var(--text-muted)}.xp-warn-text{color:var(--text-on-yellow,#8a5a00)!important}
 			.xp-course-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid var(--border-color)}
 			.xp-course-head h4{margin:0 0 0 6px;font-family:var(--er-font);font-size:16px;font-weight:700}
 			.xp-rtabs{display:flex;gap:4px;border-bottom:1px solid var(--border-color);margin-bottom:14px;overflow-x:auto}

@@ -183,7 +183,9 @@ slcm.exam_ui.course_results = function (main, opts) {
 
 		/* ── Student status filter bar ── */
 		.er2-status-bar { padding:6px 12px; background:#f8fafc; border-bottom:1.5px solid #f1f5f9;
-		                  display:flex; align-items:center; gap:6px; }
+		                  display:flex; align-items:center; gap:6px;
+		                  position:sticky; top:0; z-index:9; }
+		.er2-align-spacer { position:sticky; z-index:9; background:#fff; }
 
 		/* ── Student row ── */
 		.er2-srow    { display:flex; align-items:center; gap:10px; padding:0 13px;
@@ -2840,15 +2842,26 @@ slcm.exam_ui.course_results = function (main, opts) {
 		// student row[i] aligns pixel-perfectly with marks data row[i].
 		setTimeout(function () {
 			var $thead   = $mtable.find('table thead');
+			// Stack the 3 header rows (component / assessment / Marks): each row
+			// sticks just below the rows above it instead of all at top:0.
+			var rowTop = 0;
+			$thead.find('tr').each(function () {
+				var top = rowTop;
+				$(this).children('th').each(function () { this.style.top = top + 'px'; });
+				rowTop += this.getBoundingClientRect().height;
+			});
 			var theadH   = $thead.length ? $thead.outerHeight(true) : 0;
 			var lhdrH    = $left.find('.er2-lhdr').outerHeight(true)      || 0;
 			var stbarH   = $left.find('.er2-status-bar').outerHeight(true) || 0;
 			var leftHdrH = lhdrH + stbarH;
 			var spacerH  = Math.max(0, theadH - leftHdrH);
+			// Keep the left header block as tall as the pinned marks header so
+			// scroll-synced student rows never slide under it out of line.
+			$left.find('.er2-status-bar').css('top', lhdrH + 'px');
 			$slist.find('.er2-align-spacer').remove();
 			if (spacerH > 0) {
 				$slist.prepend(
-					'<div class="er2-align-spacer" style="height:' + spacerH + 'px;flex-shrink:0;"></div>'
+					'<div class="er2-align-spacer" style="height:' + spacerH + 'px;flex-shrink:0;top:' + leftHdrH + 'px;"></div>'
 				);
 			}
 		}, 30);
