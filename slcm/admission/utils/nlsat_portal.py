@@ -62,20 +62,31 @@ def set_portal_cookie(portal_type):
 
 
 def get_applicant_portal_type(user=None):
-	"""Portal type of the user's latest Applicant record (foriegn_national = Yes →
-	International), else the portal they signed up on (User.nlsat_portal)."""
+	"""The candidate's NLSAT portal: User.nlsat_portal (set at sign-up, changed only by
+	the admission office), else their latest Applicant record (foriegn_national = Yes →
+	International), else None."""
 	user = user or frappe.session.user
 	if not user or user == "Guest":
 		return None
+	return get_user_signup_portal(user) or get_latest_application_portal(user)
+
+
+def get_latest_application_portal(user):
+	"""Portal of the user's latest Applicant record with Foreign National filled, else None."""
 	foreign = frappe.db.get_value(
-		"Applicant", {"email": user}, "foriegn_national", order_by="creation desc"
+		"Applicant",
+		{"email": user, "foriegn_national": ["in", ("Yes", "No")]},
+		"foriegn_national",
+		order_by="creation desc",
 	)
-	if foreign is None:
-		return get_user_signup_portal(user)
-	return INTERNATIONAL if (foreign or "").strip() == "Yes" else DOMESTIC
+	if not foreign:
+		return None
+	return INTERNATIONAL if foreign == "Yes" else DOMESTIC
 
 
 USER_PORTAL_FIELD = "nlsat_portal"
+USER_REGISTRATION_URL_FIELD = "nlsat_registration_url"
+REGISTRATION_URL_MAX_LENGTH = 2000
 
 
 def get_user_signup_portal(user):
@@ -92,6 +103,86 @@ def set_user_signup_portal(user, portal_type):
 		frappe.db.set_value(
 			"User", user, USER_PORTAL_FIELD, normalize_portal_type(portal_type), update_modified=False
 		)
+
+
+def set_user_registration_url(user, portal_type=None):
+	"""Remember the full URL of the page a user signed up from (User.nlsat_registration_url).
+
+	Taken from the sign-up request's Referer (browsers never send the #fragment); when
+	there is none, the portal's base URL on the domain the user is on."""
+	if not frappe.db.has_column("User", USER_REGISTRATION_URL_FIELD):
+		return
+	req = getattr(frappe.local, "request", None)
+	url = (req.headers.get("Referer") if req else "") or ""
+	if not url.startswith(("http://", "https://")):
+		url = get_portal_url(PORTAL_BASES[normalize_portal_type(portal_type)], portal_type, use_request_host=True)
+	frappe.db.set_value(
+		"User", user, USER_REGISTRATION_URL_FIELD, url[:REGISTRATION_URL_MAX_LENGTH], update_modified=False
+	)
+
+
+def get_portal_applicant_type_error(foriegn_national, user=None):
+	"""Message refusing Foreign National `foriegn_national` ("Yes" / "No") for the candidate's
+	portal, else None.
+
+	Domestic candidates apply only as Indian nationals (No) and International candidates only
+	as foreign nationals (Yes). Only candidate accounts (website users with just the Applicant
+	role) are checked: staff, PACE-only applicants and guests are not. An empty value is not
+	checked (the form asks for it before submission).
+
+	The portal is User.nlsat_portal, else the latest application. For an account with neither
+	(signed up before the portal was recorded), the portal cookie set by the login page is used
+	once and saved to User.nlsat_portal, so it cannot be changed by the candidate afterwards.
+	"""
+	from slcm.security.access import is_applicant_only
+
+	user = user or frappe.session.user
+	if not user or user == "Guest" or not is_applicant_only(user) or _is_pace_only(user):
+		return None
+
+	fn = (foriegn_national or "").strip().lower()
+	if fn in ("yes", "true", "1"):
+		wanted = INTERNATIONAL
+	elif fn in ("no", "false", "0"):
+		wanted = DOMESTIC
+	else:
+		return None
+
+	portal = get_applicant_portal_type(user)
+	if not portal:
+		portal = get_portal_cookie()
+		if not portal:
+			return (
+				"We could not identify your admission portal. Please log in again through the "
+				"Indian Nationals or International Candidates portal to continue your application."
+			)
+		set_user_signup_portal(user, portal)
+
+	if portal == wanted:
+		return None
+	if portal == DOMESTIC:
+		return (
+			"You are registered on the Indian Nationals portal, so you can apply only as an "
+			"Indian national. If you are a foreign national, please contact the admission office "
+			"to move your registration to the International Candidates portal."
+		)
+	return (
+		"You are registered on the International Candidates portal, so you can apply only as a "
+		"foreign national. If you are an Indian national, please contact the admission office "
+		"to move your registration to the Indian Nationals portal."
+	)
+
+
+def validate_applicant_portal(doc, method=None):
+	"""Applicant validate: a candidate's Foreign National must match their NLSAT portal.
+
+	Runs for every save by the candidate (application form, REST API, web form), so it also
+	blocks applications of the other type left over after the admission office moved the
+	candidate to another portal, until staff update them. Staff saving from the desk are
+	not checked."""
+	error = get_portal_applicant_type_error(doc.get("foriegn_national"))
+	if error:
+		frappe.throw(error, title="Wrong admission portal")
 
 
 # The NLSAT login pages send this with the sign-in: the portal the page belongs to.
@@ -142,7 +233,8 @@ def enforce_login_portal(login_manager=None):
 	portal an email belongs to. Refused, with a message saying where to log in:
 	  * a PACE-only applicant on either NLSAT login page;
 	  * an Indian National applicant on the International login page, and vice versa
-	    (portal from their latest application, else the portal they signed up on).
+	    (User.nlsat_portal, else the portal of their latest application).
+	An account with no portal yet gets this page's portal saved as its User.nlsat_portal.
 	  * any desk user (System User, System Managers included): sent to the desk login page.
 	Accounts whose portal is unknown, Administrator and sign-ins from any other
 	page are let through.
@@ -162,6 +254,11 @@ def enforce_login_portal(login_manager=None):
 	registered = get_applicant_portal_type(user)
 	if registered and registered != page_portal:
 		frappe.throw(WRONG_PORTAL_MESSAGES[registered], WrongPortalLogin)
+
+	# Accounts that signed up before the portal was recorded: the first NLSAT login
+	# page they sign in on becomes their portal (only the admission office changes it later).
+	if not get_user_signup_portal(user) and "Applicant" in frappe.get_roles(user):
+		set_user_signup_portal(user, page_portal)
 
 
 def enforce_portal_access(portal_type):

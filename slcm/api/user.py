@@ -965,13 +965,14 @@ def custom_sign_up(email, full_name, mobile_no=None, redirect_to=None, portal=No
         parsed = urllib.parse.urlparse(frappe_link)
         from slcm.security.access import safe_redirect_path
         from slcm.admission.utils.nlsat_portal import (
-            get_portal_url, get_request_portal_type, set_user_signup_portal,
+            get_portal_url, get_request_portal_type, set_user_registration_url, set_user_signup_portal,
         )
 
         # The portal (Domestic / International) the user is signing up on; the
         # links in the email use the domain they are on (or that portal's domain).
         portal_type = get_request_portal_type(portal, redirect_to)
         set_user_signup_portal(user_doc.name, portal_type)
+        set_user_registration_url(user_doc.name, portal_type)
         base_redir = safe_redirect_path(redirect_to, None) or get_portal_base(portal_type)
         correct_link = get_portal_url(
             f"/update-password?{parsed.query}&redirect_to={urllib.parse.quote(base_redir)}",
