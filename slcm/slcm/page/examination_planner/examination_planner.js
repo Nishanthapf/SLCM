@@ -1395,11 +1395,11 @@ class ExamPlanner {
 	// ── 4. Results & publish ───────────────────────────────────────────
 	render_results() {
 		const TABS = [
-			['term', __('Term results'), 'term_results'],
 			['publish', __('Publish'), 'publish_results'],
 			['settings', __('What students see'), 'result_settings'],
+			['term', __('Term results'), 'term_results'],
 		];
-		this.results_tab = this.results_tab || 'term';
+		this.results_tab = this.results_tab || 'publish';
 		this.$body.html(`<div class="xp-card xp-rtabs-card"><div class="xp-rtabs">${TABS.map(([k, l]) => `<button class="xp-rtab ${k === this.results_tab ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
 			<div class="xp-mount"></div></div>`);
 		const $mount = this.$body.find('.xp-mount');

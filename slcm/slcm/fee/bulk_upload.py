@@ -20,6 +20,7 @@ from frappe.utils import flt, today
 # Dues columns shared by the Concession and Payment sheets: (header, width, key in the dues row)
 DUES_COLUMNS = [
 	("Registration ID", 38, "registration_id"),
+	("Student Name", 30, "student_name"),
 	("Student Email Id", 30, "student_email"),
 	("Fee Component", 39, "fee_component"),
 	("Voucher Number", 19, "name"),
@@ -34,6 +35,10 @@ DUES_COLUMNS = [
 	("Paid Amount", 13, "paid_amount"),
 	("Pending Amount", 14, "outstanding_amount"),
 ]
+
+DUES_MONEY_COLUMNS = ("Original Amount", "Penalty Amount", "Scholarship / Waiver Amount", "Total Payable",
+	"Paid Amount", "Pending Amount")
+DUES_MONEY_INDEXES = [i for i, (h, _w, _k) in enumerate(DUES_COLUMNS) if h in DUES_MONEY_COLUMNS]
 
 # Input columns (yellow) per pre-filled template: (header, width, kind)
 #   kind: "money" | "date" | "select:<fieldname>" (dropdown from that field's options) | None (free text)
@@ -81,9 +86,10 @@ PREFILLED = {
 }
 
 # Fee Demand creation sheet: (header, width, required, kind)
-DEMAND_COLUMNS = [
+DEMAND_COLUMNS = [  # give Registration ID or Student
 	("Voucher No.", 16, False, "auto"),
-	("Student", 18, True, "student"),
+	("Registration ID", 18, True, "registration_id"),
+	("Student", 18, False, "student"),
 	("Student Email ID", 30, True, None),
 	("Student Name", 26, False, None),
 	("Academic Year", 14, False, "academic_year"),
@@ -236,7 +242,9 @@ def get_open_dues(doctype, academic_year=None, programme=None, fee_component=Non
 			fd.original_amount, fd.penalty_amount, fd.waiver_amount, fd.net_payable,
 			fd.paid_amount, fd.outstanding_amount,
 			IFNULL(NULLIF(sm.registration_id, ''), sm.application_number) AS registration_id,
-			IFNULL(NULLIF(sm.official_email_id, ''), sm.email) AS student_email
+			IFNULL(NULLIF(sm.official_email_id, ''), sm.email) AS student_email,
+			TRIM(CONCAT_WS(' ', NULLIF(sm.first_name, ''), NULLIF(sm.middle_name, ''), NULLIF(sm.last_name, '')))
+				AS student_name
 		FROM `tabFee Demand` fd
 		LEFT JOIN `tabStudent Master` sm ON sm.name = fd.student
 		WHERE {" AND ".join(conditions)}
@@ -271,7 +279,7 @@ def download_template(doctype, academic_year=None, programme=None, fee_component
 	headers = [h for h, _w, _k in DUES_COLUMNS] + [h for h, _w, _k in cfg["inputs"]]
 	rows = [[d.get(key) for _h, _w, key in DUES_COLUMNS] + [None] * len(cfg["inputs"]) for d in dues]
 	for row in rows:
-		for i in range(8, 14):  # amounts
+		for i in DUES_MONEY_INDEXES:
 			row[i] = flt(row[i])
 	filename = "{0} - {1}".format(cfg["filename"], today())
 	if csv:
@@ -292,7 +300,7 @@ def download_template(doctype, academic_year=None, programme=None, fee_component
 	for row in rows:
 		ws.append(row)
 	last = max(ws.max_row, 2)
-	_format(ws, col, last, dates=("Date of creation", "Due Date"), money=[h for h, _w, _k in DUES_COLUMNS[8:]])
+	_format(ws, col, last, dates=("Date of creation", "Due Date"), money=[DUES_COLUMNS[i][0] for i in DUES_MONEY_INDEXES])
 	for h, _w, kind in cfg["inputs"]:
 		if kind == "money":
 			_format(ws, col, last, money=[h])
@@ -331,6 +339,12 @@ def _demand_template(academic_year, programme, csv):
 			cell.comment = Comment(_("Original − Waiver + Penalty; recalculated by the system."), "SLCM")
 		elif h == "Academic Year":
 			cell.comment = Comment(_("Optional — defaults to the student's academic year."), "SLCM")
+		elif h == "Registration ID":
+			cell.comment = Comment(
+				_("The student's Registration ID (see the Students sheet). Or fill Student with the system ID instead."), "SLCM"
+			)
+		elif h == "Student":
+			cell.comment = Comment(_("Optional when Registration ID is filled."), "SLCM")
 
 	g, hh, i = col["Original Amount"], col["Waiver Amount"], col["Penalty Amount"]
 	for r in range(2, last + 1):
@@ -353,6 +367,7 @@ def _demand_template(academic_year, programme, csv):
 	ref.freeze_panes = "A2"
 	if students:
 		_range_validation(ws, col["Student"], last, f"=Students!$A$2:$A${len(students) + 1}", "Student")
+		_range_validation(ws, col["Registration ID"], last, f"=Students!$B$2:$B${len(students) + 1}", "Registration ID")
 	_list_validation(wb, ws, col["Academic Year"], last, "Academic Year", frappe.get_all("Academic Year", pluck="name", order_by="name desc"))
 	_list_validation(wb, ws, col["Fee Component"], last, "Fee Component", frappe.get_all("Fee Component", pluck="name", order_by="name"))
 	return _xlsx_response(wb, filename)
