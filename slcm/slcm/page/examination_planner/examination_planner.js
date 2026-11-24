@@ -1668,6 +1668,14 @@ class ExamPlanner {
 		if (document.getElementById('xp-styles')) return;
 		$('head').append(`<style id="xp-styles">
 			.xp-wrap{display:flex;flex-direction:column;gap:16px;padding:8px 0 40px}
+			/* NLSIU maroon on every action button of this page (header, planner and the
+			   screens mounted in steps 3-5). Scoped to the page so other desk pages keep
+			   Frappe's look; step cards, tabs, pagination and the maroon-header Sort are left alone. */
+			#page-examination-planner :is(.btn-default,.btn-secondary,.er2-btn,.tr-btn,.pr-btn,.rs-btn):not(.primary):not(.danger):not(.btn-primary){background:#fff;border:1px solid var(--er-brand-border,#E8B4BE);color:var(--er-brand,#920C24)}
+			#page-examination-planner :is(.btn-default,.btn-secondary,.er2-btn,.tr-btn,.pr-btn,.rs-btn):not(.primary):not(.danger):not(.btn-primary):is(:hover,:focus-visible):not(:disabled):not([disabled]){background:var(--er-brand-softest,#FBEEF0);border-color:var(--er-brand,#920C24);color:var(--er-brand,#920C24)}
+			#page-examination-planner :is(.btn-primary,.er2-btn.primary,.tr-btn.primary,.pr-btn.primary,.rs-btn.primary,.rs-btn.danger){background:var(--er-brand,#920C24);border-color:var(--er-brand,#920C24);color:#fff}
+			#page-examination-planner :is(.btn-primary,.er2-btn.primary,.tr-btn.primary,.pr-btn.primary,.rs-btn.primary,.rs-btn.danger):is(:hover,:focus-visible):not(:disabled):not([disabled]){background:var(--er-brand-dark,#6E091B);border-color:var(--er-brand-dark,#6E091B);color:#fff;opacity:1}
+			#page-examination-planner :is(.btn,.er2-btn,.tr-btn,.pr-btn,.rs-btn):focus-visible{outline:none;box-shadow:0 0 0 3px var(--er-brand-soft,#F5D9DE)}
 			.xp-head{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
 			.xp-head .xp-plan{max-width:420px;font-weight:600}
 			.xp-meta{color:var(--text-muted)}
