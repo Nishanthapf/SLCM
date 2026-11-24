@@ -9,9 +9,13 @@ Forenoon on the left (Sl. No., Date, Venue, Year, paper, ID Nos. From / To,
 Invigilator) and Afternoon on the right. Each line is one Exam Plan › Course
 Schedule row; a course split over rooms has a row per room with its ID range.
 
-Continuing Evaluation Schedule: Subject | Evaluation n/Assessment n, Marks,
-Date (×4) | SGD | remarks. Each Evaluation is an Exam Assessment Schedule Item
-(of every programme teaching the course); SGD and remarks are its Course Note.
+Continuing Evaluation Schedule: a sheet per programme, title row, then
+Course Faculty | Subject | Component | Marks | Due Date for Submission |
+Date for activities/ Mid-Term Exam/Class Test | Extension Applicable | extra
+columns of the plan; Faculty and Subject merged down the subject's components.
+Each component is an Exam Assessment Schedule Item (of every programme teaching
+the course); a typed faculty is its Course Note. The older one-row-per-subject
+sheet (Evaluation n/Assessment n, Marks, Date ×n | SGD | remarks) still imports.
 
 Text the masters don't know is kept as written (Paper, Room, Invigilator, Marks,
 Date), so a sheet imported and downloaded again comes back the same.
@@ -613,12 +617,85 @@ def _plan_schedules(plan):
 	) if s.exam_plan in (None, "", plan.name)] if plan.term else []
 
 
+# Continuing Evaluation Schedule, laid out like the office's sheet: per subject
+# its Course Faculty and one row per component (Marks, Due Date for Submission,
+# Date for activities / Mid-Term Exam / Class Test, Extension Applicable), then
+# any extra columns the exam plan adds (ce_extra_columns on the Exam Plan).
+CE_COLUMNS = (
+	("faculty", "Course Faculty", 22),
+	("subject", "Subject", 18),
+	("label", "Component", 36),
+	("marks", "Marks", 11),
+	("due", "Due Date for Submission", 30),
+	("date", "Date for activities/ Mid-Term Exam/Class Test", 24),
+	("extension", "Extension Applicable", 30),
+)
+CE_EXTRA_WIDTH = 22
+CE_HEAD_FILL = PatternFill("solid", fgColor="DCE3EE")
+_COL_KEY = re.compile(r"^[a-z0-9_]{1,24}$")
+
+
+def plan_extra_columns(exam_plan):
+	"""[{key, label}] extra columns of the plan's evaluation schedule."""
+	raw = frappe.db.get_value("Exam Plan", exam_plan, "ce_extra_columns")
+	try:
+		cols = frappe.parse_json(raw) if raw else []
+	except Exception:
+		cols = []
+	return [{"key": c["key"], "label": _text(c.get("label"))} for c in cols or []
+	        if isinstance(c, dict) and _COL_KEY.match(cstr(c.get("key"))) and _text(c.get("label"))]
+
+
+def _clean_columns(columns):
+	"""Validate the extra columns sent by the planner / found in a sheet."""
+	out, seen = [], set()
+	for c in columns or []:
+		key, label = cstr((c or {}).get("key")), _text((c or {}).get("label"))
+		if not _COL_KEY.match(key):
+			frappe.throw(_("Extra column {0} has an invalid key.").format(frappe.bold(label or key)))
+		if not label:
+			frappe.throw(_("Every extra column needs a name. Name the empty column, or remove it."), title=_("Column name missing"))
+		if _norm(label) in {_norm(x[1]) for x in CE_COLUMNS} | seen:
+			frappe.throw(_("There are two columns called {0}. Give each column a different name.").format(frappe.bold(label)),
+			             title=_("Duplicate column name"))
+		seen.add(_norm(label))
+		out.append({"key": key, "label": label})
+	return out
+
+
+def _course_faculty(course, term):
+	"""Faculty of the course's Classes this term, one name per line."""
+	if not term:
+		return ""
+	ids = frappe.get_all("Classes", filters={"course": course, "academic_term": term, "faculty": ["is", "set"]},
+	                     pluck="faculty", distinct=True, order_by="faculty")
+	from slcm.slcm.utils.exam_timetable import _faculty_label
+
+	names = []
+	for f in ids:
+		n = _faculty_label(f)
+		if n and n not in names:
+			names.append(n)
+	return "\n".join(names)
+
+
+def _extra(value, keys):
+	try:
+		data = frappe.parse_json(value) if isinstance(value, str) else (value or {})
+	except Exception:
+		data = {}
+	return {k: _text(data.get(k)) for k in keys if isinstance(data, dict) and _text(data.get(k))}
+
+
 def assessment_grid(exam_plan):
-	"""One line per course, as on the sheet: evaluations (label, marks, date),
-	SGD and remarks. A course taught in several programmes shows once.
-	Mapped courses without assessments yet show their schema's (suggested)."""
+	"""{columns, lines}: one line per course with its faculty and evaluations
+	(label, marks, due, date, extension, extra). A course taught in several
+	programmes shows once. Mapped courses without assessments yet show their
+	schema's (suggested)."""
 	plan = frappe.get_doc("Exam Plan", exam_plan)
 	reexam = _reexam_components()
+	columns = plan_extra_columns(exam_plan)
+	keys = [c["key"] for c in columns]
 	lines = {}
 	for s in _plan_schedules(plan):
 		doc = frappe.get_doc("Exam Assessment Schedule", s.name)
@@ -626,7 +703,7 @@ def assessment_grid(exam_plan):
 		for it in doc.assessments:
 			if it.component in reexam:
 				continue
-			line = lines.setdefault(it.course, frappe._dict(course=it.course, programmes=[], evaluations=[], sgd="", remarks="", source=doc.name))
+			line = lines.setdefault(it.course, frappe._dict(course=it.course, programmes=[], evaluations=[], faculty_override="", source=doc.name))
 			if s.programme not in line.programmes:
 				line.programmes.append(s.programme)
 			if line.source != doc.name:
@@ -636,27 +713,40 @@ def assessment_grid(exam_plan):
 			line.evaluations.append({
 				"label": it.assessment_label or "",
 				"marks": it.marks_text or _marks_text(configs[it.course].get((it.component, it.assessment_type))),
+				"due": it.get("due_date_text") or "",
 				"date": it.date_text or _date_text(it.assessment_date),
+				"extension": it.get("extension_text") or "",
+				"extra": _extra(it.get("extra_values"), keys),
 			})
 		for n in doc.get("course_notes") or []:
 			if n.course in lines and lines[n.course].source == doc.name:
-				lines[n.course].sgd, lines[n.course].remarks = n.sgd or "", n.remarks or ""
+				lines[n.course].faculty_override = n.get("faculty_text") or ""
 
 	mapped = frappe.get_all("Course Schema Assignment", filters={"exam_plan": exam_plan}, pluck="course")
 	for course in mapped:
 		if course not in lines:
-			lines[course] = frappe._dict(course=course, programmes=[], sgd="", remarks="", suggested=1, evaluations=[
-				{"label": c.label or c.assessment_type or c.component, "marks": _marks_text(c.maximum_marks), "date": ""}
-				for c in _schema_configs(course, exam_plan) if c.component not in reexam
+			configs = [c for c in _schema_configs(course, exam_plan) if c.component not in reexam]
+			names = Counter(_norm(c.label or c.assessment_type or c.component) for c in configs)
+			lines[course] = frappe._dict(course=course, programmes=_term_programmes(course, plan.term) if plan.term else [],
+			                             faculty_override="", suggested=1, evaluations=[
+				# a label used twice in the schema (Project › Viva, Viva › Viva) is named after its component,
+				# since an Assessment Schedule lists each name once per course
+				{"label": (lbl if names[_norm(lbl)] == 1 else f"{c.component} – {lbl}"), "marks": _marks_text(c.maximum_marks),
+				 "due": "", "date": "", "extension": "", "extra": {},
+				 # the schema assessment it stands for, so the saved row counts towards the result
+				 "component": c.component, "assessment_type": c.assessment_type}
+				for c in configs for lbl in [c.label or c.assessment_type or c.component]
 			])
 	names = dict(frappe.get_all("Course", filters={"name": ["in", list(lines) or [""]]}, fields=["name", "course_name"], as_list=True))
 	out = []
 	for line in lines.values():
 		line.course_name = names.get(line.course, line.course)
+		line.faculty_default = _course_faculty(line.course, plan.term)
+		line.faculty = line.pop("faculty_override") or line.faculty_default
 		line.pop("source", None)
 		out.append(line)
 	out.sort(key=lambda x: _norm(x.course_name))
-	return out
+	return {"columns": columns, "lines": out}
 
 
 def _term_programmes(course, term):
@@ -664,14 +754,19 @@ def _term_programmes(course, term):
 	                      pluck="programme", distinct=True, order_by="programme")
 
 
-def save_assessment_grid(exam_plan, lines):
+def save_assessment_grid(exam_plan, lines, columns=None):
 	"""Write sheet lines into the Exam Assessment Schedule of every programme
 	teaching each course (made when missing). Evaluations keep their schema
 	assessment (component / type) by label, then by order; assessments that
-	already have marks are never removed."""
+	already have marks are never removed. columns (when given) replace the
+	plan's extra columns."""
 	plan = frappe.get_doc("Exam Plan", exam_plan)
 	if not plan.term:
 		frappe.throw(_("Set the Exam Plan's Academic Term first."))
+	if columns is not None:
+		columns = _clean_columns(columns)
+		frappe.db.set_value("Exam Plan", exam_plan, "ce_extra_columns", frappe.as_json(columns), update_modified=False)
+	keys = [c["key"] for c in (columns if columns is not None else plan_extra_columns(exam_plan))]
 	academic_year = frappe.db.get_value("Academic Term", plan.term, "academic_year")
 	term_start = frappe.db.get_value("Academic Term", plan.term, "term_start_date")
 	reexam = _reexam_components()
@@ -697,8 +792,13 @@ def save_assessment_grid(exam_plan, lines):
 		if not programmes:
 			warnings.append(_("{0}: no Class teaches it in {1}, not saved.").format(course_names[course] or course, plan.term))
 			continue
+		if "faculty" in line:
+			# keep only a real override: the Classes' faculty is shown anyway
+			default = _course_faculty(course, plan.term)
+			typed = _text(line.get("faculty"))
+			line = dict(line, faculty="" if _norm(typed) == _norm(default) else typed)
 		for p in programmes:
-			warnings += _apply_course(schedule_for(p), course, course_names[course], line, reexam, term_start)
+			warnings += _apply_course(schedule_for(p), course, course_names[course], line, reexam, term_start, keys)
 		saved += 1
 	for doc in docs.values():
 		doc.save()
@@ -706,7 +806,12 @@ def save_assessment_grid(exam_plan, lines):
 	return {"courses": saved, "schedules": sorted(d.name for d in docs.values()), "warnings": sorted(set(warnings))}
 
 
-def _apply_course(doc, course, course_name, line, reexam, term_start):
+def _sheet_text(value):
+	text = _text(value)
+	return "" if text == "-" else text
+
+
+def _apply_course(doc, course, course_name, line, reexam, term_start, keys=()):
 	evals = [e for e in (line.get("evaluations") or []) if _text(e.get("label")) not in ("", "-")]
 	mine = [it for it in doc.assessments if it.course == course and it.component not in reexam]
 	used, matched, warnings = set(), {}, []
@@ -738,14 +843,33 @@ def _apply_course(doc, course, course_name, line, reexam, term_start):
 	ordered = []
 	for i, e in enumerate(evals):
 		it = matched.get(i) or doc.append("assessments", {"course": course, "course_name": course_name})
-		date_text = _text(e.get("date"))
-		date_text = "" if date_text == "-" else date_text
+		if not it.component and e.get("component") and e.get("assessment_type"):
+			taken = {(x.component, x.assessment_type) for x in doc.assessments if x.course == course and x is not it}
+			if (e["component"], e["assessment_type"]) not in taken:
+				it.component, it.assessment_type = e["component"], e["assessment_type"]
+		date_text = _sheet_text(e.get("date"))
 		if it.date_text != date_text or not it.name:
 			parsed = _parse_date(date_text, term_start)
 			if parsed or date_text:
 				it.assessment_date = datetime.combine(parsed, datetime.min.time()) if parsed else None
+		# columns an older sheet doesn't have are left as they are
+		if "due" in e:
+			due_text = _sheet_text(e.get("due"))
+			if (it.get("due_date_text") or "") != due_text or not it.name:
+				# a real date fills the First Submission Deadline (end of that day); text such as
+				# "Rolling basis…" stays text, and a deadline set on the form is never cleared here
+				parsed = _parse_date(due_text, term_start)
+				deadline = datetime.combine(parsed, datetime.max.time().replace(microsecond=0)) if parsed else None
+				if deadline and _deadline_fits(it, deadline):
+					it.first_submission_deadline = deadline
+			it.due_date_text = due_text
+		if "extension" in e:
+			it.extension_text = _sheet_text(e.get("extension"))
+		if "extra" in e:
+			vals = {k: _sheet_text(v) for k, v in (e.get("extra") or {}).items() if k in keys and _sheet_text(v)}
+			it.extra_values = frappe.as_json(vals) if vals else None
 		it.assessment_label = _text(e["label"])
-		it.marks_text = "" if _text(e.get("marks")) == "-" else _text(e.get("marks"))
+		it.marks_text = _sheet_text(e.get("marks"))
 		it.date_text = date_text
 		if not it.component:
 			warnings.append(_("{0} › {1}: no matching assessment in the Evaluation Schema, so marks entered for it are not counted in the result.").format(
@@ -767,63 +891,208 @@ def _apply_course(doc, course, course_name, line, reexam, term_start):
 	for k, it in enumerate(doc.assessments, 1):
 		it.idx = k
 
+	# course note: faculty override, and SGD / remarks (only when the sheet has them)
 	note = next((n for n in doc.get("course_notes") or [] if n.course == course), None)
-	sgd, remarks = (_text(line.get(k)) for k in ("sgd", "remarks"))
-	sgd, remarks = ("" if v == "-" else v for v in (sgd, remarks))
-	if sgd or remarks:
+	vals = {
+		"faculty_text": note.get("faculty_text") if note else "",
+		"sgd": note.sgd if note else "",
+		"remarks": note.remarks if note else "",
+	}
+	if "faculty" in line:
+		vals["faculty_text"] = _sheet_text(line.get("faculty"))
+	for k in ("sgd", "remarks"):
+		if k in line:
+			vals[k] = _sheet_text(line.get(k))
+	if any(vals.values()):
 		note = note or doc.append("course_notes", {"course": course})
-		note.sgd, note.remarks = sgd, remarks
+		note.update(vals)
 	elif note:
 		doc.set("course_notes", [n for n in doc.course_notes if n is not note])
 	return warnings
 
 
-def assessment_workbook(exam_plan, blank=False):
-	lines = assessment_grid(exam_plan)
-	groups = max([4] + [len(x.evaluations) for x in lines])
-	wb = Workbook()
-	ws = wb.active
-	ws.title = "Sheet"
-	header = ["Subject"]
-	for n in range(1, groups + 1):
-		header += [f"Evaluation {n}/Assessment {n}", "Marks", "Date"]
-	header += ["SGD", ""]
-	widths = dict(CE_WIDTHS)
-	if groups > 4:
-		from openpyxl.utils import get_column_letter
+def _deadline_fits(it, first):
+	"""First Submission Deadline that keeps the Assessment Schedule's date rules
+	(after the assessment date, before a second deadline and the marks entry deadline)."""
+	dt = frappe.utils.get_datetime
+	if it.assessment_date and first < dt(it.assessment_date):
+		return False
+	if it.get("second_submission_deadline") and dt(it.second_submission_deadline) <= first:
+		return False
+	if not it.get("second_submission_deadline") and it.get("marks_entry_deadline") and dt(it.marks_entry_deadline) <= first:
+		return False
+	return True
 
-		widths = {get_column_letter(1): 19.4}
-		for n in range(groups):
-			for j, w in enumerate((31.3, 10, 18.7)):
-				widths[get_column_letter(2 + n * 3 + j)] = w
-		widths[get_column_letter(2 + groups * 3)] = 43.3
-		widths[get_column_letter(3 + groups * 3)] = 23.4
-	for col, w in widths.items():
-		ws.column_dimensions[col].width = w
-	for c, h in enumerate(header, 1):
-		cell = _cell(ws, 1, c, h, bold=True, font="Cambria", align=Alignment(horizontal="center", vertical="center", wrap_text=True))
-		if not h:
-			cell.border = Border()
-	for r, line in enumerate(lines, 2):
-		values = [line.course_name]
-		for n in range(groups):
-			e = line.evaluations[n] if n < len(line.evaluations) and not blank else {}
-			values += [e.get("label", ""), e.get("marks", ""), e.get("date", "")]
-		values += ["" if blank else line.sgd, "" if blank else line.remarks]
-		for c, v in enumerate(values, 1):
-			_cell(ws, r, c, v, size=10, align=LEFT)
-	if lines:
-		_fit_heights(ws, 2, len(lines) + 1, widths, minimum=15, line=13)
+
+def _sheet_title(text, used):
+	title = re.sub(r"[\[\]\:\*\?\/\\]", " ", text).strip()[:31] or "Sheet"
+	base, n = title, 2
+	while title.lower() in used:
+		title = f"{base[:28]} {n}"
+		n += 1
+	used.add(title.lower())
+	return title
+
+
+def assessment_workbook(exam_plan, blank=False):
+	"""The office's Continuing Evaluation Schedule: a sheet per programme, a
+	title row, then per subject its faculty and one row per component."""
+	grid = assessment_grid(exam_plan)
+	lines, extra = grid["lines"], grid["columns"]
+	term = frappe.db.get_value("Exam Plan", exam_plan, "term") or exam_plan
+	from openpyxl.utils import get_column_letter
+	from openpyxl.worksheet.properties import PageSetupProperties
+
+	header = [c[1] for c in CE_COLUMNS] + [c["label"] for c in extra]
+	widths = {get_column_letter(i): w for i, w in enumerate([c[2] for c in CE_COLUMNS] + [CE_EXTRA_WIDTH] * len(extra), 1)}
+	ncol = len(header)
+
+	by_programme = {}
+	for line in lines:
+		for p in (line.programmes or [_("Other courses")]):
+			by_programme.setdefault(p, []).append(line)
+	if not by_programme:
+		by_programme[_("Continuing Evaluation")] = []
+
+	wb = Workbook()
+	wb.remove(wb.active)
+	used = set()
+	for programme in sorted(by_programme, key=_norm):
+		ws = wb.create_sheet(_sheet_title(programme, used))
+		for col, w in widths.items():
+			ws.column_dimensions[col].width = w
+		# title row: "<Programme> - <Term>" left, CONTINUING EVALUATION SCHEDULE right
+		split = max(2, ncol - 2)
+		_merge(ws, 1, 1, 1, split)
+		ws.cell(1, 1, f"{programme} - {term}").font = Font(name="Arial", size=14, bold=True)
+		ws.cell(1, 1).alignment = Alignment(vertical="bottom")
+		_merge(ws, 1, split + 1, 1, ncol)
+		ws.cell(1, split + 1, "CONTINUING EVALUATION SCHEDULE").font = Font(name="Arial", size=11, bold=True)
+		ws.cell(1, split + 1).alignment = Alignment(horizontal="right", vertical="bottom")
+		ws.row_dimensions[1].height = 30
+		for c, h in enumerate(header, 1):
+			_cell(ws, 2, c, h, bold=True, fill=CE_HEAD_FILL, font="Arial", size=11,
+			      align=Alignment(horizontal="left", vertical="center", wrap_text=True))
+		ws.row_dimensions[2].height = 34
+		r = 3
+		for line in by_programme[programme]:
+			evals = [] if blank else line.evaluations
+			evals = evals or [{}] * (4 if blank else 1)
+			first = r
+			for e in evals:
+				values = ["", "", e.get("label", ""), e.get("marks", ""), e.get("due", ""), e.get("date", ""), e.get("extension", "")]
+				values += [(e.get("extra") or {}).get(c["key"], "") for c in extra]
+				for c, v in enumerate(values, 1):
+					_cell(ws, r, c, v, size=10, font="Arial", bold=(c == 4),
+					      align=Alignment(horizontal="center" if c == 4 else "left", vertical="center", wrap_text=True))
+				r += 1
+			_cell(ws, first, 1, line.faculty, size=10, font="Arial", align=Alignment(vertical="center", wrap_text=True))
+			_cell(ws, first, 2, line.course_name, size=10, font="Arial", bold=True,
+			      align=Alignment(horizontal="center", vertical="center", wrap_text=True))
+			_merge(ws, first, 1, r - 1, 1)
+			_merge(ws, first, 2, r - 1, 2)
+		if r > 3:
+			_fit_heights(ws, 3, r - 1, widths, minimum=18, line=13)
+		ws.freeze_panes = "C3"
+		ws.print_title_rows = "1:2"
+		ws.page_setup.orientation = "landscape"
+		ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
+		ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+		ws.oddFooter.left.text = f"{programme} - {term}"
+		ws.oddFooter.right.text = "Page &P of &N"
 	return wb
 
 
+def _grid_ws(ws):
+	width = max(ws.max_column, 15)
+	grid = [list(r) + [None] * (width - len(r)) for r in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=width, values_only=True)]
+	for rng in ws.merged_cells.ranges:
+		if rng.min_col == rng.max_col and rng.max_row > rng.min_row:
+			v = grid[rng.min_row - 1][rng.min_col - 1]
+			for r in range(rng.min_row, rng.max_row):
+				grid[r][rng.min_col - 1] = v
+	return grid
+
+
+def _ce_header_map(row):
+	"""Column index of each field in a template header row, extras by their text; None if not one."""
+	cols, extras = {}, []
+	for j, v in enumerate(row):
+		h = _norm(v)
+		if not h:
+			continue
+		key = ("faculty" if "faculty" in h else
+		       "subject" if h in ("subject", "course", "course name") else
+		       "label" if h in ("component", "components", "assessment", "evaluation") else
+		       "marks" if h in ("marks", "mark", "max marks", "maximum marks") else
+		       "due" if h.startswith("due") or "submission" in h else
+		       "date" if h.startswith("date") else
+		       "extension" if "extension" in h else None)
+		if key and key not in cols:
+			cols[key] = j
+		elif not key:
+			extras.append((j, _text(v)))
+	# the older sheet repeats "Evaluation n/Assessment n" groups: not this layout
+	if sum(1 for v in row if re.match(r"^(evaluation|assessment) \d", _norm(v))) > 1:
+		return None, None
+	return (cols, extras) if "subject" in cols and "label" in cols else (None, None)
+
+
 def parse_assessment_sheet(content):
-	"""Lines of a Continuing Evaluation Schedule sheet: [{sheet_row, subject,
-	evaluations: [{label, marks, date}], sgd, remarks}]."""
+	"""Lines of a Continuing Evaluation Schedule workbook: [{sheet_row, sheet, subject,
+	faculty?, evaluations: [{label, marks, due, date, extension, extra: {label: value}}]}].
+	Reads every worksheet; the older one-row-per-subject sheet is still accepted."""
+	try:
+		wb = load_workbook(BytesIO(content), data_only=True)
+	except Exception:
+		frappe.throw(_("This is not an Excel (.xlsx) file."))
+	lines, found = [], False
+	for ws in wb.worksheets:
+		grid = _grid_ws(ws)
+		head = cols = None
+		for i, row in enumerate(grid[:15]):
+			cols, extras = _ce_header_map(row)
+			if cols:
+				head = i
+				break
+		if head is None:
+			continue
+		found = True
+		cell = lambda row, j: "" if j is None or j >= len(row) else (
+			_date_text(row[j]) if isinstance(row[j], (date, datetime)) else _text(row[j]))
+		current = None
+		for i in range(head + 1, len(grid)):
+			row = grid[i]
+			subject, label = cell(row, cols.get("subject")), cell(row, cols["label"])
+			if not subject and current and label:
+				subject = current["subject"]          # subject typed only on its first row
+			if not subject:
+				continue
+			if not current or subject != current["subject"]:
+				current = {"sheet_row": i + 1, "sheet": ws.title, "subject": subject, "evaluations": []}
+				if "faculty" in cols:
+					current["faculty"] = cell(row, cols["faculty"])
+				lines.append(current)
+			if label and label != "-":
+				ev = {"label": label}
+				for k in ("marks", "due", "date", "extension"):
+					if k in cols:
+						ev[k] = cell(row, cols[k])
+				ev["extra"] = {name: cell(row, j) for j, name in extras if cell(row, j)}
+				current["evaluations"].append(ev)
+	if found:
+		return lines
+	return _parse_wide_sheet(content)
+
+
+def _parse_wide_sheet(content):
+	"""The older sheet: Subject | Evaluation n/Assessment n, Marks, Date (×n) | SGD | remarks."""
 	grid = _grid(content)
 	head = next((i for i, row in enumerate(grid) if _norm(row[0]) == "subject"), None)
 	if head is None:
-		frappe.throw(_("No header row found. The sheet starts with: Subject | Evaluation 1/Assessment 1 | Marks | Date | … | SGD"))
+		frappe.throw(_("No header row found. The sheet needs a row with Course Faculty | Subject | Component | Marks | "
+		               "Due Date for Submission | Date for activities | Extension Applicable (download a sheet to see it)."),
+		             title=_("Not an evaluation schedule"))
 	header = [_norm(v) for v in grid[head]]
 	groups, c = [], 1
 	while c < len(header) and (header[c].startswith("evaluation") or header[c].startswith("assessment")):
@@ -848,32 +1117,65 @@ def parse_assessment_sheet(content):
 
 def assessment_issues(exam_plan, content, mapping=None):
 	"""Sheet lines with their Course (name, code or ID; or the mapping
-	{subject: course} picked in the preview); a subject without one is an error."""
+	{subject: course} picked in the preview); a subject without one is an error.
+	A course on several programme sheets is taken from the first one."""
 	plan = frappe.get_doc("Exam Plan", exam_plan)
-	lines = parse_assessment_sheet(content)
+	parsed = parse_assessment_sheet(content)
 	index = _course_index(plan.term)
 	mapping = mapping or {}
-	issues = []
-	for line in lines:
+	issues, lines, seen = [], [], {}
+	for line in parsed:
 		line["course"] = mapping.get(line["subject"]) or index.get(_norm(line["subject"]))
+		where = f"{line['sheet']} › " if line.get("sheet") else ""
 		if not line["course"]:
-			issues.append({"sheet_row": line["sheet_row"], "level": "error", "line": line["subject"],
+			issues.append({"sheet_row": line["sheet_row"], "level": "error", "line": f"{where}{line['subject']}",
 			               "message": _("{0} is not a Course of this term: skipped. Pick the course in the import preview.").format(line["subject"])})
+			lines.append(line)
+			continue
+		if line["course"] in seen:
+			first = seen[line["course"]]
+			if frappe.as_json(first.get("evaluations")) != frappe.as_json(line.get("evaluations")) or first.get("faculty") != line.get("faculty"):
+				issues.append({"sheet_row": line["sheet_row"], "level": "warning", "line": f"{where}{line['subject']}",
+				               "message": _("{0} is also on sheet {1} with different details; the one on {1} is used.").format(
+					               line["subject"], first.get("sheet") or "")})
+			continue
+		seen[line["course"]] = line
+		lines.append(line)
 	return plan, lines, issues
+
+
+def _columns_for_import(exam_plan, lines):
+	"""Plan's extra columns plus any new ones in the sheet (matched by name); values keyed by column key."""
+	columns = plan_extra_columns(exam_plan)
+	by_name = {_norm(c["label"]): c["key"] for c in columns}
+	for line in lines:
+		for e in line.get("evaluations") or []:
+			if "extra" not in e:
+				continue
+			keyed = {}
+			for name, value in (e.get("extra") or {}).items():
+				if _norm(name) not in by_name:
+					key = "c" + frappe.generate_hash(length=8).lower()
+					columns.append({"key": key, "label": name})
+					by_name[_norm(name)] = key
+				keyed[by_name[_norm(name)]] = value
+			e["extra"] = keyed
+	return columns
 
 
 def import_assessment_sheet(exam_plan, content, mapping=None, apply=False, file_url=None):
 	"""Preview, or (apply) save the subjects that have a Course; the others are
 	skipped and the import is written to an Exam Sheet Import Log."""
 	plan, lines, issues = assessment_issues(exam_plan, content, mapping)
-	unmatched = [{"sheet_row": x["sheet_row"], "subject": x["line"]} for x in issues]
+	unmatched = [{"sheet_row": x["sheet_row"], "subject": x["line"]} for x in issues if x["level"] == "error"]
 	out = {"lines": len(lines), "matched": sum(1 for x in lines if x["course"]), "unmatched": unmatched,
-	       "rows": [{k: x[k] for k in ("sheet_row", "subject", "course")} | {"evaluations": len(x["evaluations"])} for x in lines]}
+	       "rows": [{k: x.get(k) for k in ("sheet_row", "subject", "course")} | {"evaluations": len(x["evaluations"])} for x in lines]}
 	if apply:
 		good = [x for x in lines if x["course"]]
 		if not good:
 			frappe.throw(_("No subject of the sheet is matched to a course. Pick the courses in the preview."))
-		out.update(save_assessment_grid(exam_plan, good))
+		columns = _columns_for_import(exam_plan, good)
+		out.update(save_assessment_grid(exam_plan, good, columns))
 		issues += [{"sheet_row": "", "level": "warning", "line": "", "message": w} for w in out["warnings"]]
 		out.update(saved=1, imported=len(good), skipped=len(lines) - len(good),
 		           log=write_import_log("Continuing Evaluation Schedule", exam_plan, file_url, len(lines), len(good), issues))

@@ -1012,11 +1012,20 @@ class ExamPlanner {
 	}
 
 	// Continuing Evaluation Schedule, as the sheet: Subject | Evaluation n/Assessment n, Marks, Date | SGD | remarks
+	// Continuing Evaluation Schedule, laid out like the office's sheet: per subject its
+	// Course Faculty, then one row per component (Marks, Due Date for Submission, Date for
+	// activities / Mid-Term Exam / Class Test, Extension Applicable) and the plan's extra columns.
 	render_evaluation_schedule($el, t) {
 		call('get_assessment_grid', { exam_plan: this.plan }).then((data) => {
-			const lines = data.map((l) => ({ ...l, evaluations: l.evaluations.map((e) => ({ ...e })) }));
-			let groups = Math.max(4, ...lines.map((l) => l.evaluations.length));
+			const blank_eval = () => ({ label: '', marks: '', due: '', date: '', extension: '', extra: {} });
+			const lines = (data.lines || []).map((l) => ({ ...l, evaluations: (l.evaluations || []).map((e) => ({ ...blank_eval(), ...e, extra: { ...(e.extra || {}) } })) }));
+			const columns = (data.columns || []).map((c) => ({ ...c }));
+			const FIXED = [
+				['label', __('Component'), 260], ['marks', __('Marks'), 100], ['due', __('Due Date for Submission'), 230],
+				['date', __('Date for activities/ Mid-Term Exam/Class Test'), 180], ['extension', __('Extension Applicable'), 230],
+			];
 			const f = { q: '', programme: '' };
+			let dirty = false;
 			const programmes = [...new Set(lines.flatMap((l) => l.programmes || []))].sort();
 			$el.html(`
 				<div class="xp-bar xp-tools">
@@ -1024,46 +1033,152 @@ class ExamPlanner {
 					<button class="btn btn-default btn-sm xp-dl-blank">${__('Download blank sheet')}</button>
 					<button class="btn btn-default btn-sm xp-im">${__('Import sheet')}</button>
 					<button class="btn btn-default btn-sm xp-log">${__('Import log')}</button>
-					<button class="btn btn-default btn-sm xp-ce-add">+ ${__('Evaluation column')}</button>
+					<button class="btn btn-default btn-sm xp-ce-col-add" title="${__('Add a column of your own after Extension Applicable; you can rename or remove it')}">+ ${__('Column')}</button>
 					<span class="xp-grow"></span>
+					<span class="xp-pill warn xp-ce-dirty" style="display:none">${__('Unsaved changes')}</span>
 					<button class="btn btn-primary btn-sm xp-ce-save" ${lines.length ? '' : 'disabled'}>${__('Save evaluation schedule')}</button>
 				</div>
 				<div class="xp-bar xp-filters">
-					<input class="form-control input-sm" data-f="q" placeholder="${__('Search subject')}">
+					<input class="form-control input-sm" data-f="q" placeholder="${__('Search subject or faculty')}">
 					<select class="form-control input-sm" data-f="programme"><option value="">${__('All programmes')}</option>${programmes.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}</select>
 					<span class="xp-muted">${t.assessment_schedules.length ? __('Saved in') + ': ' + t.assessment_schedules.map((a) => `<a href="/desk/exam-assessment-schedule/${encodeURIComponent(a.name)}">${esc(a.name)}</a> (${esc(a.programme)})`).join(', ') : ''}</span>
 				</div>
 				<div class="xp-sheet xp-ce-sheet"></div>`);
-			const area = (i, n, fld, v) => `<textarea class="xp-in" rows="2" data-i="${i}" data-n="${n}" data-f="${fld}">${esc(v)}</textarea>`;
-			const draw = () => {
-				const heads = Array.from({ length: groups }, (_, n) => `<th>${__('Evaluation {0}/Assessment {0}', [n + 1])}</th><th>${__('Marks')}</th><th>${__('Date')}</th>`).join('');
-				const cols = Array.from({ length: groups }, () => '<col style="width:230px"><col style="width:95px"><col style="width:140px">').join('');
-				const shown = lines.map((l, i) => ({ l, i })).filter(({ l }) => (!f.q || l.course_name.toLowerCase().includes(f.q.toLowerCase()))
+			const mark_dirty = () => { dirty = true; $el.find('.xp-ce-dirty').show(); };
+			const area = (attrs, v, ph) => `<textarea class="xp-in" rows="1" ${attrs} ${ph ? `placeholder="${esc(ph)}"` : ''}>${esc(v)}</textarea>`;
+			const TRASH = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
+			const ncols = () => 2 + FIXED.length + columns.length + 1;
+			const draw = (focus) => {
+				const q = f.q.toLowerCase();
+				const shown = lines.map((l, i) => ({ l, i })).filter(({ l }) => (!q || `${l.course_name} ${l.faculty || ''} ${l.faculty_default || ''}`.toLowerCase().includes(q))
 					&& (!f.programme || (l.programmes || []).includes(f.programme)));
-				$el.find('.xp-ce-sheet').html(`<table><colgroup><col style="width:180px">${cols}<col style="width:300px"><col style="width:200px"></colgroup>
-					<thead><tr><th>${__('Subject')}</th>${heads}<th>${__('SGD')}</th><th></th></tr></thead><tbody>
-					${shown.map(({ l, i }) => `<tr><td class="xp-subj"><b>${esc(l.course_name)}</b><small>${l.suggested ? __('From the Evaluation Schema, not saved yet') : esc((l.programmes || []).join(', '))}</small></td>
-						${Array.from({ length: groups }, (_, n) => { const e = l.evaluations[n] || {}; return `<td>${area(i, n, 'label', e.label)}</td><td>${area(i, n, 'marks', e.marks)}</td><td>${area(i, n, 'date', e.date)}</td>`; }).join('')}
-						<td>${area(i, '', 'sgd', l.sgd)}</td><td>${area(i, '', 'remarks', l.remarks)}</td></tr>`).join('')
-						|| `<tr><td colspan="${groups * 3 + 3}" class="xp-none">${lines.length ? __('Nothing matches the filters.') : __('Map courses first, or import the sheet.')}</td></tr>`}
-					</tbody></table>`);
+				const colgroup = `<col style="width:190px"><col style="width:170px">${FIXED.map((c) => `<col style="width:${c[2]}px">`).join('')}${columns.map(() => '<col style="width:200px">').join('')}<col style="width:44px">`;
+				const head = `<th>${__('Course Faculty')}</th><th>${__('Subject')}</th>${FIXED.map((c) => `<th>${esc(c[1])}</th>`).join('')}
+					${columns.map((c, k) => `<th class="xp-ce-xh"><div><input class="xp-ce-colname" data-k="${k}" value="${esc(c.label)}" placeholder="${__('Column name')}" aria-label="${__('Column name')}">
+						<button type="button" class="xp-ce-icon xp-ce-col-del" data-k="${k}" title="${__('Remove this column')}" aria-label="${__('Remove this column')}">${TRASH}</button></div></th>`).join('')}<th></th>`;
+				const body = shown.map(({ l, i }) => {
+					const evs = l.evaluations.length ? l.evaluations : [null];
+					const span = evs.length;
+					return evs.map((e, n) => {
+						const lead = n === 0 ? `
+							<td rowspan="${span}" class="xp-ce-fac">${area(`data-i="${i}" data-f="faculty"`, l.faculty, l.faculty_default || __('Faculty names'))}
+								${l.faculty_default && (l.faculty || '') !== l.faculty_default ? `<button type="button" class="xp-ce-link xp-ce-fac-reset" data-i="${i}">${__('Use faculty from Classes')}</button>` : ''}</td>
+							<td rowspan="${span}" class="xp-subj"><b>${esc(l.course_name)}</b>
+								<small>${l.suggested ? __('From the Evaluation Schema, not saved yet') : esc((l.programmes || []).join(', '))}</small>
+								<button type="button" class="xp-ce-link xp-ce-row-add" data-i="${i}">+ ${__('Component')}</button></td>` : '';
+						if (!e) return `<tr class="xp-ce-first">${lead}<td colspan="${FIXED.length + columns.length + 1}" class="xp-none">${__('No components yet. Use + Component.')}</td></tr>`;
+						return `<tr class="${n === 0 ? 'xp-ce-first' : ''}">${lead}
+							${FIXED.map((c) => `<td class="${c[0] === 'marks' ? 'xp-ce-marks' : ''}">${area(`data-i="${i}" data-n="${n}" data-f="${c[0]}"`, e[c[0]])}</td>`).join('')}
+							${columns.map((c) => `<td>${area(`data-i="${i}" data-n="${n}" data-x="${esc(c.key)}"`, (e.extra || {})[c.key])}</td>`).join('')}
+							<td class="xp-ce-act"><button type="button" class="xp-ce-icon xp-ce-row-del" data-i="${i}" data-n="${n}" title="${__('Remove this component')}" aria-label="${__('Remove this component')}">${TRASH}</button></td></tr>`;
+					}).join('');
+				}).join('') || `<tr><td colspan="${ncols()}" class="xp-none">${lines.length ? __('Nothing matches the filters.') : __('Map courses first, or import the sheet.')}</td></tr>`;
+				$el.find('.xp-ce-sheet').html(`<table><colgroup>${colgroup}</colgroup><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`);
+				if (focus) $el.find(focus).first().trigger('focus');
 			};
-			$el.on('input', '.xp-ce-sheet .xp-in', (e) => {
+
+			// typing
+			$el.on('input', '.xp-ce-sheet textarea.xp-in', (e) => {
 				const d = $(e.target).data(), l = lines[d.i];
-				if (d.n === '') { l[d.f] = e.target.value; return; }
-				l.evaluations[d.n] = l.evaluations[d.n] || { label: '', marks: '', date: '' };
-				l.evaluations[d.n][d.f] = e.target.value;
+				if (!l) return;
+				mark_dirty();
+				if (d.f === 'faculty') { l.faculty = e.target.value; return; }
+				const ev = l.evaluations[d.n];
+				if (!ev) return;
+				if (d.x !== undefined) ev.extra[d.x] = e.target.value; else ev[d.f] = e.target.value;
+				$(e.target).closest('td').removeClass('xp-bad');
+			});
+			$el.on('click', '.xp-ce-fac-reset', (e) => { const l = lines[$(e.currentTarget).data('i')]; l.faculty = l.faculty_default; mark_dirty(); draw(); });
+			// components (rows)
+			$el.on('click', '.xp-ce-row-add', (e) => {
+				const i = +$(e.currentTarget).data('i');
+				lines[i].evaluations.push(blank_eval());
+				mark_dirty();
+				draw(`textarea[data-i="${i}"][data-n="${lines[i].evaluations.length - 1}"][data-f="label"]`);
+			});
+			$el.on('click', '.xp-ce-row-del', (e) => {
+				const i = +$(e.currentTarget).data('i'), n = +$(e.currentTarget).data('n'), l = lines[i], ev = l.evaluations[n];
+				const remove = () => { l.evaluations.splice(n, 1); mark_dirty(); draw(); };
+				const filled = ev && [ev.label, ev.marks, ev.due, ev.date, ev.extension, ...Object.values(ev.extra || {})].some((v) => (v || '').trim());
+				if (!filled) return remove();
+				frappe.confirm(__('Remove <b>{0}</b> from {1}?<br><small>Marks already entered for it are never deleted: such a component is kept when you save.</small>',
+					[esc(ev.label || __('this component')), esc(l.course_name)]), remove);
+			});
+			// extra columns
+			$el.find('.xp-ce-col-add').on('click', () => {
+				columns.push({ key: 'c' + Math.random().toString(36).slice(2, 10), label: '' });
+				mark_dirty();
+				draw(`.xp-ce-colname[data-k="${columns.length - 1}"]`);
+			});
+			$el.on('input', '.xp-ce-colname', (e) => {
+				columns[+$(e.target).data('k')].label = e.target.value;
+				$(e.target).removeClass('xp-bad-in');
+				mark_dirty();
+			});
+			$el.on('click', '.xp-ce-col-del', (e) => {
+				const k = +$(e.currentTarget).data('k'), c = columns[k];
+				const used = lines.reduce((a, l) => a + l.evaluations.filter((ev) => ((ev.extra || {})[c.key] || '').trim()).length, 0);
+				const remove = () => { columns.splice(k, 1); lines.forEach((l) => l.evaluations.forEach((ev) => { delete ev.extra[c.key]; })); mark_dirty(); draw(); };
+				if (!used) return remove();
+				frappe.confirm(__('Remove the column <b>{0}</b>? Its {1} filled cell(s) are deleted when you save.', [esc(c.label || __('(no name)')), used]), remove);
 			});
 			$el.on('change input', '.xp-filters [data-f]', (e) => { f[$(e.target).data('f')] = e.target.value; draw(); });
-			$el.find('.xp-ce-add').on('click', () => { groups += 1; draw(); });
 			$el.find('.xp-dl').on('click', () => this.download('download_assessment_sheet'));
 			$el.find('.xp-dl-blank').on('click', () => this.download('download_assessment_sheet', { blank: 1 }));
 			$el.find('.xp-im').on('click', () => this.import_evaluation_dialog());
 			$el.find('.xp-log').on('click', () => this.open_import_log('Continuing Evaluation Schedule'));
+
+			// checks before saving: clear messages, the cell is marked and shown
+			const problems = () => {
+				const out = [], seen = new Set(), norm = (v) => (v || '').trim().toLowerCase();
+				const fixed = new Set([__('Course Faculty'), __('Subject'), ...FIXED.map((c) => c[1])].map(norm));
+				columns.forEach((c, k) => {
+					const name = norm(c.label);
+					if (!name) out.push({ sel: `.xp-ce-colname[data-k="${k}"]`, msg: __('Extra column {0} has no name. Type a name in its header, or remove it with the bin icon.', [k + 1]) });
+					else if (seen.has(name) || fixed.has(name)) out.push({ sel: `.xp-ce-colname[data-k="${k}"]`, msg: __('Two columns are called <b>{0}</b>. Give each column a different name.', [esc(c.label)]) });
+					seen.add(name);
+				});
+				lines.forEach((l, i) => {
+					// the Assessment Schedule lists each component name once per subject
+					const names = {};
+					l.evaluations.forEach((ev, n) => {
+						const name = norm(ev.label);
+						if (!name) return;
+						if (name in names) out.push({ sel: `textarea[data-i="${i}"][data-n="${n}"][data-f="label"]`,
+							msg: __('<b>{0}</b>: the component <b>{1}</b> is listed twice (rows {2} and {3}). Give each component of a subject a different name, e.g. "Project – Viva".', [esc(l.course_name), esc(ev.label.trim()), names[name] + 1, n + 1]) });
+						else names[name] = n;
+					});
+				});
+				lines.forEach((l, i) => l.evaluations.forEach((ev, n) => {
+					const rest = [ev.marks, ev.due, ev.date, ev.extension, ...Object.values(ev.extra || {})].some((v) => (v || '').trim());
+					if (!(ev.label || '').trim() && rest) {
+						out.push({ sel: `textarea[data-i="${i}"][data-n="${n}"][data-f="label"]`, msg: __('<b>{0}</b>, row {1}: the component has details but no name. Name it, or remove the row.', [esc(l.course_name), n + 1]) });
+					}
+				}));
+				return out;
+			};
 			$el.find('.xp-ce-save').on('click', () => {
-				const out = lines.map((l) => ({ course: l.course, sgd: l.sgd, remarks: l.remarks,
-					evaluations: Array.from(l.evaluations).filter((e) => e && (e.label || '').trim()) }));
-				call('save_assessment_grid', { exam_plan: this.plan, lines: JSON.stringify(out) }).then((r) => {
+				const bad = problems();
+				if (bad.length) {
+					// show every row (filters could hide the problem)
+					f.q = ''; f.programme = ''; $el.find('.xp-filters [data-f]').val('');
+					draw();
+					bad.forEach((b) => { const $x = $el.find(b.sel); $x.is('input') ? $x.addClass('xp-bad-in') : $x.closest('td').addClass('xp-bad'); });
+					frappe.msgprint({ title: __('Fix these before saving'), indicator: 'red',
+						message: `<ul style="padding-left:18px;margin:0">${bad.map((b) => `<li style="margin-bottom:4px">${b.msg}</li>`).join('')}</ul>` });
+					const $first = $el.find(bad[0].sel).first();
+					if ($first.length) $first[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+					return;
+				}
+				const out = lines.map((l) => ({ course: l.course, faculty: l.faculty || '',
+					evaluations: l.evaluations.filter((e) => (e.label || '').trim()).map((e) => ({
+						label: e.label, marks: e.marks, due: e.due, date: e.date, extension: e.extension,
+						component: e.component || undefined, assessment_type: e.assessment_type || undefined,
+						extra: Object.fromEntries(columns.map((c) => [c.key, (e.extra || {})[c.key] || '']).filter((x) => x[1].trim())),
+					})) }));
+				call('save_assessment_grid', { exam_plan: this.plan, lines: JSON.stringify(out),
+					columns: JSON.stringify(columns.map((c) => ({ key: c.key, label: c.label.trim() }))) }).then((r) => {
+					dirty = false;
 					frappe.show_alert({ message: __('Evaluation schedule saved for {0} course(s)', [r.courses]), indicator: 'green' });
 					if (r.warnings.length) frappe.msgprint({ title: __('Saved, please note'), message: r.warnings.map(esc).join('<br>'), indicator: 'orange' });
 					this.render();
@@ -1153,7 +1268,7 @@ class ExamPlanner {
 	import_evaluation_dialog() {
 		this.sheet_import_dialog({
 			title: __('Import Continuing Evaluation Schedule'), method: 'import_assessment_sheet', sheet: 'evaluation',
-			help: __('The evaluation schedule sheet (same format as Download sheet). Each Subject is matched to a Course by name or code; pick the course for any that are not. The sheet\'s courses replace their evaluations; other courses are not touched.'),
+			help: __('The Continuing Evaluation Schedule sheet (same layout as Download sheet: Course Faculty, Subject, Component, Marks, Due Date for Submission, Date for activities, Extension Applicable, then any extra columns). Every programme tab of the file is read. Each Subject is matched to a Course by name or code; pick the course for any that are not. The sheet\'s courses replace their components; other courses are not touched. Older one-row-per-subject sheets still import.'),
 			args: (d) => {
 				const mapping = {};
 				d.$wrapper.find('.xp-map-subject').each((_, sel) => { if (sel.value) mapping[$(sel).data('subject')] = sel.value; });
@@ -1808,6 +1923,21 @@ class ExamPlanner {
 			.xp-ax-table td.act,.xp-bc td.act{text-align:right;white-space:nowrap}
 			.xp-ax-table td small,.xp-bc td small{display:block;margin-top:2px}
 			.xp-ce-sheet td{vertical-align:top}.xp-ce-sheet td.xp-subj{padding:6px 8px}.xp-ce-sheet td.xp-subj small{display:block;color:var(--text-muted);font-size:11px}
+			.xp-ce-sheet tr.xp-ce-first>td{border-top:2px solid var(--gray-500,#9e9e9e)}
+			.xp-ce-sheet td.xp-subj b{display:block;color:var(--er-brand-dark,#6E091B)}
+			.xp-ce-sheet td.xp-ce-fac,.xp-ce-sheet td.xp-subj{background:var(--subtle-fg,#fafafa)}
+			.xp-ce-sheet td.xp-ce-marks .xp-in{font-weight:700;text-align:center}
+			.xp-ce-sheet .xp-ce-link{display:inline-block;margin:6px 0 2px;padding:2px 8px;border:1px dashed var(--er-brand-border,#E8B4BE);border-radius:6px;background:#fff;color:var(--er-brand,#920C24);font-size:11.5px;font-weight:600;cursor:pointer}
+			.xp-ce-sheet td.xp-ce-fac .xp-ce-link{margin:0 8px 8px}
+			.xp-ce-sheet .xp-ce-link:hover{background:var(--er-brand-softest,#FBEEF0);border-style:solid}
+			.xp-ce-sheet .xp-ce-icon{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid transparent;border-radius:6px;background:none;color:var(--text-muted);cursor:pointer}
+			.xp-ce-sheet .xp-ce-icon:hover{color:#b91c1c;background:#fef2f2;border-color:#fecaca}
+			.xp-ce-sheet td.xp-ce-act{text-align:center;vertical-align:middle;padding:4px}
+			.xp-ce-sheet th.xp-ce-xh{background:var(--er-brand-softest,#FBEEF0)}
+			.xp-ce-sheet th.xp-ce-xh>div{display:flex;align-items:center;gap:4px}
+			.xp-ce-sheet .xp-ce-colname{flex:1;min-width:0;border:1px dashed var(--er-brand-border,#E8B4BE);border-radius:6px;background:#fff;padding:4px 6px;font:inherit;font-weight:700;text-align:center;color:var(--text-color)}
+			.xp-ce-sheet .xp-ce-colname:focus{outline:none;border-style:solid;border-color:var(--er-brand,#920C24);box-shadow:0 0 0 2px var(--er-brand-soft,#F5D9DE)}
+			.xp-ce-sheet .xp-ce-colname.xp-bad-in{border:1px solid #b91c1c;background:#fef2f2}
 			.xp-unsched .xp-soft{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 			.xp-issues ul{margin:6px 0 0;padding-left:18px}.xp-issues li.bad{color:var(--text-on-red,#b0182b)}
 			.xp-alert{border-radius:8px;padding:8px 12px}.xp-alert.bad{background:var(--bg-red,#fde6e8)}.xp-alert.ok{background:var(--bg-green,#e5f4ea)}

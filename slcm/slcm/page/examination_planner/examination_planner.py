@@ -556,11 +556,12 @@ def get_assessment_grid(exam_plan):
 
 
 @frappe.whitelist()
-def save_assessment_grid(exam_plan, lines):
+def save_assessment_grid(exam_plan, lines, columns=None):
+	"""columns: the plan's extra evaluation-schedule columns [{key, label}] (omitted = unchanged)."""
 	_check_access()
 	from slcm.slcm.utils.exam_sheets import save_assessment_grid as save
 
-	return save(exam_plan, _load(lines, []))
+	return save(exam_plan, _load(lines, []), None if columns is None else _load(columns, []))
 
 
 @frappe.whitelist()

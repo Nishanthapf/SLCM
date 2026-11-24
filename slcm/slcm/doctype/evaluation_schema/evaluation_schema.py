@@ -35,12 +35,22 @@ class EvaluationSchema(Document):
 	def validate_reexam_substitutes(self):
 		"""Substitute For must name a component this schema actually assesses."""
 		used = {c.component for c in self.schema_components or []} | {a.component for a in self.assessment_configs or []}
+		position = {}
 		for row in self.reexam_configs or []:
+			# row number as shown in that component's re-exam card
+			position[row.component] = position.get(row.component, 0) + 1
 			if row.substitute_for and row.substitute_for not in used:
 				frappe.throw(
-					frappe._("Re-Exam Configuration row {0}: Substitute For {1} is not a component of this schema.").format(
-						row.idx, frappe.bold(row.substitute_for)
-					)
+					frappe._(
+						"Re-exam card ({0}), row {1}: <b>Substitute For</b> is set to {2}, which is not a component of this schema. "
+						"Pick one of: {3}."
+					).format(
+						frappe.bold(row.component or "-"),
+						position[row.component],
+						frappe.bold(row.substitute_for),
+						", ".join(sorted(c for c in used if c)) or frappe._("(no components yet)"),
+					),
+					title=frappe._("Re-exam substitute not found"),
 				)
 
 	def _get_component_type(self, component_name):
