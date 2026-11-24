@@ -45,6 +45,8 @@ class ExamPlanner {
 		this.page = page;
 		this.step = null;   // open() lands on the first unfinished step
 		this.take_step_option();
+		// a browser refresh reopens the course last open in step 3 (unless a link asked for a step)
+		this.restore_course = this.step === null;
 		this.$root = $('<div class="xp-wrap"></div>').appendTo(page.main);
 		this.add_styles();
 		page.set_primary_action(__('New Exam Plan'), () => this.new_plan_dialog(), 'add');
@@ -128,11 +130,27 @@ class ExamPlanner {
 				try { saved = localStorage.getItem(`xp-step:${plan}`); } catch (e) { /* storage blocked */ }
 				this.step = saved !== null && STEPS[+saved] ? +saved : Math.max(0, first_open === -1 ? LAST - 1 : first_open);
 			}
+			if (this.restore_course) {
+				this.restore_course = false;
+				if (this.step === 2 && !this.course) this.course = this.saved_course();
+			}
 			this.render();
 		});
 	}
 
 	refresh() { return this.open(this.plan); }
+
+	// The course open in step 3, kept per plan so a refresh lands back on it
+	saved_course() {
+		try { return localStorage.getItem(`xp-course:${this.plan}`) || null; } catch (e) { return null; }
+	}
+	set_course(course) {
+		this.course = course || null;
+		try {
+			if (course) localStorage.setItem(`xp-course:${this.plan}`, course);
+			else localStorage.removeItem(`xp-course:${this.plan}`);
+		} catch (e) { /* storage blocked */ }
+	}
 
 
 	// ── layout ─────────────────────────────────────────────────────────
@@ -175,7 +193,7 @@ class ExamPlanner {
 		this.$root.find('.xp-step').on('click', (e) => {
 			const i = +$(e.currentTarget).data('i');
 			this.step = i;
-			this.course = null;
+			this.set_course(null);
 			this.render();
 		});
 		this.$body = this.$root.find('.xp-body');
@@ -1217,13 +1235,18 @@ class ExamPlanner {
 
 	// ── 3. Students & marks ────────────────────────────────────────────
 	render_courses() {
-		if (this.course) return this.render_course_view();
+		// course_list is missing after a refresh: load it first, then reopen the course
+		if (this.course && this.course_list) return this.render_course_view();
 		Promise.all([call('get_students', { exam_plan: this.plan }), call('get_marks_progress', { exam_plan: this.plan })]).then(([students, marks]) => {
 			const by = {};
 			students.forEach((r) => { by[r.course] = Object.assign({ course: r.course }, r); });
 			marks.forEach((r) => { by[r.course] = Object.assign(by[r.course] || { course: r.course, in_classes: 0, synced: 0, detained: 0, manual: 0, barcodes: 0 }, { mk: r }); });
 			const rows = Object.values(by).sort((a, b) => a.course.localeCompare(b.course));
 			this.course_list = rows.map((r) => r.course);
+			if (this.course) {
+				if (this.course_list.includes(this.course)) return this.render_course_view();
+				this.set_course(null);   // course no longer in this plan
+			}
 			const status = (r) => {
 				const m = r.mk || {}, n = m.students || r.synced || 0;
 				if (!n) return ['bad', __('No students')];
@@ -1275,7 +1298,7 @@ class ExamPlanner {
 				}).join('') || `<tr><td colspan="8">${__('Map courses in step 1 first.')}</td></tr>`}
 				</tbody></table></div>`);
 
-			const open = (course) => { this.course = course; this.render_course_view(); };
+			const open = (course) => { this.set_course(course); this.render_course_view(); };
 			$c.find('.xp-crow').on('click', (e) => open($(e.currentTarget).data('course')));
 			// Add students from Classes: now automatic, see Classes.add_students_to_exam_plans
 			// $c.find('.xp-sync').on('click', () => call('sync_all_students', { exam_plan: this.plan }).then((r) => {
@@ -1329,8 +1352,8 @@ class ExamPlanner {
 				<button class="btn btn-default btn-sm xp-next-course" ${i >= 0 && i < list.length - 1 ? '' : 'disabled'}>${__('Next')} ›</button>` : ''}
 			</div>
 			<div class="xp-mount"></div></div>`);
-		const go = (course) => { this.course = course; this.render_course_view(); };
-		this.$body.find('.xp-back').on('click', () => { this.course = null; this.refresh(); });
+		const go = (course) => { this.set_course(course); this.render_course_view(); };
+		this.$body.find('.xp-back').on('click', () => { this.set_course(null); this.refresh(); });
 		this.$body.find('.xp-prev-course').on('click', () => go(list[i - 1]));
 		this.$body.find('.xp-next-course').on('click', () => go(list[i + 1]));
 		this.$body.find('.xp-bc-one').on('click', () => this.download_barcodes('by_course', this.course));

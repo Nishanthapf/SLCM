@@ -552,6 +552,20 @@ slcm.exam_ui.course_results = function (main, opts) {
 		          background:#fff; outline:none; transition:border-color .15s; }
 		.er2-mi:focus   { border-color:#920C24; box-shadow:0 0 0 2px rgba(146,12,36,.12); }
 		.er2-mi:disabled { background:#f8fafc; color:#94a3b8; cursor:not-allowed; }
+		.er2-rtable input.er2-mi.er2-mi-err, .er2-mi.er2-mi-err {
+		          border-color:#dc2626 !important; background:#fef2f2 !important; color:#b91c1c !important;
+		          box-shadow:0 0 0 3px rgba(220,38,38,.15) !important; }
+		.er2-mi-shake { animation:er2-shake .32s ease; }
+		@keyframes er2-shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-3px)}
+		          50%{transform:translateX(3px)} 75%{transform:translateX(-2px)} }
+		.er2-mark-tip { position:fixed; z-index:1060; display:none; max-width:260px;
+		          align-items:flex-start; gap:6px; padding:7px 10px; border-radius:8px;
+		          background:#b91c1c; color:#fff; font-size:12px; font-weight:600; line-height:1.35;
+		          box-shadow:0 8px 24px rgba(0,0,0,.18); pointer-events:none; }
+		.er2-mark-tip svg { flex-shrink:0; margin-top:1px; }
+		.er2-mark-tip::before { content:''; position:absolute; top:-5px; left:var(--er2-tip-arrow,50%);
+		          margin-left:-5px; border:5px solid transparent; border-top:0; border-bottom-color:#b91c1c; }
+		.er2-mark-tip.above::before { top:auto; bottom:-5px; border-bottom:0; border-top:5px solid #b91c1c; }
 
 		/* ── Lock button states ── */
 		.er2-btn.outline-green { border-color:#E8B4BE; color:#920C24; background:#FBEEF0; }
@@ -1040,6 +1054,7 @@ slcm.exam_ui.course_results = function (main, opts) {
 		syncing = false;
 	});
 	$right[0].addEventListener('scroll', function () {
+		hide_mark_tip();
 		if (syncing) return;
 		syncing = true;
 		$left[0].scrollTop = $right[0].scrollTop;
@@ -1981,6 +1996,53 @@ slcm.exam_ui.course_results = function (main, opts) {
 		});
 	}
 
+	// ── Inline marks validation ─────────────────────────────────────────────
+	function mark_value_error($inp, val) {
+		if (val === '') {
+			// type=number reports '' for unparsable text: tell the user rather than
+			// silently clearing their mark.
+			var el = $inp[0];
+			return el && el.validity && el.validity.badInput ? __('Enter a number, e.g. 45 or 45.5') : null;
+		}
+		var num = Number(val);
+		if (isNaN(num)) return __('Enter a number, e.g. 45 or 45.5');
+		if (num < 0) return __('Marks cannot be negative');
+		var max = parseFloat($inp.attr('data-max'));
+		if (max && num > max) return __('Maximum is {0}. You entered {1}.', [fmt_mark(max), fmt_mark(num)]);
+		return null;
+	}
+	function fmt_mark(n) { return (Math.round(n * 100) / 100).toString(); }
+	function get_mark_tip() {
+		var $t = $('#er2-mark-tip');
+		if (!$t.length) $t = $('<div id="er2-mark-tip" class="er2-mark-tip" role="alert"></div>').appendTo(document.body);
+		return $t;
+	}
+	function position_mark_tip($inp, msg) {
+		var $t = get_mark_tip().html(
+			'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
+			'<span>' + frappe.utils.escape_html(msg) + '</span>'
+		).removeClass('above').css('display', 'flex');
+		var r = $inp[0].getBoundingClientRect();
+		var tw = $t.outerWidth(), th = $t.outerHeight();
+		var left = Math.max(8, Math.min(r.left + r.width / 2 - tw / 2, window.innerWidth - tw - 8));
+		var top = r.bottom + 8;
+		if (top + th > window.innerHeight - 8) { top = r.top - th - 8; $t.addClass('above'); }
+		$t.css({ left: left, top: top }).css('--er2-tip-arrow', (r.left + r.width / 2 - left) + 'px');
+	}
+	function hide_mark_tip() { $('#er2-mark-tip').hide(); }
+	function show_mark_error($inp, msg) {
+		$inp.addClass('er2-mi-err').attr({ 'data-err': msg, title: msg, 'aria-invalid': 'true' });
+		$inp.removeClass('er2-mi-shake');
+		void $inp[0].offsetWidth;  // restart the shake animation
+		$inp.addClass('er2-mi-shake');
+		if (document.activeElement === $inp[0]) position_mark_tip($inp, msg);
+	}
+	function clear_mark_error($inp) {
+		if (!$inp.hasClass('er2-mi-err')) return;
+		$inp.removeClass('er2-mi-err er2-mi-shake').removeAttr('data-err title aria-invalid');
+		if (document.activeElement === $inp[0]) hide_mark_tip();
+	}
+
 	function render_marks_table() {
 		// Clear any stale pending saves from previous render
 		Object.keys(_saveTimer).forEach(function (k) { clearTimeout(_saveTimer[k]); });
@@ -2191,6 +2253,7 @@ slcm.exam_ui.course_results = function (main, opts) {
 							cells += '<td style="padding:4px 6px;">' +
 								'<input type="number" step="0.01" min="0" class="er2-mi" data-is-project="1" ' +
 								'data-student="' + stu + '" data-comp="' + comp + '" data-atype="' + atyp + '" data-field="marks" ' +
+								'data-max="' + (parseFloat(col.maximum_marks) || '') + '" ' +
 								'value="' + frappe.utils.escape_html(mVal) + '" placeholder="—" ' +
 								'style="width:70px;height:26px;border:1.5px solid #e2e8f0;border-radius:6px;padding:0 6px;font-size:12px;font-weight:600;text-align:center;outline:none;">' +
 								'</td>' +
@@ -2212,6 +2275,7 @@ slcm.exam_ui.course_results = function (main, opts) {
 							cells += '<td style="padding:4px 6px;">' +
 								'<input type="number" step="0.01" min="0" class="er2-mi" ' +
 								'data-student="' + stu + '" data-comp="' + comp + '" data-atype="' + atyp + '" data-field="marks" ' +
+								'data-max="' + (parseFloat(col.maximum_marks) || '') + '" ' +
 								'value="' + frappe.utils.escape_html(mVal) + '" placeholder="—" ' +
 								'style="width:70px;height:26px;border:1.5px solid #e2e8f0;border-radius:6px;padding:0 6px;font-size:12px;font-weight:600;text-align:center;outline:none;">' +
 								'</td>';
@@ -2313,6 +2377,7 @@ slcm.exam_ui.course_results = function (main, opts) {
 					cells +=
 						'<td style="padding:4px 6px;"><input type="number" step="0.01" min="0" class="er2-mi" ' +
 						'data-student="' + stu + '" data-comp="' + comp + '" data-atype="' + atyp + '" data-field="marks" ' +
+						'data-max="' + (parseFloat(col.maximum_marks) || '') + '" ' +
 						'value="' + frappe.utils.escape_html(mVal) + '" placeholder="—" ' +
 						'style="width:70px;height:26px;border:1.5px solid #F5D9DE;border-radius:6px;padding:0 6px;font-size:12px;font-weight:600;text-align:center;outline:none;"></td>';
 				} else {
@@ -2391,7 +2456,14 @@ slcm.exam_ui.course_results = function (main, opts) {
 		// ── Inline marks entry ─────────────────────────────────────────────────
 		$mtable.find('.er2-mi').on('focus', function () {
 			$(this).css('border-color', '#920C24');
+			var msg = $(this).attr('data-err');
+			if (msg) position_mark_tip($(this), msg);
+		}).on('input', function () {
+			// Live feedback while typing; the save itself still waits for change.
+			var $i = $(this), m = mark_value_error($i, $i.val().trim());
+			if (m) show_mark_error($i, m); else clear_mark_error($i);
 		}).on('blur', function () {
+			hide_mark_tip();
 			var $self = $(this);
 			var defaultBorder = $self.data('field') === 'revaluation_marks' && $self.data('is-project') ? '#F5D9DE' : '#e2e8f0';
 			$self.css('border-color', defaultBorder);
@@ -2404,6 +2476,18 @@ slcm.exam_ui.course_results = function (main, opts) {
 			var val     = $inp.val().trim();
 			var $tr     = $mtable.find('tr[data-student="' + student + '"]');
 			var key     = student + field + comp + atype;
+
+			// Validate in the browser first: an inline hint on the cell instead
+			// of a blocking server popup, and nothing is saved until it is fixed.
+			var vErr = mark_value_error($inp, val);
+			if (vErr) {
+				clearTimeout(_saveTimer[key]);
+				delete _saveTimer[key];
+				delete _pendingSaveFns[key];
+				show_mark_error($inp, vErr);
+				return;
+			}
+			clear_mark_error($inp);
 
 			// Live-update Project sub-column Total Marks = Marks − Deduction
 			if ($inp.data('is-project')) {
@@ -2517,7 +2601,8 @@ slcm.exam_ui.course_results = function (main, opts) {
 							resolve();
 						},
 						error: function () {
-							$tr.css('background', '#FBEEF0');
+							$tr.css('background', '');
+							show_mark_error($inp, __('Not saved. Check the value and try again.'));
 							resolve();
 						},
 					});
