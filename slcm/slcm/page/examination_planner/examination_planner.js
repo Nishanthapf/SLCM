@@ -1073,7 +1073,8 @@ class ExamPlanner {
 							<td class="xp-ce-act"><button type="button" class="xp-ce-icon xp-ce-row-del" data-i="${i}" data-n="${n}" title="${__('Remove this component')}" aria-label="${__('Remove this component')}">${TRASH}</button></td></tr>`;
 					}).join('');
 				}).join('') || `<tr><td colspan="${ncols()}" class="xp-none">${lines.length ? __('Nothing matches the filters.') : __('Map courses first, or import the sheet.')}</td></tr>`;
-				$el.find('.xp-ce-sheet').html(`<table><colgroup>${colgroup}</colgroup><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`);
+				const min_w = 190 + 170 + FIXED.reduce((a, c) => a + c[2], 0) + columns.length * 200 + 44;
+				$el.find('.xp-ce-sheet').html(`<table style="width:100%;min-width:${min_w}px"><colgroup>${colgroup}</colgroup><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`);
 				if (focus) $el.find(focus).first().trigger('focus');
 			};
 
