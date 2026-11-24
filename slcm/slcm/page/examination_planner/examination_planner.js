@@ -1840,9 +1840,9 @@ class ExamPlanner {
 			.xp-ct th.num,.xp-ct td.num{text-align:center;width:110px;white-space:nowrap;font-variant-numeric:tabular-nums}.xp-ct th,.xp-ct td{padding-left:14px;padding-right:14px}.xp-ct th:nth-child(6),.xp-ct td:nth-child(6){min-width:140px}.xp-ct th:nth-child(7),.xp-ct td:nth-child(7){width:130px;white-space:nowrap}.xp-ct td:nth-child(7) .xp-pill{margin-left:-7px}.xp-ct td.act{text-align:right;white-space:nowrap;width:1%}.xp-ct td small{color:var(--text-muted)}.xp-warn-text{color:var(--text-on-yellow,#8a5a00)!important}
 			.xp-course-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid var(--border-color)}
 			.xp-course-head h4{margin:0 0 0 6px;font-family:var(--er-font);font-size:16px;font-weight:700}
-			.xp-rtabs{display:flex;gap:4px;border-bottom:1px solid var(--border-color);margin-bottom:14px;overflow-x:auto}
-			.xp-rtab{background:none;border:0;border-bottom:3px solid transparent;padding:8px 14px;font-family:var(--er-font);font-weight:700;font-size:13px;color:var(--text-muted);white-space:nowrap}
-			.xp-rtab.on{color:var(--er-brand,#920C24);border-bottom-color:var(--er-brand,#920C24)}.xp-rtab:hover{color:var(--er-brand,#920C24)}
+			.xp-rtabs{display:flex;align-self:flex-start;max-width:100%;gap:4px;padding:4px;margin-bottom:6px;overflow-x:auto;scrollbar-width:none;background:var(--subtle-fg,#f4f4f5);border:1px solid var(--border-color,#e5e7eb);border-radius:12px}.xp-rtabs::-webkit-scrollbar{display:none}.xp-rtab{position:relative;flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;background:transparent;border:0;border-radius:9px;padding:8px 16px;font-family:var(--er-font);font-weight:600;font-size:13.5px;line-height:1.2;color:var(--text-muted,#6b7280);white-space:nowrap;cursor:pointer;transition:background .15s,color .15s,box-shadow .15s}.xp-rtab:hover:not(.on){background:var(--er-brand-softest,#FBEEF0);color:var(--er-brand,#920C24)}.xp-rtab.on{background:var(--er-brand,#920C24);color:#fff;box-shadow:0 2px 6px rgba(146,12,36,.28)}.xp-rtab:focus-visible{outline:none;box-shadow:0 0 0 3px var(--er-brand-soft,#F5D9DE)}.xp-rtab.on:focus-visible{box-shadow:0 0 0 3px var(--er-brand-soft,#F5D9DE),0 2px 6px rgba(146,12,36,.28)}@media (max-width:640px){.xp-rtabs{align-self:stretch}.xp-rtab{padding:8px 12px;font-size:13px}}
+			
+			
 			.xp-schema-link{background:none;border:0;padding:0;font:inherit;font-weight:700;font-size:13px;color:var(--er-brand,#920C24);text-decoration:underline dotted;text-underline-offset:3px;cursor:pointer;text-align:left}
 			.xp-schema-link:hover{text-decoration-style:solid}.xp-peek{font-size:11.5px;justify-self:start}
 			.xp-sv{font-family:var(--er-font,Georgia,serif);font-size:13px}
@@ -1875,7 +1875,7 @@ class ExamPlanner {
 			@media (max-width:860px){.xp-cr{grid-template-columns:1fr}.xp-cr-act{justify-content:flex-start}.xp-cr-edit{grid-template-columns:1fr}}
 			.xp-tt td:first-child{min-width:150px}.xp-table .xp-tt .xp-d{min-width:135px}.xp-table .xp-tt .xp-s,.xp-table .xp-tt .xp-e{min-width:110px}
 			.xp-table .xp-tt .xp-v{min-width:160px}.xp-table .xp-tt input.xp-c{min-width:64px;width:72px}.xp-table .xp-tt .xp-f{min-width:140px}.xp-tt .xp-msg{min-width:90px}.xp-msg .xp-pill{display:block;font-weight:600}
-			.xp-tab{display:none;flex-direction:column;gap:12px}.xp-tab.on{display:flex}.xp-card .xp-rtabs{margin-bottom:4px}
+			.xp-tab{display:none;flex-direction:column;gap:12px}.xp-tab.on{display:flex}.xp-card 
 			.xp-tools,.xp-filters{gap:8px}
 			.xp-filters{align-items:flex-end;padding:8px 10px;border:1px solid var(--border-color);border-radius:8px;background:var(--subtle-fg,#f8f8f8)}
 			.xp-filters label{display:flex;flex-direction:column;gap:2px;margin:0;font-size:11px;font-weight:600;color:var(--text-muted)}

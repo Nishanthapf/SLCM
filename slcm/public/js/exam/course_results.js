@@ -607,13 +607,13 @@ slcm.exam_ui.course_results = function (main, opts) {
 		               background:#f1f5f9; cursor:pointer; display:flex; align-items:center;
 		               justify-content:center; color:#64748b; font-size:18px; transition:all .15s; flex-shrink:0; }
 		.xas-close:hover { background:#F5D9DE; color:#920C24; }
-		.xas-tabs    { display:flex; gap:3px; padding:10px 16px 0; border-bottom:1.5px solid #f1f5f9; }
-		.xas-tab     { padding:8px 18px; border:none; border-radius:7px 7px 0 0;
-		               background:transparent; font-size:13px; font-weight:600; color:#64748b;
-		               cursor:pointer; display:inline-flex; align-items:center; gap:6px;
-		               transition:all .15s; border-bottom:2.5px solid transparent; margin-bottom:-1.5px; }
-		.xas-tab:hover  { color:#920C24; background:rgba(146,12,36,.06); }
-		.xas-tab.active { color:#920C24; border-bottom-color:#920C24; background:#fff; }
+		/* segmented tabs, same look as the Exam Planner's */
+		.xas-tabs    { display:flex; align-self:flex-start; gap:4px; padding:4px; margin:12px 16px 4px; max-width:calc(100% - 32px);
+		               overflow-x:auto; background:#f4f4f5; border:1px solid #e5e7eb; border-radius:12px; flex-shrink:0; }
+		.xas-tab     { background:transparent; border:0; border-radius:9px; padding:8px 16px; font-size:13.5px; font-weight:600; color:#6b7280; cursor:pointer; white-space:nowrap; user-select:none; display:inline-flex; align-items:center; gap:6px; transition:background .15s, color .15s, box-shadow .15s; }
+		.xas-tab:hover:not(.active) { background:#FBEEF0; color:#920C24; }
+		.xas-tab.active { background:#920C24; color:#fff; box-shadow:0 2px 6px rgba(146,12,36,.28); }
+		.xas-tab:focus-visible, .rs-subtab:focus-visible { outline:none; box-shadow:0 0 0 3px #F5D9DE; }
 		.xas-panel   { flex:1; display:flex; flex-direction:column; overflow:hidden; min-height:0; }
 		.xas-search-bar { display:flex; gap:8px; padding:12px 16px; border-bottom:1.5px solid #f1f5f9;
 		                  flex-wrap:wrap; align-items:center; }
