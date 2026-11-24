@@ -712,7 +712,7 @@ class ExamPlanner {
 		const f = { day: '', session: '', venue: '', year: '', q: '' };
 		let issues = {}, summary = null;
 
-		$el.html(`
+		$el.addClass('xp-alloc').html(`
 			<div class="xp-bar xp-tools">
 				<button class="btn btn-default btn-sm xp-dl">${__('Download sheet')}</button>
 				<button class="btn btn-default btn-sm xp-im">${__('Import sheet')}</button>
@@ -1923,6 +1923,38 @@ class ExamPlanner {
 			.xp-ax-table td.act,.xp-bc td.act{text-align:right;white-space:nowrap}
 			.xp-ax-table td small,.xp-bc td small{display:block;margin-top:2px}
 			.xp-ce-sheet td{vertical-align:top}.xp-ce-sheet td.xp-subj{padding:6px 8px}.xp-ce-sheet td.xp-subj small{display:block;color:var(--text-muted);font-size:11px}
+			/* ── Exam timetable editor: modern look (styles only, scoped to .xp-alloc) ── */
+			.xp-alloc .xp-tools{padding:8px 10px;border:1px solid var(--border-color,#e5e7eb);border-radius:10px;background:var(--card-bg,#fff)}
+			#page-examination-planner .xp-alloc .xp-clear-tt{color:#b91c1c;border-color:#fecaca}
+			#page-examination-planner .xp-alloc .xp-clear-tt:hover{background:#fef2f2;border-color:#b91c1c;color:#b91c1c}
+			.xp-alloc .xp-pub-bar{background:var(--card-bg,#fff);border:1px solid var(--border-color,#e5e7eb);border-left:4px solid #f59e0b;border-radius:10px;padding:8px 12px}
+			.xp-alloc .xp-pub-bar b{color:#92400e}
+			.xp-alloc .xp-pub-bar.on{border-left-color:#16a34a;background:#f0fdf4;border-color:#bbf7d0}
+			.xp-alloc .xp-pub-bar.on b{color:#15803d}
+			.xp-alloc .xp-filters{background:var(--card-bg,#fff);border-radius:10px}
+			.xp-alloc .xp-soft{background:#fffbeb;border:1px solid #fde68a;border-left:4px solid #f59e0b;border-radius:10px;padding:8px 12px}
+			.xp-alloc .xp-soft>.xp-muted{color:#92400e;font-weight:600}
+			#page-examination-planner .xp-alloc .xp-place{border-style:dashed}
+			.xp-alloc .xp-sheet{border:1px solid var(--border-color,#e5e7eb);border-radius:10px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+			.xp-alloc .xp-sheet th,.xp-alloc .xp-sheet td{border-color:#e5e7eb}
+			.xp-alloc .xp-sheet thead th{background:#f8fafc;color:#475569;font-size:11.5px;letter-spacing:.02em;border-bottom:2px solid #e2e8f0}
+			.xp-alloc .xp-sheet thead th.xp-sess{background:var(--er-brand-softest,#FBEEF0);color:var(--er-brand-dark,#6E091B);border-bottom-color:#E8B4BE}
+			.xp-alloc .xp-sheet th.xp-sess span{gap:4px;margin-top:4px}
+			.xp-alloc .xp-sheet .xp-st{height:24px;padding:0 4px;border:1px solid rgba(0,0,0,.12);border-radius:6px;background:#fff;color:#1e293b;font-size:11.5px}
+			.xp-alloc .xp-sheet .xp-st:focus{outline:none;border-color:var(--er-brand,#920C24);box-shadow:0 0 0 2px var(--er-brand-soft,#F5D9DE)}
+			.xp-alloc .xp-sheet tr.xp-day td{background:#fdf4f5;border-top:2px solid #E8B4BE;border-bottom-color:#f5d9de}
+			.xp-alloc .xp-day-in{padding:7px 12px;gap:10px}
+			.xp-alloc .xp-day-in b{color:var(--er-brand-dark,#6E091B)}
+			.xp-alloc .xp-sheet td.xp-sl,.xp-alloc .xp-sheet td.xp-dt{background:#fafafa;color:#334155;vertical-align:middle}
+			.xp-alloc .xp-sheet td.xp-blank{background:repeating-linear-gradient(135deg,#fafafa 0 8px,#f4f4f5 8px 16px)}
+			.xp-alloc .xp-sheet td.xp-blank .xp-muted{background:#fff;border:1px dashed #d4d4d8;border-radius:999px;padding:2px 10px;font-size:11.5px}
+			.xp-alloc .xp-sheet td.xp-none{background:#fff;color:#64748b;font-size:13px;padding:36px}
+			.xp-alloc .xp-ctag{border:1px solid #E8B4BE;padding:1px 4px 1px 8px;font-weight:600}
+			.xp-alloc .xp-ln-act button{border-radius:6px;line-height:20px;padding:0 7px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+			.xp-alloc .xp-ln-act .xp-dup:hover{color:var(--er-brand,#920C24);border-color:currentColor}
+			.xp-alloc .xp-alert{border:1px solid transparent;border-radius:10px;padding:10px 14px}
+			.xp-alloc .xp-alert.ok{border-color:#bbf7d0;color:#15803d;font-weight:600}
+			.xp-alloc .xp-alert.bad{border-color:#fecaca;color:#991b1b}
 			.xp-ce-sheet tr.xp-ce-first>td{border-top:2px solid var(--gray-500,#9e9e9e)}
 			.xp-ce-sheet td.xp-subj b{display:block;color:var(--er-brand-dark,#6E091B)}
 			.xp-ce-sheet td.xp-ce-fac,.xp-ce-sheet td.xp-subj{background:var(--subtle-fg,#fafafa)}
