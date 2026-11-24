@@ -370,6 +370,17 @@ slcm.exam_ui.course_results = function (main, opts) {
 			color:#920C24;
 		}
 
+		/* ── Total marks: read-only box, same size as the mark inputs ── */
+		.er2-rtable td.er2-total-cell { text-align:center; }
+		.er2-total-box {
+			display:inline-block; min-width:70px; height:26px; line-height:23px;
+			border:1.5px solid #E8B4BE; border-radius:6px; padding:0 8px;
+			background:#FBEEF0; font-size:12px; font-weight:800; text-align:center;
+			color:#920C24; font-variant-numeric:tabular-nums; cursor:default; box-sizing:border-box;
+		}
+		.er2-total-flash { animation:er2-total-flash .9s ease; }
+		@keyframes er2-total-flash { 0% { background:#F5D9DE; box-shadow:0 0 0 3px rgba(146,12,36,.18); } 100% { background:#FBEEF0; box-shadow:none; } }
+
 		/* ── Overall status col header accent ── */
 
 		/* ── Remark cell ── */
@@ -2154,7 +2165,15 @@ slcm.exam_ui.course_results = function (main, opts) {
 			});
 		});
 		// Grade section row 2 labels
-		th2 += '<th style="font-size:11px;color:#6c757d;min-width:60px;">Total<br>Marks</th>' +
+		// Out of: every assessment of the course (not only the columns the exam-type filter shows),
+		// each at its effective marks, the same way the server works out the total
+		var total_max = (S.columns || []).reduce(function (sum, c) {
+			var max = parseFloat(c.maximum_marks) || 0, eff = parseFloat(c.effective_marks) || 0;
+			return sum + (max > 0 && eff > 0 ? eff : max);
+		}, 0);
+		total_max = Math.round(total_max * 100) / 100;
+		th2 += '<th class="type-hdr" style="text-align:center;min-width:90px;" title="Sum of every assessment\'s marks in this course">Total Marks' +
+			(total_max ? '<br><span style="font-size:10px;color:#6c757d;font-weight:400;">Max. ' + total_max.toFixed(2) + '</span>' : '') + '</th>' +
 			'<th style="font-size:11px;color:#6c757d;min-width:60px;">Grade</th>';
 		// Overall Status row 2 labels (Fairness Status removed)
 		th2 += '<th class="er2-status-col" style="font-size:11px;color:#6c757d;min-width:90px;">Enrollment<br>Status</th>' +
@@ -2301,7 +2320,8 @@ slcm.exam_ui.course_results = function (main, opts) {
 			var isFailed   = gradeVal && (S.failed_grades || []).indexOf(gradeVal) !== -1;
 			var gradeColor = isAS ? '#920C24' : (isFailed ? '#920C24' : '#059669');
 			var gradeBorderColor = isAS ? '#E8B4BE' : (isFailed ? '#E8B4BE' : '#a7f3d0');
-			cells += '<td style="font-weight:700;" class="er2-total-cell" data-student="' + frappe.utils.escape_html(s.student) + '">' + total + '</td>';
+			cells += '<td style="padding:4px 6px;" class="er2-total-cell" data-student="' + frappe.utils.escape_html(s.student) + '">' +
+				'<span class="er2-total-box" title="Total marks (worked out from the marks entered)">' + total + '</span></td>';
 			if (canEdit) {
 				cells += '<td style="padding:4px 6px;" class="er2-grade-cell" data-student="' + frappe.utils.escape_html(s.student) + '">' +
 					'<span style="white-space:nowrap;">' +
@@ -2549,8 +2569,10 @@ slcm.exam_ui.course_results = function (main, opts) {
 								// (rather than annotating it) — see render_marks_table().
 								var gradeDisp = isAS2 ? 'AS' : (grade || '');
 								// Update in-place
-								$mtable.find('.er2-total-cell[data-student="' + student + '"]')
-									.text(total != null ? parseFloat(total).toFixed(2) : '—');
+								var $tb = $mtable.find('.er2-total-cell[data-student="' + student + '"] .er2-total-box');
+								$tb.text(total != null ? parseFloat(total).toFixed(2) : '—');
+								// brief highlight so the new total is noticed
+								$tb.removeClass('er2-total-flash'); void ($tb[0] && $tb[0].offsetWidth); $tb.addClass('er2-total-flash');
 								var $gc = $mtable.find('.er2-grade-cell[data-student="' + student + '"]');
 								var $gi = $gc.find('.er2-grade-input');
 								if ($gi.length) {
