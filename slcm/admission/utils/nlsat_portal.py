@@ -110,6 +110,7 @@ PACE_ACCOUNT_MESSAGE = (
 	"Please use a different email address to proceed. "
 	"If you need further assistance, please contact us at {email}."
 )
+DESK_USER_MESSAGE = "Desk users cannot log in here. Please log in through the desk login page."
 
 
 class WrongPortalLogin(frappe.AuthenticationError):
@@ -142,8 +143,9 @@ def enforce_login_portal(login_manager=None):
 	  * a PACE-only applicant on either NLSAT login page;
 	  * an Indian National applicant on the International login page, and vice versa
 	    (portal from their latest application, else the portal they signed up on).
-	Accounts whose portal is unknown, staff (System Users) and sign-ins from any
-	other page are let through.
+	  * any desk user (System User, System Managers included): sent to the desk login page.
+	Accounts whose portal is unknown, Administrator and sign-ins from any other
+	page are let through.
 	"""
 	user = getattr(login_manager, "user", None)
 	if not user or user in ("Guest", "Administrator"):
@@ -152,7 +154,7 @@ def enforce_login_portal(login_manager=None):
 	if not page_portal:
 		return
 	if frappe.db.get_value("User", user, "user_type") == "System User":
-		return
+		frappe.throw(DESK_USER_MESSAGE, WrongPortalLogin)
 
 	if _is_pace_only(user):
 		frappe.throw(PACE_ACCOUNT_MESSAGE.format(email=PACE_LOGIN_SUPPORT_EMAIL), WrongPortalLogin)
