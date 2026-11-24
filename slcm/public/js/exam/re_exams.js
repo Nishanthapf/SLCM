@@ -351,8 +351,8 @@ slcm.exam_ui.re_exams = function (main, opts) {
 						<div class="rx-field-group">
 							<span class="rx-field-label">Payment Gateway</span>
 							<select class="rx-input" id="rx-gateway" title="Gateway students pay this re-exam fee through">
-								<option value="Razorpay">Razorpay</option>
 								<option value="Easebuzz">Easebuzz</option>
+								<option value="Razorpay">Razorpay</option>
 							</select>
 						</div>
 						<div style="display:flex;align-items:flex-end;padding-bottom:1px;gap:8px;">
@@ -614,7 +614,7 @@ slcm.exam_ui.re_exams = function (main, opts) {
 				course:        S.course,
 				deadline_from: $dlFrom.val()    || null,
 				deadline_to:   $dlTo.val()      || null,
-				payment_gateway: $gateway.val() || 'Razorpay',
+				payment_gateway: $gateway.val() || 'Easebuzz',
 			},
 			callback: function (r) {
 				$saveBtn.prop('disabled', false).html(
@@ -727,13 +727,13 @@ slcm.exam_ui.re_exams = function (main, opts) {
 				var d = r.message || {};
 				$dlFrom.val(d.deadline_from   || '');
 				$dlTo.val(d.deadline_to       || '');
-				$gateway.val(d.payment_gateway || 'Razorpay');
+				$gateway.val(d.payment_gateway || 'Easebuzz');
 			},
 		});
 	}
 
 	function clearSettings() {
-		$dlFrom.val(''); $dlTo.val(''); $gateway.val('Razorpay'); $savedBadge.hide();
+		$dlFrom.val(''); $dlTo.val(''); $gateway.val('Easebuzz'); $savedBadge.hide();
 	}
 
 	function showPlaceholder(title, sub) {
@@ -991,7 +991,7 @@ slcm.exam_ui.re_exams = function (main, opts) {
 		}
 		var from = $dlFrom.val()   || '';
 		var to   = $dlTo.val()     || '';
-		var gateway = $gateway.val() || 'Razorpay';
+		var gateway = $gateway.val() || 'Easebuzz';
 
 		// Fetch all courses for this exam plan, then show picker
 		frappe.call({
@@ -1512,7 +1512,9 @@ slcm.exam_ui.re_exams = function (main, opts) {
 
 	return {
 		destroy: function () {
-			$body.empty();
+			// delegated handlers live on the mount element, which the planner reuses:
+			// without .off() every remount adds another (e.g. View courses opening twice)
+			$body.off().empty();
 		},
 	};
 };

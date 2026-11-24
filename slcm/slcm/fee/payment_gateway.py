@@ -3,11 +3,11 @@
 The gateway is configured where the charge is defined, never chosen by the payer:
 * Fee Demand               → its Fee Component's ``payment_gateway``
 * Fee Invoice (programme)  → its Fee Structure's Payment Gateway, else its components'
-* Re-exam fee               → Re Exam Course Setting (exam plan + course)
-* Improvement exam fee      → Improvement Exam Course Setting (exam plan + course)
+* Re-exam fee               → Re Exam Course Setting (exam plan + course), default Easebuzz
+* Improvement exam fee      → Improvement Exam Course Setting (exam plan + course), default Easebuzz
 * Transcript fee            → Transcript Fee Settings
 
-Anything unset falls back to Razorpay, so records created before the field existed keep
+Anything else unset falls back to Razorpay, so records created before the field existed keep
 working exactly as before. Admission flows (PACE / FLE / NLSAT) do not use this module.
 """
 
@@ -18,10 +18,12 @@ RAZORPAY = "Razorpay"
 EASEBUZZ = "Easebuzz"
 GATEWAYS = (RAZORPAY, EASEBUZZ)
 DEFAULT_GATEWAY = RAZORPAY
+# re-exam / improvement exam fees are new student fee flows: Easebuzz unless a course says otherwise
+EXAM_FEE_DEFAULT_GATEWAY = EASEBUZZ
 
 
-def normalize(gateway):
-	return gateway if gateway in GATEWAYS else DEFAULT_GATEWAY
+def normalize(gateway, default=DEFAULT_GATEWAY):
+	return gateway if gateway in GATEWAYS else default
 
 
 def for_component(fee_component):
@@ -80,7 +82,8 @@ def for_invoice(invoice_name):
 
 def for_re_exam(exam_plan, course):
 	return normalize(
-		frappe.db.get_value("Re Exam Course Setting", {"exam_plan": exam_plan, "course": course}, "payment_gateway")
+		frappe.db.get_value("Re Exam Course Setting", {"exam_plan": exam_plan, "course": course}, "payment_gateway"),
+		EXAM_FEE_DEFAULT_GATEWAY,
 	)
 
 
@@ -88,7 +91,8 @@ def for_improvement_exam(exam_plan, course):
 	return normalize(
 		frappe.db.get_value(
 			"Improvement Exam Course Setting", {"exam_plan": exam_plan, "course": course}, "payment_gateway"
-		)
+		),
+		EXAM_FEE_DEFAULT_GATEWAY,
 	)
 
 

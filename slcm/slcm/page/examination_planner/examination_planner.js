@@ -537,12 +537,15 @@ class ExamPlanner {
 					<button class="xp-rtab" data-tab="barcodes">${__('Barcodes')}</button>
 				</div>
 				<div class="xp-tab" data-tab="timetable"></div><div class="xp-tab" data-tab="evaluation"></div><div class="xp-tab" data-tab="barcodes"></div></div>`);
-			const show = () => this.$body.find('.xp-rtab, .xp-tab').each((_, el) => {
-				const on = $(el).data('tab') === this.tt_tab;
-				$(el).toggleClass('on', on);
-				if ($(el).hasClass('xp-tab')) $(el).toggle(on);
-			});
-			this.$body.find('.xp-rtab').on('click', (e) => {
+			// only this step's own tab buttons/panes, never .xp-tab/.xp-rtab nested in their content
+			const $card = this.$body.children('.xp-card');
+			const $btns = $card.children('.xp-rtabs').children('.xp-rtab');
+			const $panes = $card.children('.xp-tab');
+			const show = () => {
+				$btns.each((_, el) => $(el).toggleClass('on', $(el).data('tab') === this.tt_tab));
+				$panes.each((_, el) => { const on = $(el).data('tab') === this.tt_tab; $(el).toggleClass('on', on).toggle(on); });
+			};
+			$btns.on('click', (e) => {
 				this.tt_tab = $(e.currentTarget).data('tab');
 				try { localStorage.setItem('xp-tt-tab', this.tt_tab); } catch (err) { /* storage blocked */ }
 				show();
@@ -1452,12 +1455,16 @@ class ExamPlanner {
 			</div>
 			<div class="xp-tab" data-tab="timetable"><div class="xp-rx-tt"></div></div>
 			<div class="xp-tab" data-tab="students"><div class="xp-rx-carry"></div><div class="xp-ax"></div></div></div>`);
-		const show = () => this.$body.find('.xp-rtab, .xp-tab').each((_, el) => {
-			const on = $(el).data('tab') === this.after_tab;
-			$(el).toggleClass('on', on);
-			if ($(el).hasClass('xp-tab')) $(el).toggle(on);
-		});
-		this.$body.find('.xp-rtab').on('click', (e) => {
+		// Only this step's own tab buttons/panes: the timetable sheet inside also uses
+		// .xp-tab for styling and must not be hidden when switching tabs
+		const $card = this.$body.children('.xp-card');
+		const $btns = $card.children('.xp-rtabs').children('.xp-rtab');
+		const $panes = $card.children('.xp-tab');
+		const show = () => {
+			$btns.each((_, el) => $(el).toggleClass('on', $(el).data('tab') === this.after_tab));
+			$panes.each((_, el) => { const on = $(el).data('tab') === this.after_tab; $(el).toggleClass('on', on).toggle(on); });
+		};
+		$btns.on('click', (e) => {
 			this.after_tab = $(e.currentTarget).data('tab');
 			try { localStorage.setItem('xp-after-tab', this.after_tab); } catch (err) { /* storage blocked */ }
 			show();
@@ -1481,7 +1488,7 @@ class ExamPlanner {
 					<label>${__('Course')}<select class="form-control input-sm" data-w="course"><option value="">${__('All courses')}</option>${opts(course_opts)}</select></label>
 					<label>${__('From')}<input type="date" class="form-control input-sm" data-w="deadline_from"></label>
 					<label>${__('To')}<input type="date" class="form-control input-sm" data-w="deadline_to"></label>
-					<label>${__('Payment gateway')}<select class="form-control input-sm" data-w="payment_gateway">${opts([['Razorpay', 'Razorpay'], ['Easebuzz', 'Easebuzz']])}</select></label>
+					<label>${__('Payment gateway')}<select class="form-control input-sm" data-w="payment_gateway">${opts([['Easebuzz', 'Easebuzz'], ['Razorpay', 'Razorpay']])}</select></label>
 					<label>${__('Improvement seats')}<input type="number" min="0" class="form-control input-sm" data-w="registration_limit" placeholder="${__('No limit')}"></label>
 					<button class="btn btn-primary btn-sm xp-ax-save">${__('Save window')}</button>
 				</div>
@@ -1508,7 +1515,7 @@ class ExamPlanner {
 			// registration window: one course's values, or blank for all courses
 			const load_window = () => {
 				const c = $el.find('[data-w="course"]').val();
-				const fill = (w) => ['deadline_from', 'deadline_to', 'payment_gateway', 'registration_limit'].forEach((k) => $el.find(`[data-w="${k}"]`).val((w || {})[k] || (k === 'payment_gateway' ? 'Razorpay' : '')));
+				const fill = (w) => ['deadline_from', 'deadline_to', 'payment_gateway', 'registration_limit'].forEach((k) => $el.find(`[data-w="${k}"]`).val((w || {})[k] || (k === 'payment_gateway' ? 'Easebuzz' : '')));
 				if (!c) return fill({});
 				call('get_window', { exam_plan: this.plan, course: c }).then(fill);
 			};

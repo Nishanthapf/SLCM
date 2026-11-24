@@ -3921,7 +3921,9 @@ slcm.exam_ui.course_results = function (main, opts) {
 		destroy: function () {
 			$(document).off('.er2-dd' + NS);
 			$(document).off('.er2popup' + NS);
-			$body.empty();
+			// delegated handlers live on the mount element, which the planner reuses:
+			// without .off() every remount adds another (e.g. View courses opening twice)
+			$body.off().empty();
 		},
 	};
 };

@@ -105,7 +105,7 @@ def get_window(exam_plan, course):
 	return {
 		"deadline_from": re.get("deadline_from") or imp.get("deadline_from"),
 		"deadline_to": re.get("deadline_to") or imp.get("deadline_to"),
-		"payment_gateway": re.get("payment_gateway") or imp.get("payment_gateway") or "Razorpay",
+		"payment_gateway": re.get("payment_gateway") or imp.get("payment_gateway") or "Easebuzz",
 		"registration_limit": imp.get("registration_limit"),
 	}
 

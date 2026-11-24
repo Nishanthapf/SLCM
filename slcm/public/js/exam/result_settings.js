@@ -1248,7 +1248,9 @@ slcm.exam_ui.result_settings = function (main, opts) {
 	return {
 		destroy: function () {
 			$(document).off('.rs_add' + NS);
-			$body.empty();
+			// delegated handlers live on the mount element, which the planner reuses:
+			// without .off() every remount adds another (e.g. View courses opening twice)
+			$body.off().empty();
 		},
 	};
 };
