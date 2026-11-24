@@ -672,7 +672,12 @@ on_logout = [
     "slcm.utils.activity_log.on_logout",
 ]
 # /login (slcm/www/login.py): faculty and students may only sign in with Google
-on_login = ["slcm.utils.login_page.enforce_password_login_policy"]
+on_login = [
+    "slcm.utils.login_page.enforce_password_login_policy",
+    # NLSAT login pages: candidates sign in only on their own portal (Indian Nationals /
+    # International); PACE-only applicants are refused there
+    "slcm.admission.utils.nlsat_portal.enforce_login_portal",
+]
 on_session_creation = [
     # Google sign-ins: portal switched on, allowed domain, link Faculty / Student Master
     "slcm.utils.login_page.enforce_google_login",

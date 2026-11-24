@@ -94,6 +94,74 @@ def set_user_signup_portal(user, portal_type):
 		)
 
 
+# The NLSAT login pages send this with the sign-in: the portal the page belongs to.
+LOGIN_PORTAL_FIELD = "slcm_portal"
+
+PACE_LOGIN_SUPPORT_EMAIL = "nlsatquery@nls.ac.in"
+
+WRONG_PORTAL_MESSAGES = {
+	DOMESTIC: "You are registered as an Indian National applicant. "
+	"Please log in through the Indian Nationals portal.",
+	INTERNATIONAL: "You are registered as an International applicant. "
+	"Please log in through the International Candidates portal.",
+}
+PACE_ACCOUNT_MESSAGE = (
+	"This email address is already registered with a PACE admission. "
+	"Please use a different email address to proceed. "
+	"If you need further assistance, please contact us at {email}."
+)
+
+
+class WrongPortalLogin(frappe.AuthenticationError):
+	# Not 401: the login page's OTP step shows "Invalid verification code" for any 401,
+	# which would hide this message when two-step verification is on.
+	http_status_code = 403
+
+
+def _login_page_portal():
+	"""Portal of the NLSAT login page the sign-in came from, else None (/login, PACE, desk…)."""
+	value = frappe.form_dict.get(LOGIN_PORTAL_FIELD)
+	if value:
+		return normalize_portal_type(value)
+	req = getattr(frappe.local, "request", None)
+	referrer = req.headers.get("Referer", "") if req else ""
+	if referrer:
+		from urllib.parse import urlparse
+
+		path = urlparse(referrer).path.rstrip("/")
+		if path in (PORTAL_BASES[DOMESTIC] + "/login", PORTAL_BASES[INTERNATIONAL] + "/login"):
+			return get_portal_type_from_path(path)
+	return None
+
+
+def enforce_login_portal(login_manager=None):
+	"""on_login: a candidate signs in only on their own NLSAT login page.
+
+	Runs after the password (and OTP) check, so it never tells a stranger which
+	portal an email belongs to. Refused, with a message saying where to log in:
+	  * a PACE-only applicant on either NLSAT login page;
+	  * an Indian National applicant on the International login page, and vice versa
+	    (portal from their latest application, else the portal they signed up on).
+	Accounts whose portal is unknown, staff (System Users) and sign-ins from any
+	other page are let through.
+	"""
+	user = getattr(login_manager, "user", None)
+	if not user or user in ("Guest", "Administrator"):
+		return
+	page_portal = _login_page_portal()
+	if not page_portal:
+		return
+	if frappe.db.get_value("User", user, "user_type") == "System User":
+		return
+
+	if _is_pace_only(user):
+		frappe.throw(PACE_ACCOUNT_MESSAGE.format(email=PACE_LOGIN_SUPPORT_EMAIL), WrongPortalLogin)
+
+	registered = get_applicant_portal_type(user)
+	if registered and registered != page_portal:
+		frappe.throw(WRONG_PORTAL_MESSAGES[registered], WrongPortalLogin)
+
+
 def enforce_portal_access(portal_type):
 	"""
 	Keep a logged-in candidate on the portal they logged in through: a Domestic
