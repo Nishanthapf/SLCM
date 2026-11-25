@@ -158,3 +158,23 @@
 }
 .er-theme .er2-rxg-box { background: #fff !important; border-color: #e2e8f0 !important; color: #1e293b !important; }
 .er-theme .er2-rtable td.er2-status-col { background: transparent; }
+
+/* ── KPI / stat cards: simple and flat everywhere (no coloured top border) ──
+   Term results, Publish, Re-exam, Improvement and the marks-entry course cards. */
+.er-theme .tr-stat-card,
+.er-theme .pr-stat-card,
+.er-theme .rx-stat-card,
+.er-theme .ix-stat-card,
+.er-theme .er2-stat-card,
+.er-theme .er2-icard {
+	border: 1px solid #eceef2;
+	border-top: 1px solid #eceef2;
+	border-radius: 12px;
+	box-shadow: none;
+	background: #fff;
+}
+.er-theme .er2-icard::after { display: none; }
+/* clickable cards keep a quiet hover; the selected filter card keeps its outline */
+.er-theme .er2-stat-card:hover,
+.er-theme .ix-stat-card:hover { box-shadow: 0 2px 8px rgba(15, 23, 42, .06); transform: none; border-color: #E8B4BE; }
+.er-theme .er2-stat-card.er2-sc-active { border-color: var(--sc-color, #920C24); background: var(--sc-bg, #FBEEF0); box-shadow: 0 0 0 1px var(--sc-color, #920C24) inset; }

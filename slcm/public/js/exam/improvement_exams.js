@@ -268,8 +268,8 @@ slcm.exam_ui.improvement_exams = function (main, opts) {
 						<div class="ix-field-group">
 							<span class="ix-field-label">Payment Gateway</span>
 							<select class="ix-input" id="ix-gateway" title="Gateway students pay this improvement exam fee through">
-								<option value="Razorpay">Razorpay</option>
 								<option value="Easebuzz">Easebuzz</option>
+								<option value="Razorpay">Razorpay</option>
 							</select>
 						</div>
 						<div style="display:flex;align-items:flex-end;padding-bottom:1px;gap:8px;">
@@ -450,7 +450,7 @@ slcm.exam_ui.improvement_exams = function (main, opts) {
 				registration_limit: $regLimit.val()    || null,
 				deadline_from:      $dlFrom.val()      || null,
 				deadline_to:        $dlTo.val()        || null,
-				payment_gateway:    $gateway.val()     || 'Razorpay',
+				payment_gateway:    $gateway.val()     || 'Easebuzz',
 			},
 			callback: function (r) {
 				$saveBtn.prop('disabled', false);
@@ -466,7 +466,7 @@ slcm.exam_ui.improvement_exams = function (main, opts) {
 
 	$bulkBtn.on('click', function () {
 		if (!S.exam_plan) return;
-		frappe.confirm('Apply this fee, deadline &amp; payment gateway (<b>' + frappe.utils.escape_html($gateway.val() || 'Razorpay') + '</b>) to <b>all courses</b> in the selected Exam Plan?', function () {
+		frappe.confirm('Apply this fee, deadline &amp; payment gateway (<b>' + frappe.utils.escape_html($gateway.val() || 'Easebuzz') + '</b>) to <b>all courses</b> in the selected Exam Plan?', function () {
 			frappe.call({
 				method: 'slcm.slcm.page.improvement_exam.improvement_exam.bulk_save_improvement_setting',
 				args: {
@@ -475,7 +475,7 @@ slcm.exam_ui.improvement_exams = function (main, opts) {
 					registration_limit: $regLimit.val()    || null,
 					deadline_from:      $dlFrom.val()      || null,
 					deadline_to:        $dlTo.val()        || null,
-					payment_gateway:    $gateway.val()     || 'Razorpay',
+					payment_gateway:    $gateway.val()     || 'Easebuzz',
 				},
 				callback: function (r) {
 					if (r.message) {
@@ -519,7 +519,7 @@ slcm.exam_ui.improvement_exams = function (main, opts) {
 	}
 
 	function loadSettings() {
-		$feeInput.val(''); $regLimit.val(''); $dlFrom.val(''); $dlTo.val(''); $gateway.val('Razorpay');
+		$feeInput.val(''); $regLimit.val(''); $dlFrom.val(''); $dlTo.val(''); $gateway.val('Easebuzz');
 		frappe.call({
 			method: 'slcm.slcm.page.improvement_exam.improvement_exam.get_improvement_setting',
 			args: { exam_plan: S.exam_plan, course: S.course },
@@ -530,13 +530,13 @@ slcm.exam_ui.improvement_exams = function (main, opts) {
 				$regLimit.val(d.registration_limit || '');
 				$dlFrom.val(d.deadline_from || '');
 				$dlTo.val(d.deadline_to || '');
-				$gateway.val(d.payment_gateway || 'Razorpay');
+				$gateway.val(d.payment_gateway || 'Easebuzz');
 			},
 		});
 	}
 
 	function clearSettings() {
-		$feeInput.val(''); $dlFrom.val(''); $dlTo.val(''); $gateway.val('Razorpay');
+		$feeInput.val(''); $dlFrom.val(''); $dlTo.val(''); $gateway.val('Easebuzz');
 	}
 
 	function loadStats() {
@@ -911,7 +911,9 @@ slcm.exam_ui.improvement_exams = function (main, opts) {
 
 	return {
 		destroy: function () {
-			$body.empty();
+			// delegated handlers live on the mount element, which the planner reuses:
+			// without .off() every remount adds another (e.g. View courses opening twice)
+			$body.off().empty();
 		},
 	};
 };

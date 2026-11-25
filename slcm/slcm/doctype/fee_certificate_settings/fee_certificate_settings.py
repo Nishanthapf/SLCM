@@ -31,6 +31,19 @@ _BANK_DETAILS = (
 	"{{ bank_table }}"
 )
 
+# Education Loan certificate (all programme years), per the office's "FEE CERTIFICATE" sample.
+_LOAN_BODY = (
+	"<p>This is to certify that <strong>{{ student_name }} (student ID – {{ student_id }})</strong> is studying in "
+	"{{ studying_year }} year {{ programme }} programme during the Academic Year (AY) {{ current_academic_year }} "
+	"in this University and is now required to pay the course fee for {{ due_year }} year i.e. "
+	"AY {{ due_academic_year }}.</p>"
+	"<p>Year wise fee structure for {{ programme }} programme shown below.</p>"
+)
+_LOAN_NOTE = (
+	"<p>Note: The fees / charges are provisional and subject to ratification &amp; revision by the "
+	"governing authorities of the University.</p>"
+)
+
 DEFAULT_PAID_LINE = (
 	"Academic Year {{ academic_year }} paid amount is "
 	"{% if is_paid %}Rs. {{ fee_amount }}/-{% else %}NIL{% endif %}"
@@ -44,17 +57,14 @@ DEFAULT_PURPOSES = [
 		"certificate_type": MULTI_YEAR,
 		"enabled": 1,
 		"include_bank_details": 1,
-		"heading": "Fee Demand Letter",
-		"body_text": _STUDENT
-		+ "is now required to pay the course fee for {{ due_year }} year i.e. "
-		+ "<strong>AY {{ due_academic_year }}</strong>.</p>"
-		+ _FEE_STRUCTURE,
+		"heading": "FEE CERTIFICATE",
+		"body_text": _LOAN_BODY,
 		"applicant_body_text": _APPLICANT + "and is required to pay following fee.</p>" + _FEE_STRUCTURE,
 		"total_label": "Total fee payable",
 		"show_paid_rows": 1,
-		"paid_row_label": "Total Fee paid",
-		"outstanding_row_label": "Outstanding fee",
-		"bank_details_text": _BANK_DETAILS,
+		"paid_row_label": "Amount paid",
+		"outstanding_row_label": "Balance payable",
+		"bank_details_text": _LOAN_NOTE + _BANK_DETAILS,
 		"closing_text": "",
 		"paid_line_text": DEFAULT_PAID_LINE,
 	},

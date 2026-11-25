@@ -22,7 +22,24 @@ frappe.ui.form.on('Evaluation Schema', {
 		});
 	},
 
-	total_marks(_frm) { }
+	total_marks(frm) { frm.$wrapper.find('#es-dynamic-sections .es-ov-total').text(_fmt(frm.doc.total_marks)); },
+
+	// Same required fields Frappe checks on save, but named the way this form shows them
+	// (the assessment / re-exam tables are hidden behind the cards, so Frappe's
+	// "table Assessment Configuration, Row 7" points at nothing the user can see).
+	validate(frm) {
+		const issues = _es_collect_issues(frm);
+		if (!issues.length) return;
+		frappe.validated = false;
+		frappe.msgprint({
+			title: __('Fix these before saving'),
+			indicator: 'red',
+			message: `<p style="margin-bottom:8px;">${__('Some rows are missing information:')}</p><ul style="padding-left:18px;margin:0;">` +
+				issues.map(i => `<li style="margin-bottom:4px;">${i.msg}</li>`).join('') + '</ul>',
+		});
+		const $first = issues.find(i => i.$el && i.$el.length);
+		if ($first) $first.$el[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+	},
 });
 
 frappe.ui.form.on('Evaluation Schema Component', {
@@ -39,6 +56,7 @@ frappe.ui.form.on('Evaluation Schema Component', {
 			? `${comp_name} | ${lbl}`
 			: lbl;
 		frm.$wrapper.find(`.es-sub-section[data-comp="${row.component}"] .es-sect-title`).text(title);
+		_upd_overview(frm.$wrapper.find('#es-dynamic-sections'));
 	},
 
 	effective_max_marks(frm, cdt, cdn) {
@@ -56,274 +74,154 @@ frappe.ui.form.on('Evaluation Schema Component', {
 /* ── Styles ───────────────────────────────────────── */
 
 function _inject_styles() {
-	if (document.getElementById('es-form-styles')) return;
+	if (document.getElementById('es-form-styles-v2')) return;
+	$('#es-form-styles').remove();
 	const s = document.createElement('style');
-	s.id = 'es-form-styles';
+	s.id = 'es-form-styles-v2';
+	/* NLSIU maroon theme; green / red / amber only where they carry meaning */
 	s.textContent = `
 		#es-dynamic-sections {
-			padding: 4px 0 16px;
+			--es-brand: #920C24; --es-brand-dark: #6E091B; --es-brand-soft: #F5D9DE; --es-brand-softest: #FBEEF0;
+			--es-brand-border: #E8B4BE; --es-ink: #1e293b; --es-muted: #64748b; --es-faint: #94a3b8;
+			--es-line: #e2e8f0; --es-line-soft: #f1f5f9; --es-bg: #f8fafc;
+			--es-ok: #15803d; --es-ok-bg: #f0fdf4; --es-ok-line: #86efac;
+			--es-bad: #b91c1c; --es-bad-bg: #fef2f2; --es-bad-line: #fca5a5;
+			--es-warn: #92400e; --es-warn-bg: #fffbeb; --es-warn-line: #fcd34d;
+			padding: 8px 0 20px;
 		}
+		/* overview strip */
+		#es-dynamic-sections .es-overview {
+			display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+			padding: 14px 18px; margin-bottom: 18px; border-radius: 10px;
+			background: linear-gradient(135deg, var(--es-brand) 0%, var(--es-brand-dark) 100%);
+			color: #fff; box-shadow: 0 2px 10px rgba(110, 9, 27, .18);
+		}
+		#es-dynamic-sections .es-ov-stat { display: flex; flex-direction: column; min-width: 90px; }
+		#es-dynamic-sections .es-ov-stat b { font-size: 20px; line-height: 1.1; font-weight: 700; }
+		#es-dynamic-sections .es-ov-stat span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; opacity: .8; }
+		#es-dynamic-sections .es-ov-sep { width: 1px; align-self: stretch; background: rgba(255,255,255,.25); }
+		#es-dynamic-sections .es-ov-chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+		#es-dynamic-sections .es-ov-chip {
+			display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+			background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.25);
+			font-size: 12px; font-weight: 600; color: #fff; cursor: pointer; transition: background .15s;
+		}
+		#es-dynamic-sections .es-ov-chip:hover { background: rgba(255,255,255,.24); }
+		#es-dynamic-sections .es-ov-chip i { font-style: normal; font-weight: 700; width: 16px; height: 16px; border-radius: 50%;
+			display: inline-flex; align-items: center; justify-content: center; font-size: 10px; }
+		#es-dynamic-sections .es-ov-chip.ok i { background: #22c55e; }
+		#es-dynamic-sections .es-ov-chip.bad i { background: #fbbf24; color: #78350f; }
+		#es-dynamic-sections .es-ov-chip.na i { background: rgba(255,255,255,.35); }
+		/* cards */
 		#es-dynamic-sections .es-sub-section {
-			margin-bottom: 20px;
-			border: 1px solid #e2e8f0;
-			border-radius: 8px;
-			overflow: hidden;
-			background: #fff;
-			box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+			margin-bottom: 18px; border: 1px solid var(--es-line); border-radius: 10px; overflow: hidden;
+			background: #fff; box-shadow: 0 1px 3px rgba(15, 23, 42, .06); scroll-margin-top: 90px;
+			border-left: 4px solid var(--es-brand);
 		}
+		#es-dynamic-sections .es-sub-section.es-kind-reexam { border-left-color: #d97706; }
+		#es-dynamic-sections .es-sub-section.es-flash { animation: es-flash 1.2s ease; }
+		@keyframes es-flash { 0% { box-shadow: 0 0 0 0 rgba(146,12,36,.45); } 100% { box-shadow: 0 0 0 10px rgba(146,12,36,0); } }
 		#es-dynamic-sections .es-card-hdr {
-			display: flex;
-			justify-content: space-between;
-			align-items: center;
-			padding: 12px 18px;
-			background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-			border-bottom: 1px solid #e2e8f0;
+			display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+			padding: 12px 16px; background: #fff; border-bottom: 1px solid var(--es-line);
 		}
-		#es-dynamic-sections .es-hdr-left {
-			display: flex;
-			align-items: center;
-			gap: 0;
-		}
-		#es-dynamic-sections .es-sect-title {
-			font-weight: 700;
-			font-size: 13.5px;
-			color: #1e293b;
-			letter-spacing: 0.01em;
-		}
+		#es-dynamic-sections .es-hdr-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+		#es-dynamic-sections .es-hdr-sub { font-size: 11.5px; color: var(--es-muted); font-weight: 500; }
+		#es-dynamic-sections .es-sect-title { font-weight: 700; font-size: 14px; color: var(--es-ink); letter-spacing: .01em; }
 		#es-dynamic-sections .es-badge {
-			display: inline-block;
-			font-size: 10px;
-			padding: 2px 9px;
-			border-radius: 12px;
-			margin-left: 8px;
-			font-weight: 600;
-			vertical-align: middle;
-			letter-spacing: 0.03em;
+			display: inline-block; font-size: 10px; padding: 2px 9px; border-radius: 999px; font-weight: 700;
+			letter-spacing: .04em; text-transform: uppercase; vertical-align: middle; border: 1px solid transparent;
 		}
+		#es-dynamic-sections .es-hdr-actions { display: flex; align-items: center; gap: 8px; }
 		#es-dynamic-sections .es-add-btn {
-			font-size: 12px;
-			font-weight: 500;
-			padding: 5px 14px;
-			border: 1px solid #6366f1;
-			border-radius: 5px;
-			background: #fff;
-			color: #6366f1;
-			cursor: pointer;
-			transition: all 0.15s;
+			display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600;
+			padding: 6px 12px; border: 1px solid var(--es-brand); border-radius: 7px; background: #fff;
+			color: var(--es-brand); cursor: pointer; transition: all .15s;
 		}
-		#es-dynamic-sections .es-add-btn:hover {
-			background: #6366f1;
-			color: #fff;
-		}
+		#es-dynamic-sections .es-add-btn:hover { background: var(--es-brand); color: #fff; }
+		#es-dynamic-sections .es-add-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--es-brand-soft); }
+		/* tables */
 		#es-dynamic-sections .es-tbl-wrap { overflow-x: auto; }
-		#es-dynamic-sections table.es-tbl {
-			width: 100%;
-			margin: 0;
-			border-collapse: collapse;
-			font-size: 12.5px;
-		}
+		#es-dynamic-sections table.es-tbl { width: 100%; margin: 0; border-collapse: collapse; font-size: 12.5px; }
 		#es-dynamic-sections table.es-tbl th {
-			background: #f8fafc;
-			padding: 9px 12px;
-			font-weight: 600;
-			color: #64748b;
-			font-size: 10.5px;
-			text-transform: uppercase;
-			letter-spacing: 0.06em;
-			border-bottom: 2px solid #e2e8f0;
-			white-space: nowrap;
+			background: var(--es-bg); padding: 9px 10px; font-weight: 700; color: var(--es-muted);
+			font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+			border-bottom: 1px solid var(--es-line); white-space: nowrap; text-align: left;
 		}
-		#es-dynamic-sections table.es-tbl td {
-			padding: 8px 10px;
-			border-bottom: 1px solid #f1f5f9;
-			vertical-align: middle;
-		}
-		#es-dynamic-sections table.es-tbl tr:last-child td { border-bottom: none; }
-		#es-dynamic-sections table.es-tbl tbody tr:hover > td { background: #fafbff; }
+		#es-dynamic-sections table.es-tbl th[title] { cursor: help; }
+		#es-dynamic-sections table.es-tbl th[title]::after { content: 'ⓘ'; margin-left: 4px; color: var(--es-faint); font-size: 10px; text-transform: none; }
+		#es-dynamic-sections table.es-tbl td { padding: 7px 8px; border-bottom: 1px solid var(--es-line-soft); vertical-align: middle; }
+		#es-dynamic-sections table.es-tbl tbody tr:last-child td { border-bottom: none; }
+		#es-dynamic-sections table.es-tbl tbody tr:not(.es-subst-row):hover > td { background: var(--es-brand-softest); }
 		#es-dynamic-sections .es-inp {
-			width: 100%;
-			min-width: 56px;
-			border: 1px solid #d1d5db;
-			border-radius: 5px;
-			padding: 5px 8px;
-			font-size: 12px;
-			color: #1f2937;
-			background: #fff;
-			box-sizing: border-box;
-			transition: border-color 0.15s, box-shadow 0.15s;
+			width: 100%; min-width: 56px; height: 32px; border: 1px solid #d1d5db; border-radius: 7px;
+			padding: 4px 9px; font-size: 12.5px; color: var(--es-ink); background: #fff; box-sizing: border-box;
+			transition: border-color .15s, box-shadow .15s, background .15s;
 		}
-		#es-dynamic-sections .es-inp:focus {
-			outline: none;
-			border-color: #6366f1;
-			box-shadow: 0 0 0 2px rgba(99,102,241,0.14);
+		#es-dynamic-sections select.es-inp { padding-right: 24px; }
+		#es-dynamic-sections .es-inp:hover:not([readonly]) { border-color: var(--es-brand-border); }
+		#es-dynamic-sections .es-inp:focus { outline: none; border-color: var(--es-brand); box-shadow: 0 0 0 3px var(--es-brand-soft); }
+		#es-dynamic-sections .es-inp[readonly] { background: var(--es-bg); color: var(--es-muted); border-style: dashed; cursor: default; }
+		#es-dynamic-sections .es-inp[readonly]:focus { box-shadow: none; border-color: #d1d5db; }
+		#es-dynamic-sections .es-inp-at-selected { border-color: var(--es-brand-border) !important; background: var(--es-brand-softest) !important; color: var(--es-brand-dark) !important; font-weight: 600; }
+		#es-dynamic-sections .es-inp.es-inp-err, #es-dynamic-sections .es-ms-trigger.es-inp-err {
+			border-color: var(--es-bad) !important; background: var(--es-bad-bg) !important; box-shadow: 0 0 0 3px rgba(185,28,28,.12) !important;
 		}
-		#es-dynamic-sections .es-inp[readonly] {
-			background: #f1f5f9;
-			color: #64748b;
-			cursor: default;
-		}
+		#es-dynamic-sections .es-err-hint { display: block; margin-top: 3px; font-size: 11px; font-weight: 600; color: var(--es-bad); white-space: nowrap; }
+		#es-dynamic-sections .es-chk { width: 16px; height: 16px; cursor: pointer; accent-color: var(--es-brand); }
+		#es-dynamic-sections .es-unit { color: var(--es-faint); font-size: 11px; }
 		#es-dynamic-sections .es-del-btn {
-			background: none;
-			border: none;
-			color: #ef4444;
-			cursor: pointer;
-			font-size: 17px;
-			line-height: 1;
-			padding: 2px 7px;
-			border-radius: 4px;
-			opacity: 0.55;
-			transition: all 0.15s;
+			display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px;
+			background: none; border: 1px solid transparent; color: var(--es-faint); cursor: pointer;
+			border-radius: 7px; transition: all .15s;
 		}
-		#es-dynamic-sections .es-del-btn:hover { opacity: 1; background: #fee2e2; }
+		#es-dynamic-sections .es-del-btn:hover { color: var(--es-bad); background: var(--es-bad-bg); border-color: #fecaca; }
+		#es-dynamic-sections .es-del-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px #fecaca; }
+		/* sum bar */
 		#es-dynamic-sections .es-sum-bar {
-			padding: 9px 18px;
-			font-size: 12px;
-			border-top: 2px solid #e2e8f0;
-			transition: all 0.25s;
-			display: flex;
-			align-items: center;
-			gap: 5px;
-			font-weight: 500;
+			padding: 9px 16px; font-size: 12.5px; border-top: 1px solid var(--es-line); display: flex; align-items: center;
+			gap: 6px; flex-wrap: wrap; font-weight: 500; background: var(--es-bg); color: var(--es-muted); transition: all .2s;
 		}
-		#es-dynamic-sections .es-subst-toggle-bar {
-			padding: 8px 16px;
-			cursor: pointer;
-			display: flex;
-			align-items: center;
-			gap: 5px;
-			font-size: 12px;
-			color: #6366f1;
-			font-weight: 600;
-			user-select: none;
-			border-top: 1px solid #f1f5f9;
-			background: #fafbff;
-			transition: background 0.15s;
-		}
-		#es-dynamic-sections .es-subst-toggle-bar:hover { background: #eff0ff; }
-		#es-dynamic-sections .es-subst-body {
-			padding: 14px 16px 16px;
-			background: #fafbff;
-			border-top: 1px solid #e0e7ff;
-		}
-		#es-dynamic-sections .es-subst-grid {
-			display: grid;
-			grid-template-columns: 2fr 1fr 1fr 1fr;
-			gap: 14px;
-			margin-bottom: 12px;
-		}
-		#es-dynamic-sections .es-subst-grid.es-subst-grid-3 {
-			grid-template-columns: 1fr 1fr 1fr;
-		}
-		#es-dynamic-sections .es-sf-label {
-			display: block;
-			font-size: 10.5px;
-			font-weight: 700;
-			color: #94a3b8;
-			text-transform: uppercase;
-			letter-spacing: 0.07em;
-			margin-bottom: 5px;
-		}
-		#es-dynamic-sections .es-subst-note {
-			font-size: 11px;
-			color: #94a3b8;
-			line-height: 1.6;
-			padding-top: 10px;
-			border-top: 1px solid #e0e7ff;
-		}
-		#es-dynamic-sections .es-subst-note strong {
-			color: #64748b;
-		}
-		#es-dynamic-sections .es-empty-row td {
-			text-align: center;
-			color: #94a3b8;
-			font-style: italic;
-			padding: 16px;
-		}
-		#es-dynamic-sections .es-inp-at-selected {
-			border-color: #22c55e !important;
-			background: #f0fdf4 !important;
-			color: #15803d !important;
-			font-weight: 600;
-		}
+		#es-dynamic-sections .es-sum-bar.ok { background: var(--es-ok-bg); color: var(--es-ok); border-top-color: var(--es-ok-line); }
+		#es-dynamic-sections .es-sum-bar.bad { background: var(--es-warn-bg); color: var(--es-warn); border-top-color: var(--es-warn-line); }
+		#es-dynamic-sections .es-sum-bar .es-sum-msg { margin-left: auto; font-weight: 600; }
+		/* re-exam */
 		#es-dynamic-sections .es-reexam-mode {
-			padding: 4px 10px;
-			border: 1px solid #6366f1;
-			color: #4f46e5;
-			font-weight: 600;
-			background: #eef2ff;
-			border-radius: 5px;
-			font-size: 12px;
-			cursor: pointer;
-			min-width: 175px;
+			height: 32px; padding: 4px 26px 4px 10px; border: 1px solid #d97706; color: #92400e; font-weight: 600;
+			background-color: #fffbeb; border-radius: 7px; font-size: 12px; cursor: pointer; min-width: 175px;
 		}
-		#es-dynamic-sections .es-ms-wrap {
-			position: relative;
-			min-width: 120px;
+		#es-dynamic-sections .es-reexam-mode:focus { outline: none; box-shadow: 0 0 0 3px #fde68a; }
+		#es-dynamic-sections .es-subst-toggle-bar {
+			padding: 8px 16px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 12px;
+			color: var(--es-brand); font-weight: 600; user-select: none; border-top: 1px dashed var(--es-line);
+			background: #fff; transition: background .15s;
 		}
-		#es-dynamic-sections .es-ms-trigger {
-			cursor: pointer;
-			display: flex;
-			justify-content: space-between;
-			align-items: center;
-			user-select: none;
-			padding: 5px 8px;
-		}
-		#es-dynamic-sections .es-ms-label {
-			flex: 1;
-			overflow: hidden;
-			text-overflow: ellipsis;
-			white-space: nowrap;
-			font-size: 12px;
-			color: #1f2937;
-		}
-		#es-dynamic-sections .es-ms-label.es-ms-placeholder {
-			color: #9ca3af;
-		}
-		#es-dynamic-sections .es-ms-arrow {
-			color: #94a3b8;
-			margin-left: 6px;
-			flex-shrink: 0;
-			font-size: 10px;
-		}
+		#es-dynamic-sections .es-subst-toggle-bar:hover { background: var(--es-brand-softest); }
+		#es-dynamic-sections .es-subst-body { padding: 14px 16px 16px; background: var(--es-brand-softest); border-top: 1px solid var(--es-brand-soft); }
+		#es-dynamic-sections .es-subst-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 14px; margin-bottom: 12px; }
+		#es-dynamic-sections .es-subst-grid.es-subst-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+		@media (max-width: 900px) { #es-dynamic-sections .es-subst-grid { grid-template-columns: 1fr 1fr; } }
+		#es-dynamic-sections .es-sf-label { display: block; font-size: 10.5px; font-weight: 700; color: var(--es-muted); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 5px; }
+		#es-dynamic-sections .es-subst-note { font-size: 11.5px; color: var(--es-muted); line-height: 1.6; padding: 10px 12px; border-radius: 8px; background: #fff; border: 1px solid var(--es-brand-soft); }
+		#es-dynamic-sections .es-subst-note strong { color: var(--es-brand-dark); }
+		#es-dynamic-sections .es-empty-row td { text-align: center; color: var(--es-faint); font-style: italic; padding: 16px; }
+		#es-dynamic-sections .es-empty-hint { padding: 22px; text-align: center; color: var(--es-muted); border: 1px dashed var(--es-brand-border); border-radius: 10px; background: var(--es-brand-softest); font-size: 13px; }
+		/* multi-select */
+		#es-dynamic-sections .es-ms-wrap { position: relative; min-width: 120px; }
+		#es-dynamic-sections .es-ms-trigger { cursor: pointer; display: flex; justify-content: space-between; align-items: center; user-select: none; }
+		#es-dynamic-sections .es-ms-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--es-ink); }
+		#es-dynamic-sections .es-ms-label.es-ms-placeholder { color: #9ca3af; }
+		#es-dynamic-sections .es-ms-arrow { color: var(--es-faint); margin-left: 6px; flex-shrink: 0; font-size: 10px; }
 		/* Panel floats on <body> while open so card/table overflow can't clip it */
 		.es-ms-panel {
-			display: none;
-			position: fixed;
-			z-index: 1050;
-			background: #fff;
-			border: 1px solid #d1d5db;
-			border-radius: 6px;
-			box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-			min-width: 170px;
-			max-height: 260px;
-			overflow-y: auto;
-			overscroll-behavior: contain;
-			padding: 4px 0;
+			display: none; position: fixed; z-index: 1050; background: #fff; border: 1px solid #E8B4BE; border-radius: 8px;
+			box-shadow: 0 10px 28px rgba(15,23,42,.14); min-width: 170px; max-height: 260px; overflow-y: auto;
+			overscroll-behavior: contain; padding: 4px 0;
 		}
-		.es-ms-empty {
-			padding: 6px 12px;
-			font-size: 12px;
-			color: #9ca3af;
-		}
-		.es-ms-item {
-			display: flex;
-			align-items: center;
-			gap: 8px;
-			padding: 6px 12px;
-			cursor: pointer;
-			font-size: 12px;
-			color: #1f2937;
-			margin: 0;
-			font-weight: 400;
-		}
-		.es-ms-item:hover { background: #f1f5f9; }
-		.es-ms-item input[type=checkbox] {
-			accent-color: #6366f1;
-			width: 14px;
-			height: 14px;
-			cursor: pointer;
-			flex-shrink: 0;
-		}
+		.es-ms-empty { padding: 6px 12px; font-size: 12px; color: #9ca3af; }
+		.es-ms-item { display: flex; align-items: center; gap: 8px; padding: 7px 12px; cursor: pointer; font-size: 12.5px; color: #1f2937; margin: 0; font-weight: 400; }
+		.es-ms-item:hover { background: #FBEEF0; }
+		.es-ms-item input[type=checkbox] { accent-color: #920C24; width: 14px; height: 14px; cursor: pointer; flex-shrink: 0; }
 	`;
 	document.head.appendChild(s);
 }
@@ -375,7 +273,25 @@ function _render(frm) {
 	_esms_close_all();
 	$area.empty();
 
-	(frm.doc.schema_components || []).filter(r => r.component).forEach(cr => {
+	const comps = (frm.doc.schema_components || []).filter(r => r.component);
+	if (!comps.length) {
+		$area.html(`<div class="es-empty-hint">${__('Add the components (e.g. Internal, End Term, Re-Exam) in the table above. Each one gets a card here to set up its assessments.')}</div>`);
+		return;
+	}
+	$area.append(`<div class="es-overview">
+		<div class="es-ov-stat"><b class="es-ov-total">${_fmt(frm.doc.total_marks)}</b><span>${__('Total marks')}</span></div>
+		<div class="es-ov-stat"><b>${comps.length}</b><span>${__('Components')}</span></div>
+		<div class="es-ov-sep"></div>
+		<div class="es-ov-chips"></div>
+	</div>`);
+	$area.find('.es-overview').on('click', '.es-ov-chip', function () {
+		const $t = $area.find('.es-sub-section').filter((_, el) => $(el).attr('data-comp') === $(this).attr('data-comp'));
+		if (!$t.length) return;
+		$t[0].scrollIntoView({ behavior: 'smooth', block: 'start' });
+		$t.removeClass('es-flash'); void $t[0].offsetWidth; $t.addClass('es-flash');
+	});
+
+	comps.forEach(cr => {
 		const ctype = _comp_type(frm, cr.component);
 		const ci = (frm._ep_components || []).find(c => c.name === cr.component);
 		const comp_name = ci ? ci.component_name : cr.component;
@@ -387,59 +303,124 @@ function _render(frm) {
 			_render_assess_sec(frm, $area, cr.component, lbl, ctype, cr.effective_max_marks || 0);
 		}
 	});
+	_upd_overview($area);
+}
+
+/* One chip per component in the overview: does it add up? Click to jump to its card */
+function _upd_overview($area) {
+	const $chips = $area.find('.es-ov-chips');
+	if (!$chips.length) return;
+	$chips.empty();
+	$area.find('.es-sub-section').each(function () {
+		const $sec = $(this);
+		const title = $sec.find('.es-sect-title').first().text();
+		const $sum = $sec.find('.es-sum');
+		let cls = 'na', mark = '•', tip = __('Re-exam / makeup settings');
+		if ($sum.length) {
+			const t = parseFloat($sum.text()) || 0, eq = parseFloat($sec.find('.es-assess-eq').text()) || 0;
+			const ok = t === eq && eq !== 0;
+			cls = ok ? 'ok' : 'bad'; mark = ok ? '✓' : '!';
+			tip = ok ? __('Adds up') : __('{0} of {1} marks shared out', [_fmt(t), _fmt(eq)]);
+		}
+		$chips.append($('<span class="es-ov-chip"></span>').addClass(cls).attr({ 'data-comp': $sec.attr('data-comp'), title: tip })
+			.append($('<i></i>').text(mark)).append($('<span></span>').text(title)));
+	});
+}
+
+/* ── Save check: the same mandatory fields, with readable messages ── */
+
+function _es_collect_issues(frm) {
+	const issues = [];
+	const $area = frm.$wrapper.find('#es-dynamic-sections');
+	$area.find('.es-inp-err').each(function () { _es_clear_err($(this)); });
+	const comp_label = comp => {
+		const cr = (frm.doc.schema_components || []).find(c => c.component === comp);
+		const ci = (frm._ep_components || []).find(c => c.name === comp);
+		return (cr && cr.label) || (ci && ci.component_name) || comp;
+	};
+
+	(frm.doc.schema_components || []).forEach(r => {
+		if (!r.component) issues.push({ msg: __('Components table, row {0}: pick a <b>Component</b>, or delete the empty row.', [r.idx]) });
+	});
+
+	// assessment rows, numbered as they appear in each card
+	$area.find('.es-sub-section').each(function () {
+		const $sec = $(this), comp = $sec.attr('data-comp');
+		$sec.find('.es-tbody > tr[data-fn]').not('.es-subst-row').each(function (i) {
+			const $at = $(this).find('select[name=at]');
+			if ($at.length && !$at.val()) {
+				_es_set_err($at, __('Pick a type or remove the row'));
+				issues.push({ $el: $at, msg: __('<b>{0}</b>, assessment row {1}: pick an <b>Assessment type</b>, or remove the row with the bin icon.', [_esc(comp_label(comp)), i + 1]) });
+			}
+		});
+	});
+	// assessment rows with no card on screen (their component was removed or has no type)
+	const shown = new Set($area.find('select[name=at]').closest('tr').map((_, el) => $(el).attr('data-fn')).get());
+	(frm.doc.assessment_configs || []).forEach(r => {
+		if (shown.has(r.name)) return;
+		if (!r.assessment_type || !r.component) {
+			issues.push({ msg: __('Assessment Configuration row {0} ({1}) has no {2}. Re-add the component or remove that row.', [r.idx, _esc(comp_label(r.component) || __('no component')), !r.component ? __('component') : __('assessment type')]) });
+		}
+	});
+	(frm.doc.reexam_configs || []).forEach(r => {
+		if (!r.component) issues.push({ msg: __('Re-Exam Configuration row {0} has no component.', [r.idx]) });
+	});
+	return issues;
 }
 
 /* ── Badge helper ─────────────────────────────────── */
 
 function _badge(ctype) {
 	const map = {
-		'Custom': ['#16a34a', '#dcfce7'],
-		'Assessment': ['#2563eb', '#dbeafe'],
-		'Re Exam': ['#dc2626', '#fee2e2'],
-		'Makeup': ['#d97706', '#fef3c7'],
-		'Default Assessment': ['#6b7280', '#f3f4f6'],
+		'Custom': ['#920C24', '#FBEEF0', '#E8B4BE'],
+		'Assessment': ['#1d4ed8', '#eff6ff', '#bfdbfe'],
+		'Re Exam': ['#92400e', '#fffbeb', '#fcd34d'],
+		'Makeup': ['#9a3412', '#fff7ed', '#fdba74'],
+		'Default Assessment': ['#475569', '#f8fafc', '#cbd5e1'],
 	};
-	const [color, bg] = map[ctype] || map['Custom'];
-	return `<span class="es-badge" style="background:${bg};color:${color};">${ctype || 'Custom'}</span>`;
+	const [color, bg, line] = map[ctype] || map['Custom'];
+	return `<span class="es-badge" style="background:${bg};color:${color};border-color:${line};">${_esc(ctype || 'Custom')}</span>`;
 }
 
 /* ── Assessment section ───────────────────────────── */
 
 function _render_assess_sec(frm, $area, comp, lbl, ctype, eff_marks) {
 	const $sec = $(`
-		<div class="es-sub-section" data-comp="${comp}">
+		<div class="es-sub-section" data-comp="${_esc(comp)}">
 			<div class="es-card-hdr">
 				<div class="es-hdr-left">
 					<span class="es-sect-title">${_esc(lbl)}</span>
 					${_badge(ctype)}
+					<span class="es-hdr-sub">${__('Component marks')}: <b class="es-hdr-eq">${_fmt(eff_marks)}</b></span>
 				</div>
-				<button class="es-add-btn es-add-row">+ Add Assessment</button>
+				<button type="button" class="es-add-btn es-add-row">+ ${__('Add assessment')}</button>
 			</div>
 			<div class="es-tbl-wrap">
 				<table class="es-tbl">
 					<thead>
 						<tr>
-							<th style="min-width:130px;">Assessment Type</th>
-							<th style="min-width:100px;">Label</th>
-							<th style="min-width:90px;">Effective Marks</th>
-							<th style="min-width:90px;">Maximum Marks</th>
-							<th style="min-width:75px;">Min Marks</th>
-							<th style="min-width:90px;">Passing Marks</th>
-							<th style="min-width:70px;text-align:center;">Pass/Fail</th>
-							<th style="min-width:90px;">Weightage</th>
-							<th style="min-width:90px;">Enrollment</th>
+							<th style="min-width:140px;">${__('Assessment type')}</th>
+							<th style="min-width:100px;">${__('Label')}</th>
+							<th style="min-width:90px;" title="${__('Worked out for you: Maximum marks × Weightage %. These add up to the component marks.')}">${__('Effective')}</th>
+							<th style="min-width:90px;" title="${__('What the assessment is marked out of.')}">${__('Max marks')}</th>
+							<th style="min-width:75px;">${__('Min marks')}</th>
+							<th style="min-width:90px;">${__('Passing marks')}</th>
+							<th style="min-width:70px;text-align:center;" title="${__('Tick when failing this assessment fails the course.')}">${__('Pass / fail')}</th>
+							<th style="min-width:90px;">${__('Weightage')}</th>
+							<th style="min-width:90px;" title="${__('Auto: every student of the course takes it. Manual: students are added one by one.')}">${__('Enrolment')}</th>
 							<th style="width:36px;"></th>
 						</tr>
 					</thead>
 					<tbody class="es-tbody"></tbody>
 				</table>
 			</div>
-			<div class="es-sum-bar" style="background:#f8fafc;color:#64748b;border-top-color:#e2e8f0;">
-				<span>Sum of effective marks:</span>
+			<div class="es-sum-bar">
+				<span>${__('Effective marks')}:</span>
 				<b class="es-sum">0</b>
-				<span style="color:#94a3b8;">/</span>
+				<span>/</span>
 				<b class="es-assess-eq">${eff_marks}</b>
-				<span style="color:#94a3b8;font-size:11px;margin-left:4px;">(component marks)</span>
+				<span>${__('component marks')}</span>
+				<span class="es-sum-msg"></span>
 			</div>
 		</div>
 	`);
@@ -477,18 +458,18 @@ function _add_assess_row(frm, $sec, comp, data) {
 				</select>
 			</td>
 			<td><input name="lbl" class="es-inp" value="${_esc(data.label || '')}" placeholder="Label"/></td>
-			<td><input name="eff" type="number" class="es-inp" value="${data.effective_marks || ''}" readonly placeholder="Auto"/></td>
+			<td><input name="eff" type="number" class="es-inp" value="${data.effective_marks || ''}" readonly tabindex="-1" placeholder="Auto"/></td>
 			<td><input name="max" type="number" class="es-inp" value="${data.maximum_marks || ''}" placeholder="0"/></td>
 			<td><input name="min" type="number" class="es-inp" value="${data.minimum_marks || 0}" placeholder="0"/></td>
 			<td><input name="pass" type="number" class="es-inp" value="${data.passing_marks || 0}" placeholder="0"/></td>
 			<td style="text-align:center;">
 				<input type="checkbox" name="pfail" ${data.consider_for_pass_fail ? 'checked' : ''}
-					style="width:16px;height:16px;cursor:pointer;accent-color:#6366f1;"/>
+					class="es-chk"/>
 			</td>
 			<td>
 				<div style="display:flex;align-items:center;gap:3px;">
 					<input name="wt" type="number" class="es-inp" value="${data.weightage !== undefined ? data.weightage : 100}" placeholder="100"/>
-					<span style="color:#94a3b8;font-size:11px;">%</span>
+					<span class="es-unit">%</span>
 				</div>
 			</td>
 			<td>
@@ -497,7 +478,7 @@ function _add_assess_row(frm, $sec, comp, data) {
 					<option value="Manual" ${data.enrollment === 'Manual' ? 'selected' : ''}>Manual</option>
 				</select>
 			</td>
-			<td><button class="es-del-btn es-del" title="Remove row">×</button></td>
+			<td><button type="button" class="es-del-btn es-del" title="Remove this row" aria-label="Remove this row">${_ES_TRASH}</button></td>
 		</tr>
 	`);
 	$sec.find('.es-tbody').append($row);
@@ -505,6 +486,7 @@ function _add_assess_row(frm, $sec, comp, data) {
 	const _upd_at_indicator = () => {
 		const $at = $row.find('[name=at]');
 		$at.val() ? $at.addClass('es-inp-at-selected') : $at.removeClass('es-inp-at-selected');
+		if ($at.val()) _es_clear_err($at);
 	};
 
 	const sync = () => {
@@ -567,14 +549,23 @@ function _upd_assess_sum($sec) {
 	t = Math.round(t * 100) / 100;
 	$sec.find('.es-sum').text(t);
 	const eq = parseFloat($sec.find('.es-assess-eq').text()) || 0;
-	const $bar = $sec.find('.es-sum-bar');
+	const $bar = $sec.find('.es-sum-bar').removeClass('ok bad');
+	const diff = Math.round((eq - t) * 100) / 100;
+	let msg = '';
 	if (eq === 0 && t === 0) {
-		$bar.css({ background: '#f8fafc', color: '#64748b', borderTopColor: '#e2e8f0' });
-	} else if (t === eq) {
-		$bar.css({ background: '#f0fdf4', color: '#15803d', borderTopColor: '#86efac' });
+		msg = __('Set the component marks in the Components table above.');
+	} else if (diff === 0) {
+		$bar.addClass('ok');
+		msg = '✓ ' + __('Adds up to the component marks');
 	} else {
-		$bar.css({ background: '#fff1f2', color: '#be123c', borderTopColor: '#fda4af' });
+		$bar.addClass('bad');
+		msg = diff > 0
+			? '⚠ ' + __('{0} marks still to share out', [_fmt(diff)])
+			: '⚠ ' + __('{0} marks more than the component marks', [_fmt(-diff)]);
 	}
+	$bar.find('.es-sum-msg').text(msg);
+	$sec.find('.es-hdr-eq').text(_fmt(eq));
+	_upd_overview($sec.closest('#es-dynamic-sections'));
 }
 
 /* ── Custom multi-select dropdown ────────────────── */
@@ -694,19 +685,20 @@ function _render_reexam_sec(frm, $area, comp, lbl, ctype, comp_name) {
 	const defaultMode = (existing[0] && existing[0].re_exam_type_category) || 'Assessment';
 
 	const $sec = $(`
-		<div class="es-sub-section" data-comp="${comp}">
+		<div class="es-sub-section es-kind-reexam" data-comp="${_esc(comp)}">
 			<div class="es-card-hdr">
 				<div class="es-hdr-left">
 					<span class="es-sect-title">${_esc(comp_name || comp)} | ${_esc(lbl)}</span>
 					${_badge(ctype)}
 				</div>
-				<div style="display:flex;align-items:center;gap:8px;">
+				<div class="es-hdr-actions">
+					<span class="es-hdr-sub">${__('Based on')}</span>
 					<select class="es-reexam-mode">
 						<option value="Assessment" ${defaultMode === 'Assessment' ? 'selected' : ''}>Assessment</option>
 						<option value="ReExam/Makeup Assessment" ${defaultMode === 'ReExam/Makeup Assessment' ? 'selected' : ''}>ReExam / Makeup</option>
 						<option value="Component" ${defaultMode === 'Component' ? 'selected' : ''}>Component</option>
 					</select>
-					<button class="es-add-btn es-add-row">+ Add</button>
+					<button type="button" class="es-add-btn es-add-row">+ ${__('Add')}</button>
 				</div>
 			</div>
 			<div class="es-tbl-wrap">
@@ -714,11 +706,11 @@ function _render_reexam_sec(frm, $area, comp, lbl, ctype, comp_name) {
 					<thead>
 						<tr>
 							<th class="es-col-first" style="min-width:130px;">${defaultMode === 'Component' ? 'Component' : 'Assessment Type'}</th>
-							<th style="min-width:100px;">Label</th>
-							<th style="min-width:100px;">Maximum Marks</th>
-							<th style="min-width:80px;">Min Marks</th>
-							<th style="min-width:100px;">Passing Marks</th>
-							<th style="min-width:90px;">Enrollment</th>
+							<th style="min-width:100px;">${__('Label')}</th>
+							<th style="min-width:100px;" title="${__('In Component mode this is the total of the chosen components and is filled in for you.')}">${__('Max marks')}</th>
+							<th style="min-width:80px;">${__('Min marks')}</th>
+							<th style="min-width:100px;">${__('Passing marks')}</th>
+							<th style="min-width:90px;" title="${__('Auto: every eligible student takes it. Manual: students are added one by one.')}">${__('Enrolment')}</th>
 							<th style="width:36px;"></th>
 						</tr>
 					</thead>
@@ -809,7 +801,7 @@ function _add_reexam_row(frm, $sec, comp, data) {
 		<tr data-fn="${fn}">
 			<td class="es-ms-td" style="min-width:160px;"></td>
 			<td><input name="lbl" class="es-inp" value="${_esc(data.label || '')}" placeholder="Label"/></td>
-			<td><input name="max" type="number" class="es-inp" value="${data.maximum_marks || ''}" placeholder="Auto" ${mode === 'Component' ? 'readonly' : ''}/></td>
+			<td><input name="max" type="number" class="es-inp" value="${data.maximum_marks || ''}" placeholder="Auto" ${mode === 'Component' ? 'readonly tabindex="-1"' : ''}/></td>
 			<td><input name="min" type="number" class="es-inp" value="${data.minimum_marks || 0}" placeholder="0"/></td>
 			<td><input name="pass" type="number" class="es-inp" value="${data.passing_marks || 0}" placeholder="0"/></td>
 			<td>
@@ -818,7 +810,7 @@ function _add_reexam_row(frm, $sec, comp, data) {
 					<option value="Manual" ${(data.enrollment || 'Manual') === 'Manual' ? 'selected' : ''}>Manual</option>
 				</select>
 			</td>
-			<td><button class="es-del-btn es-del" title="Remove row">×</button></td>
+			<td><button type="button" class="es-del-btn es-del" title="Remove this row" aria-label="Remove this row">${_ES_TRASH}</button></td>
 		</tr>
 	`);
 	$sec.find('.es-tbody').append($main);
@@ -861,7 +853,7 @@ function _add_reexam_row(frm, $sec, comp, data) {
 							<span class="es-sf-label">Weightage</span>
 							<div style="display:flex;align-items:center;gap:4px;">
 								<input name="sub_wt" type="number" class="es-inp" value="${data.substitute_weightage || 100}"/>
-								<span style="color:#94a3b8;font-size:11px;white-space:nowrap;">%</span>
+								<span class="es-unit">%</span>
 							</div>
 						</div>
 						<div>
@@ -960,6 +952,21 @@ function _add_reexam_row(frm, $sec, comp, data) {
 }
 
 /* ── Utility ─────────────────────────────────────── */
+
+const _ES_TRASH = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>';
+
+function _fmt(n) { return String(Math.round((parseFloat(n) || 0) * 100) / 100); }
+
+/* Mark / clear a field that blocks saving, with a short hint under it */
+function _es_set_err($el, msg) {
+	$el.addClass('es-inp-err').attr('title', msg);
+	const $cell = $el.closest('td, div');
+	if (!$cell.find('> .es-err-hint').length) $cell.append(`<span class="es-err-hint">${_esc(msg)}</span>`);
+}
+function _es_clear_err($el) {
+	$el.removeClass('es-inp-err').removeAttr('title');
+	$el.closest('td, div').find('> .es-err-hint').remove();
+}
 
 function _esc(s) {
 	if (!s) return '';

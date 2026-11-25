@@ -183,7 +183,9 @@ slcm.exam_ui.course_results = function (main, opts) {
 
 		/* ── Student status filter bar ── */
 		.er2-status-bar { padding:6px 12px; background:#f8fafc; border-bottom:1.5px solid #f1f5f9;
-		                  display:flex; align-items:center; gap:6px; }
+		                  display:flex; align-items:center; gap:6px;
+		                  position:sticky; top:0; z-index:9; }
+		.er2-align-spacer { position:sticky; z-index:9; background:#fff; }
 
 		/* ── Student row ── */
 		.er2-srow    { display:flex; align-items:center; gap:10px; padding:0 13px;
@@ -332,6 +334,7 @@ slcm.exam_ui.course_results = function (main, opts) {
 		.er2-bd .er2-bd-sum td { font-weight:700; background:#FBEEF0; }
 		.er2-bd .er2-bd-off td { color:#94a3b8; }
 		.er2-bd .er2-bd-note { color:#64748b; font-size:12px; margin:6px 0 0; }
+		.er2-bd .er2-bd-of { color:#94a3b8; font-weight:400; font-size:12px; }
 		.er2-bd .er2-bd-final { margin-top:14px; padding:12px 14px; border-radius:10px; background:#FBEEF0; border:1px solid #E8B4BE; }
 		.er2-bd .er2-bd-final b { color:#920C24; }
 
@@ -366,6 +369,17 @@ slcm.exam_ui.course_results = function (main, opts) {
 			background:#FBEEF0; font-size:12px; font-weight:700; text-align:center;
 			color:#920C24;
 		}
+
+		/* ── Total marks: read-only box, same size as the mark inputs ── */
+		.er2-rtable td.er2-total-cell { text-align:center; }
+		.er2-total-box {
+			display:inline-block; min-width:70px; height:26px; line-height:23px;
+			border:1.5px solid #E8B4BE; border-radius:6px; padding:0 8px;
+			background:#FBEEF0; font-size:12px; font-weight:800; text-align:center;
+			color:#920C24; font-variant-numeric:tabular-nums; cursor:default; box-sizing:border-box;
+		}
+		.er2-total-flash { animation:er2-total-flash .9s ease; }
+		@keyframes er2-total-flash { 0% { background:#F5D9DE; box-shadow:0 0 0 3px rgba(146,12,36,.18); } 100% { background:#FBEEF0; box-shadow:none; } }
 
 		/* ── Overall status col header accent ── */
 
@@ -550,6 +564,20 @@ slcm.exam_ui.course_results = function (main, opts) {
 		          background:#fff; outline:none; transition:border-color .15s; }
 		.er2-mi:focus   { border-color:#920C24; box-shadow:0 0 0 2px rgba(146,12,36,.12); }
 		.er2-mi:disabled { background:#f8fafc; color:#94a3b8; cursor:not-allowed; }
+		.er2-rtable input.er2-mi.er2-mi-err, .er2-mi.er2-mi-err {
+		          border-color:#dc2626 !important; background:#fef2f2 !important; color:#b91c1c !important;
+		          box-shadow:0 0 0 3px rgba(220,38,38,.15) !important; }
+		.er2-mi-shake { animation:er2-shake .32s ease; }
+		@keyframes er2-shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-3px)}
+		          50%{transform:translateX(3px)} 75%{transform:translateX(-2px)} }
+		.er2-mark-tip { position:fixed; z-index:1060; display:none; max-width:260px;
+		          align-items:flex-start; gap:6px; padding:7px 10px; border-radius:8px;
+		          background:#b91c1c; color:#fff; font-size:12px; font-weight:600; line-height:1.35;
+		          box-shadow:0 8px 24px rgba(0,0,0,.18); pointer-events:none; }
+		.er2-mark-tip svg { flex-shrink:0; margin-top:1px; }
+		.er2-mark-tip::before { content:''; position:absolute; top:-5px; left:var(--er2-tip-arrow,50%);
+		          margin-left:-5px; border:5px solid transparent; border-top:0; border-bottom-color:#b91c1c; }
+		.er2-mark-tip.above::before { top:auto; bottom:-5px; border-bottom:0; border-top:5px solid #b91c1c; }
 
 		/* ── Lock button states ── */
 		.er2-btn.outline-green { border-color:#E8B4BE; color:#920C24; background:#FBEEF0; }
@@ -590,13 +618,13 @@ slcm.exam_ui.course_results = function (main, opts) {
 		               background:#f1f5f9; cursor:pointer; display:flex; align-items:center;
 		               justify-content:center; color:#64748b; font-size:18px; transition:all .15s; flex-shrink:0; }
 		.xas-close:hover { background:#F5D9DE; color:#920C24; }
-		.xas-tabs    { display:flex; gap:3px; padding:10px 16px 0; border-bottom:1.5px solid #f1f5f9; }
-		.xas-tab     { padding:8px 18px; border:none; border-radius:7px 7px 0 0;
-		               background:transparent; font-size:13px; font-weight:600; color:#64748b;
-		               cursor:pointer; display:inline-flex; align-items:center; gap:6px;
-		               transition:all .15s; border-bottom:2.5px solid transparent; margin-bottom:-1.5px; }
-		.xas-tab:hover  { color:#920C24; background:rgba(146,12,36,.06); }
-		.xas-tab.active { color:#920C24; border-bottom-color:#920C24; background:#fff; }
+		/* segmented tabs, same look as the Exam Planner's */
+		.xas-tabs    { display:flex; align-self:flex-start; gap:4px; padding:4px; margin:12px 16px 4px; max-width:calc(100% - 32px);
+		               overflow-x:auto; background:#f4f4f5; border:1px solid #e5e7eb; border-radius:12px; flex-shrink:0; }
+		.xas-tab     { background:transparent; border:0; border-radius:9px; padding:8px 16px; font-size:13.5px; font-weight:600; color:#6b7280; cursor:pointer; white-space:nowrap; user-select:none; display:inline-flex; align-items:center; gap:6px; transition:background .15s, color .15s, box-shadow .15s; }
+		.xas-tab:hover:not(.active) { background:#FBEEF0; color:#920C24; }
+		.xas-tab.active { background:#920C24; color:#fff; box-shadow:0 2px 6px rgba(146,12,36,.28); }
+		.xas-tab:focus-visible, .rs-subtab:focus-visible { outline:none; box-shadow:0 0 0 3px #F5D9DE; }
 		.xas-panel   { flex:1; display:flex; flex-direction:column; overflow:hidden; min-height:0; }
 		.xas-search-bar { display:flex; gap:8px; padding:12px 16px; border-bottom:1.5px solid #f1f5f9;
 		                  flex-wrap:wrap; align-items:center; }
@@ -1038,6 +1066,7 @@ slcm.exam_ui.course_results = function (main, opts) {
 		syncing = false;
 	});
 	$right[0].addEventListener('scroll', function () {
+		hide_mark_tip();
 		if (syncing) return;
 		syncing = true;
 		$left[0].scrollTop = $right[0].scrollTop;
@@ -1979,6 +2008,53 @@ slcm.exam_ui.course_results = function (main, opts) {
 		});
 	}
 
+	// ── Inline marks validation ─────────────────────────────────────────────
+	function mark_value_error($inp, val) {
+		if (val === '') {
+			// type=number reports '' for unparsable text: tell the user rather than
+			// silently clearing their mark.
+			var el = $inp[0];
+			return el && el.validity && el.validity.badInput ? __('Enter a number, e.g. 45 or 45.5') : null;
+		}
+		var num = Number(val);
+		if (isNaN(num)) return __('Enter a number, e.g. 45 or 45.5');
+		if (num < 0) return __('Marks cannot be negative');
+		var max = parseFloat($inp.attr('data-max'));
+		if (max && num > max) return __('Maximum is {0}. You entered {1}.', [fmt_mark(max), fmt_mark(num)]);
+		return null;
+	}
+	function fmt_mark(n) { return (Math.round(n * 100) / 100).toString(); }
+	function get_mark_tip() {
+		var $t = $('#er2-mark-tip');
+		if (!$t.length) $t = $('<div id="er2-mark-tip" class="er2-mark-tip" role="alert"></div>').appendTo(document.body);
+		return $t;
+	}
+	function position_mark_tip($inp, msg) {
+		var $t = get_mark_tip().html(
+			'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
+			'<span>' + frappe.utils.escape_html(msg) + '</span>'
+		).removeClass('above').css('display', 'flex');
+		var r = $inp[0].getBoundingClientRect();
+		var tw = $t.outerWidth(), th = $t.outerHeight();
+		var left = Math.max(8, Math.min(r.left + r.width / 2 - tw / 2, window.innerWidth - tw - 8));
+		var top = r.bottom + 8;
+		if (top + th > window.innerHeight - 8) { top = r.top - th - 8; $t.addClass('above'); }
+		$t.css({ left: left, top: top }).css('--er2-tip-arrow', (r.left + r.width / 2 - left) + 'px');
+	}
+	function hide_mark_tip() { $('#er2-mark-tip').hide(); }
+	function show_mark_error($inp, msg) {
+		$inp.addClass('er2-mi-err').attr({ 'data-err': msg, title: msg, 'aria-invalid': 'true' });
+		$inp.removeClass('er2-mi-shake');
+		void $inp[0].offsetWidth;  // restart the shake animation
+		$inp.addClass('er2-mi-shake');
+		if (document.activeElement === $inp[0]) position_mark_tip($inp, msg);
+	}
+	function clear_mark_error($inp) {
+		if (!$inp.hasClass('er2-mi-err')) return;
+		$inp.removeClass('er2-mi-err er2-mi-shake').removeAttr('data-err title aria-invalid');
+		if (document.activeElement === $inp[0]) hide_mark_tip();
+	}
+
 	function render_marks_table() {
 		// Clear any stale pending saves from previous render
 		Object.keys(_saveTimer).forEach(function (k) { clearTimeout(_saveTimer[k]); });
@@ -2089,7 +2165,15 @@ slcm.exam_ui.course_results = function (main, opts) {
 			});
 		});
 		// Grade section row 2 labels
-		th2 += '<th style="font-size:11px;color:#6c757d;min-width:60px;">Total<br>Marks</th>' +
+		// Out of: every assessment of the course (not only the columns the exam-type filter shows),
+		// each at its effective marks, the same way the server works out the total
+		var total_max = (S.columns || []).reduce(function (sum, c) {
+			var max = parseFloat(c.maximum_marks) || 0, eff = parseFloat(c.effective_marks) || 0;
+			return sum + (max > 0 && eff > 0 ? eff : max);
+		}, 0);
+		total_max = Math.round(total_max * 100) / 100;
+		th2 += '<th class="type-hdr" style="text-align:center;min-width:90px;" title="Sum of every assessment\'s marks in this course">Total Marks' +
+			(total_max ? '<br><span style="font-size:10px;color:#6c757d;font-weight:400;">Max. ' + total_max.toFixed(2) + '</span>' : '') + '</th>' +
 			'<th style="font-size:11px;color:#6c757d;min-width:60px;">Grade</th>';
 		// Overall Status row 2 labels (Fairness Status removed)
 		th2 += '<th class="er2-status-col" style="font-size:11px;color:#6c757d;min-width:90px;">Enrollment<br>Status</th>' +
@@ -2189,6 +2273,7 @@ slcm.exam_ui.course_results = function (main, opts) {
 							cells += '<td style="padding:4px 6px;">' +
 								'<input type="number" step="0.01" min="0" class="er2-mi" data-is-project="1" ' +
 								'data-student="' + stu + '" data-comp="' + comp + '" data-atype="' + atyp + '" data-field="marks" ' +
+								'data-max="' + (parseFloat(col.maximum_marks) || '') + '" ' +
 								'value="' + frappe.utils.escape_html(mVal) + '" placeholder="—" ' +
 								'style="width:70px;height:26px;border:1.5px solid #e2e8f0;border-radius:6px;padding:0 6px;font-size:12px;font-weight:600;text-align:center;outline:none;">' +
 								'</td>' +
@@ -2210,6 +2295,7 @@ slcm.exam_ui.course_results = function (main, opts) {
 							cells += '<td style="padding:4px 6px;">' +
 								'<input type="number" step="0.01" min="0" class="er2-mi" ' +
 								'data-student="' + stu + '" data-comp="' + comp + '" data-atype="' + atyp + '" data-field="marks" ' +
+								'data-max="' + (parseFloat(col.maximum_marks) || '') + '" ' +
 								'value="' + frappe.utils.escape_html(mVal) + '" placeholder="—" ' +
 								'style="width:70px;height:26px;border:1.5px solid #e2e8f0;border-radius:6px;padding:0 6px;font-size:12px;font-weight:600;text-align:center;outline:none;">' +
 								'</td>';
@@ -2234,7 +2320,8 @@ slcm.exam_ui.course_results = function (main, opts) {
 			var isFailed   = gradeVal && (S.failed_grades || []).indexOf(gradeVal) !== -1;
 			var gradeColor = isAS ? '#920C24' : (isFailed ? '#920C24' : '#059669');
 			var gradeBorderColor = isAS ? '#E8B4BE' : (isFailed ? '#E8B4BE' : '#a7f3d0');
-			cells += '<td style="font-weight:700;" class="er2-total-cell" data-student="' + frappe.utils.escape_html(s.student) + '">' + total + '</td>';
+			cells += '<td style="padding:4px 6px;" class="er2-total-cell" data-student="' + frappe.utils.escape_html(s.student) + '">' +
+				'<span class="er2-total-box" title="Total marks (worked out from the marks entered)">' + total + '</span></td>';
 			if (canEdit) {
 				cells += '<td style="padding:4px 6px;" class="er2-grade-cell" data-student="' + frappe.utils.escape_html(s.student) + '">' +
 					'<span style="white-space:nowrap;">' +
@@ -2311,6 +2398,7 @@ slcm.exam_ui.course_results = function (main, opts) {
 					cells +=
 						'<td style="padding:4px 6px;"><input type="number" step="0.01" min="0" class="er2-mi" ' +
 						'data-student="' + stu + '" data-comp="' + comp + '" data-atype="' + atyp + '" data-field="marks" ' +
+						'data-max="' + (parseFloat(col.maximum_marks) || '') + '" ' +
 						'value="' + frappe.utils.escape_html(mVal) + '" placeholder="—" ' +
 						'style="width:70px;height:26px;border:1.5px solid #F5D9DE;border-radius:6px;padding:0 6px;font-size:12px;font-weight:600;text-align:center;outline:none;"></td>';
 				} else {
@@ -2389,7 +2477,14 @@ slcm.exam_ui.course_results = function (main, opts) {
 		// ── Inline marks entry ─────────────────────────────────────────────────
 		$mtable.find('.er2-mi').on('focus', function () {
 			$(this).css('border-color', '#920C24');
+			var msg = $(this).attr('data-err');
+			if (msg) position_mark_tip($(this), msg);
+		}).on('input', function () {
+			// Live feedback while typing; the save itself still waits for change.
+			var $i = $(this), m = mark_value_error($i, $i.val().trim());
+			if (m) show_mark_error($i, m); else clear_mark_error($i);
 		}).on('blur', function () {
+			hide_mark_tip();
 			var $self = $(this);
 			var defaultBorder = $self.data('field') === 'revaluation_marks' && $self.data('is-project') ? '#F5D9DE' : '#e2e8f0';
 			$self.css('border-color', defaultBorder);
@@ -2402,6 +2497,18 @@ slcm.exam_ui.course_results = function (main, opts) {
 			var val     = $inp.val().trim();
 			var $tr     = $mtable.find('tr[data-student="' + student + '"]');
 			var key     = student + field + comp + atype;
+
+			// Validate in the browser first: an inline hint on the cell instead
+			// of a blocking server popup, and nothing is saved until it is fixed.
+			var vErr = mark_value_error($inp, val);
+			if (vErr) {
+				clearTimeout(_saveTimer[key]);
+				delete _saveTimer[key];
+				delete _pendingSaveFns[key];
+				show_mark_error($inp, vErr);
+				return;
+			}
+			clear_mark_error($inp);
 
 			// Live-update Project sub-column Total Marks = Marks − Deduction
 			if ($inp.data('is-project')) {
@@ -2462,8 +2569,10 @@ slcm.exam_ui.course_results = function (main, opts) {
 								// (rather than annotating it) — see render_marks_table().
 								var gradeDisp = isAS2 ? 'AS' : (grade || '');
 								// Update in-place
-								$mtable.find('.er2-total-cell[data-student="' + student + '"]')
-									.text(total != null ? parseFloat(total).toFixed(2) : '—');
+								var $tb = $mtable.find('.er2-total-cell[data-student="' + student + '"] .er2-total-box');
+								$tb.text(total != null ? parseFloat(total).toFixed(2) : '—');
+								// brief highlight so the new total is noticed
+								$tb.removeClass('er2-total-flash'); void ($tb[0] && $tb[0].offsetWidth); $tb.addClass('er2-total-flash');
 								var $gc = $mtable.find('.er2-grade-cell[data-student="' + student + '"]');
 								var $gi = $gc.find('.er2-grade-input');
 								if ($gi.length) {
@@ -2515,7 +2624,8 @@ slcm.exam_ui.course_results = function (main, opts) {
 							resolve();
 						},
 						error: function () {
-							$tr.css('background', '#FBEEF0');
+							$tr.css('background', '');
+							show_mark_error($inp, __('Not saved. Check the value and try again.'));
 							resolve();
 						},
 					});
@@ -2840,15 +2950,26 @@ slcm.exam_ui.course_results = function (main, opts) {
 		// student row[i] aligns pixel-perfectly with marks data row[i].
 		setTimeout(function () {
 			var $thead   = $mtable.find('table thead');
+			// Stack the 3 header rows (component / assessment / Marks): each row
+			// sticks just below the rows above it instead of all at top:0.
+			var rowTop = 0;
+			$thead.find('tr').each(function () {
+				var top = rowTop;
+				$(this).children('th').each(function () { this.style.top = top + 'px'; });
+				rowTop += this.getBoundingClientRect().height;
+			});
 			var theadH   = $thead.length ? $thead.outerHeight(true) : 0;
 			var lhdrH    = $left.find('.er2-lhdr').outerHeight(true)      || 0;
 			var stbarH   = $left.find('.er2-status-bar').outerHeight(true) || 0;
 			var leftHdrH = lhdrH + stbarH;
 			var spacerH  = Math.max(0, theadH - leftHdrH);
+			// Keep the left header block as tall as the pinned marks header so
+			// scroll-synced student rows never slide under it out of line.
+			$left.find('.er2-status-bar').css('top', lhdrH + 'px');
 			$slist.find('.er2-align-spacer').remove();
 			if (spacerH > 0) {
 				$slist.prepend(
-					'<div class="er2-align-spacer" style="height:' + spacerH + 'px;flex-shrink:0;"></div>'
+					'<div class="er2-align-spacer" style="height:' + spacerH + 'px;flex-shrink:0;top:' + leftHdrH + 'px;"></div>'
 				);
 			}
 		}, 30);
@@ -3698,12 +3819,13 @@ slcm.exam_ui.course_results = function (main, opts) {
 			var row = function (r, off) {
 				return '<tr class="' + (off ? 'er2-bd-off' : '') + '"><td>' + e(r.component || '') + '</td><td>' + e(r.label || '') + '</td>' +
 					'<td class="num">' + (r.entered === false ? '—' : n(r.marks) + ' / ' + n(r.maximum_marks)) + '</td>' +
-					'<td class="num">' + n(r.marks) + ' × ' + n(r.effective_marks) + '/' + n(r.maximum_marks) + '</td>' +
-					'<td class="num"><b>' + n(r.weighted) + '</b></td></tr>';
+					// what this assessment adds to the course total, out of its share of the total
+					'<td class="num"><b>' + n(r.weighted) + '</b>' +
+					(r.effective_marks != null ? ' <span class="er2-bd-of">/ ' + n(r.effective_marks) + '</span>' : '') + '</td></tr>';
 			};
-			var head = '<tr><th>Component</th><th>Assessment</th><th class="num">Marks</th><th class="num">Scaled</th><th class="num">Counts</th></tr>';
+			var head = '<tr><th>Component</th><th>Assessment</th><th class="num">Marks</th><th class="num">Counts towards total</th></tr>';
 			html += '<h5>1. Regular exam</h5><table>' + head + (x.regular || []).map(function (r) { return row(r, replaced[r.component]); }).join('') +
-				'<tr class="er2-bd-sum"><td colspan="4">Regular total → grade ' + e(x.grade || '—') + '</td><td class="num">' + n(x.total) + '</td></tr></table>';
+				'<tr class="er2-bd-sum"><td colspan="3">Regular total → grade ' + e(x.grade || '—') + '</td><td class="num">' + n(x.total) + '</td></tr></table>';
 			if ((x.failed_components || []).length) {
 				html += '<p class="er2-bd-note">Failed the pass mark of: <b>' + e(x.failed_components.join(', ')) + '</b>, so the regular grade is a fail grade.</p>';
 			}
@@ -3823,7 +3945,9 @@ slcm.exam_ui.course_results = function (main, opts) {
 		destroy: function () {
 			$(document).off('.er2-dd' + NS);
 			$(document).off('.er2popup' + NS);
-			$body.empty();
+			// delegated handlers live on the mount element, which the planner reuses:
+			// without .off() every remount adds another (e.g. View courses opening twice)
+			$body.off().empty();
 		},
 	};
 };

@@ -18,6 +18,7 @@ from slcm.slcm.doctype.fee_certificate_settings.fee_certificate_settings import 
 from slcm.slcm.fee.component_groups import (
 	ADMISSION,
 	HOUSING,
+	MESS,
 	READMISSION,
 	REFUNDABLE,
 	TUITION,
@@ -43,6 +44,7 @@ def _amt(amount):
 PER_ANNUM_LABELS = {
 	TUITION: "Tuition and Facilities fee – per annum",
 	HOUSING: "Housing fee – per annum",
+	MESS: "Mess Charges – per annum",
 }
 # Admission Fee prints for the student's first programme year only ("-" later).
 # Charged once, so never repeated into a later year that has no fee data of its own:
@@ -205,8 +207,15 @@ def academic_year_rows(student_doc, from_academic_year, purpose=None):
 		for ay in frappe.get_all("Academic Year", fields=["name", "year_start_date"])
 		if ay.year_start_date
 	}
+	# At least up to the chosen year and the current Academic Year, so a student is never
+	# cut off before the year they are in (e.g. a programme with no duration recorded).
+	needed = getdate(first_year.year_start_date).year - start + 1
+	current_ay = get_current_academic_year()
+	current_start = frappe.db.get_value("Academic Year", current_ay, "year_start_date") if current_ay else None
+	if current_start:
+		needed = max(needed, getdate(current_start).year - start + 1)
 	rows = []
-	for i in range(_programme_duration(student_doc) or 1):
+	for i in range(max(_programme_duration(student_doc), needed, 1)):
 		year = start + i
 		rows.append(
 			{
@@ -251,22 +260,47 @@ def _short_ay_label(academic_year_doc):
 	return f"{year}-{str(year + 1)[-2:]}"
 
 
+def _years_in_text(text):
+	"""Years from "5", "Five", "5 years" or a programme name such as "5-Year B.A., LL.B.
+	(Hons.)", "1- Year LL.M." or "Bridge Course- Two Year"; 0 if none."""
+	import re
+
+	text = (text or "").strip().lower()
+	if not text:
+		return 0
+	first = text.split()[0]
+	if first in DURATION_WORDS:
+		return DURATION_WORDS.index(first) + 1
+	if cint(first):
+		return cint(first)
+	match = re.search(r"(\d+|" + "|".join(DURATION_WORDS) + r")\s*-?\s*years?\b", text)
+	if not match:
+		return 0
+	value = match.group(1)
+	return cint(value) if value.isdigit() else DURATION_WORDS.index(value) + 1
+
+
 def _programme_duration(student):
-	"""Programme length in years, from Programme Master's "Programme duration
-	(in years)" (free text: "5" or "Five"), falling back to Programme.program_duration."""
-	master, programme_years = student.master_programme, 0
+	"""Programme length in years: Programme Master "Programme duration (in years)"
+	("5" or "Five"), else Programme.program_duration, else the years in the programme's
+	name ("5-Year B.A., LL.B. (Hons.)"), since the duration fields are often left blank."""
+	master, programme_years, name = student.master_programme, 0, None
 	if student.programme_of_study:
 		name, programme_years = frappe.db.get_value(
 			"Programme", student.programme_of_study, ["program_name", "program_duration"]
 		) or (None, 0)
 		master = master or name
 	if master:
-		text = (frappe.db.get_value("Programme Master", master, "programme_duration_in_years") or "").strip().lower()
-		if text.split() and text.split()[0] in DURATION_WORDS:
-			return DURATION_WORDS.index(text.split()[0]) + 1
-		if cint(text.split()[0] if text.split() else 0):
-			return cint(text.split()[0])
-	return cint(programme_years)
+		years = _years_in_text(frappe.db.get_value("Programme Master", master, "programme_duration_in_years"))
+		if years:
+			return years
+	if cint(programme_years):
+		return cint(programme_years)
+	for text in (master, name, student.programme_of_study):
+		years = _years_in_text(text)
+		if years:
+			return years
+	return 0
 
 
 def _year_offset(student, academic_year_doc):
@@ -447,6 +481,14 @@ def _ordered_components(components):
 	return sorted(components, key=lambda c: _row_group(c, types.get(c)))
 
 
+def _balance(year):
+	"""What is left to pay for one certificate year (column): what is still outstanding on
+	the year's own demands, or, for a year with no demands yet, its fees less scholarship."""
+	if year.get("has_demands"):
+		return max(flt(year.get("outstanding")), 0)
+	return max(sum(year["amounts"].values()) - year["waiver"] - flt(year["paid"]), 0)
+
+
 def _year_amounts(totals, certificate_type, has_scholarship):
 	"""{Fee Component: amount} as printed for one year, plus the scholarship deduction.
 
@@ -533,9 +575,10 @@ def get_fee_certificate_context(request_name):
 	certificate_type = request.certificate_type or (template and template.certificate_type)
 
 	certificate_ay = request.from_academic_year or get_current_academic_year()
-	year_rows = request.years or [
-		frappe._dict(row) for row in academic_year_rows(student, certificate_ay, request.purpose)
-	]
+	computed_rows = [frappe._dict(row) for row in academic_year_rows(student, certificate_ay, request.purpose)]
+	# Saved year rows, unless the programme now has more years than were saved (e.g. a
+	# request made while the programme's duration was unknown).
+	year_rows = request.years if len(request.years or []) >= len(computed_rows) else computed_rows
 
 	seen, unique_rows = set(), []
 	for row in year_rows:
@@ -559,11 +602,12 @@ def get_fee_certificate_context(request_name):
 				"long_label": _long_ay_label(ay) if ay else (row.year_label or ""),
 				"has_academic_year": bool(ay),
 				"programme_year": programme_year,
+				"start_year": getdate(ay.year_start_date).year if ay and ay.year_start_date else cint((row.year_label or "")[:4]),
 				"amounts": amounts,
-				# What a later year with no fee data repeats.
-				"repeat_amounts": dict(amounts),
 				"waiver": waiver,
+				"outstanding": sum(a["outstanding"] for a in totals.values()),
 				"paid": sum(a["paid"] for a in totals.values()),
+				"has_demands": bool(totals),
 			}
 		)
 
@@ -576,17 +620,30 @@ def get_fee_certificate_context(request_name):
 		return group(component) in ONE_TIME_GROUPS or component_types.get(component) in ONE_TIME_TYPES
 
 	if certificate_type == MULTI_YEAR:
-		# A year with no fee data of its own (a future year) repeats the per-annum
-		# fees of the latest earlier year that has data; one-time fees aren't repeated.
-		last = None
+		# Fee structure: every column shows the same per-annum fees (Tuition, Housing,
+		# Mess) and scholarship, taken from the current Academic Year's demands (or the
+		# latest year before it that has them). One-time and other fees show only in the
+		# year they were charged. Amount paid / Balance payable stay each year's own.
+		current_ay = get_current_academic_year()
+		current_start = frappe.db.get_value("Academic Year", current_ay, "year_start_date") if current_ay else None
+		current_start = getdate(current_start).year if current_start else None
+		reference, reference_waiver = {}, 0
 		for y in years:
-			if y["amounts"]:
-				last = y
-			elif last:
-				y["amounts"] = {
-					t: a for t, a in last["repeat_amounts"].items() if not one_time(t)
-				}
-				y["waiver"] = last["waiver"]
+			if current_start and y["start_year"] > current_start:
+				break
+			per_annum = {c: a for c, a in y["amounts"].items() if group(c) in PER_ANNUM_LABELS and a}
+			if per_annum:
+				# Replace by group, so a renamed component doesn't appear twice.
+				groups = {group(c) for c in per_annum}
+				reference = {c: a for c, a in reference.items() if group(c) not in groups}
+				reference.update(per_annum)
+			if y["waiver"]:
+				reference_waiver = y["waiver"]
+		for y in years:
+			y["amounts"] = {c: a for c, a in y["amounts"].items() if group(c) not in PER_ANNUM_LABELS}
+			y["amounts"].update(reference)
+			if request.has_scholarship:
+				y["waiver"] = reference_waiver
 	if certificate_type != SINGLE_YEAR_RECEIPT:
 		# Admission Fee belongs to the first year only (programme_year 0 = unknown: keep as is).
 		for y in years:
@@ -605,12 +662,15 @@ def get_fee_certificate_context(request_name):
 		and template
 		and cint(template.get("show_paid_rows"))
 	):
-		nets = [sum(y["amounts"].values()) - y["waiver"] for y in years]
 		table["show_paid_rows"] = True
-		table["paid_row_label"] = template.get("paid_row_label") or "Total Fee paid"
-		table["outstanding_row_label"] = template.get("outstanding_row_label") or "Outstanding fee"
-		table["paid_row"] = [f"({_amt(y['paid'])})" if flt(y["paid"]) else "-" for y in years]
-		table["outstanding_row"] = [_amt(max(n - flt(y["paid"]), 0)) for n, y in zip(nets, years)]
+		table["paid_row_label"] = template.get("paid_row_label") or "Amount paid"
+		table["outstanding_row_label"] = template.get("outstanding_row_label") or "Balance payable"
+		table["paid_row"] = [_amt(y["paid"]) for y in years]
+		# Balance: the year's fee less scholarship and payments; "Nil" once a charged year is paid.
+		table["outstanding_row"] = [
+			"Nil" if _balance(y) <= 0 and (y["has_demands"] or flt(y["paid"])) else _amt(_balance(y))
+			for y in years
+		]
 
 	# First year from the certificate's year onward that still has fee to pay
 	# (the "now required to pay the course fee for III year i.e. AY 2027-28" year).
@@ -619,7 +679,7 @@ def get_fee_certificate_context(request_name):
 		(
 			y
 			for y in years[cert_index:]
-			if sum(y["amounts"].values()) - y["waiver"] - flt(y["paid"]) > 0
+			if _balance(y) > 0
 		),
 		years[cert_index] if years else None,
 	)
