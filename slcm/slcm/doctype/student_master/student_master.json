@@ -492,19 +492,22 @@
    "fieldtype": "Data",
    "label": "Savings Bank Account Number",
    "length": 20,
-   "mask": 1
+   "mask": 1,
+   "permlevel": 2
   },
   {
    "fieldname": "savings_account_holder_name",
    "fieldtype": "Data",
    "label": "Name of the Account Holder",
-   "length": 100
+   "length": 100,
+   "permlevel": 2
   },
   {
    "fieldname": "savings_bank_name",
    "fieldtype": "Data",
    "label": "Name of the Bank",
-   "length": 100
+   "length": 100,
+   "permlevel": 2
   },
   {
    "fieldname": "column_break_atyt",
@@ -514,7 +517,8 @@
    "fieldname": "savings_branch_name",
    "fieldtype": "Data",
    "label": "Name of the Branch",
-   "length": 100
+   "length": 100,
+   "permlevel": 2
   },
   {
    "description": "11 alphanumeric characters",
@@ -522,13 +526,15 @@
    "fieldtype": "Data",
    "label": "IFSC Code",
    "length": 11,
-   "mask": 1
+   "mask": 1,
+   "permlevel": 2
   },
   {
    "description": "Front page of the passbook or a cancelled cheque showing the account number, holder name and IFSC.",
    "fieldname": "savings_passbook",
    "fieldtype": "Attach",
-   "label": "Savings Account Passbook"
+   "label": "Savings Account Passbook",
+   "permlevel": 2
   },
   {
    "default": "0",
@@ -553,7 +559,8 @@
    "fieldname": "availed_education_loan",
    "fieldtype": "Select",
    "label": "Availed Education Loan?",
-   "options": "\nYes\nNo"
+   "options": "\nYes\nNo",
+   "permlevel": 2
   },
   {
    "depends_on": "eval:doc.availed_education_loan=='Yes'",
@@ -561,7 +568,8 @@
    "fieldtype": "Select",
    "label": "Loan Scheme",
    "mandatory_depends_on": "eval:doc.availed_education_loan=='Yes'",
-   "options": "\nPM Vidyalaxmi\nOthers"
+   "options": "\nPM Vidyalaxmi\nOthers",
+   "permlevel": 2
   },
   {
    "depends_on": "eval:doc.availed_education_loan=='Yes' && doc.education_loan_scheme=='Others'",
@@ -569,7 +577,8 @@
    "fieldtype": "Data",
    "label": "Specify Other Scheme",
    "length": 140,
-   "mandatory_depends_on": "eval:doc.availed_education_loan=='Yes' && doc.education_loan_scheme=='Others'"
+   "mandatory_depends_on": "eval:doc.availed_education_loan=='Yes' && doc.education_loan_scheme=='Others'",
+   "permlevel": 2
   },
   {
    "depends_on": "eval:doc.availed_education_loan=='Yes'",
@@ -578,7 +587,8 @@
    "label": "Loan Account Number",
    "length": 30,
    "mandatory_depends_on": "eval:doc.availed_education_loan=='Yes'",
-   "mask": 1
+   "mask": 1,
+   "permlevel": 2
   },
   {
    "depends_on": "eval:doc.availed_education_loan=='Yes'",
@@ -586,7 +596,8 @@
    "fieldtype": "Data",
    "label": "Name of the Account Holder",
    "length": 100,
-   "mandatory_depends_on": "eval:doc.availed_education_loan=='Yes'"
+   "mandatory_depends_on": "eval:doc.availed_education_loan=='Yes'",
+   "permlevel": 2
   },
   {
    "depends_on": "eval:doc.availed_education_loan=='Yes'",
@@ -599,7 +610,8 @@
    "fieldtype": "Data",
    "label": "Name of the Bank",
    "length": 100,
-   "mandatory_depends_on": "eval:doc.availed_education_loan=='Yes'"
+   "mandatory_depends_on": "eval:doc.availed_education_loan=='Yes'",
+   "permlevel": 2
   },
   {
    "depends_on": "eval:doc.availed_education_loan=='Yes'",
@@ -607,7 +619,8 @@
    "fieldtype": "Data",
    "label": "Name of the Branch",
    "length": 100,
-   "mandatory_depends_on": "eval:doc.availed_education_loan=='Yes'"
+   "mandatory_depends_on": "eval:doc.availed_education_loan=='Yes'",
+   "permlevel": 2
   },
   {
    "depends_on": "eval:doc.availed_education_loan=='Yes'",
@@ -617,14 +630,16 @@
    "label": "IFSC Code",
    "length": 11,
    "mandatory_depends_on": "eval:doc.availed_education_loan=='Yes'",
-   "mask": 1
+   "mask": 1,
+   "permlevel": 2
   },
   {
    "depends_on": "eval:doc.availed_education_loan=='Yes'",
    "description": "Loan account passbook, statement or sanction letter showing the loan account number.",
    "fieldname": "loan_passbook",
    "fieldtype": "Attach",
-   "label": "Loan Account Passbook / Statement"
+   "label": "Loan Account Passbook / Statement",
+   "permlevel": 2
   },
   {
    "fieldname": "tab_program_mapping",
@@ -1532,77 +1547,88 @@
    "depends_on": "eval:doc.karnataka_category === \"Yes\"",
    "fieldname": "ka_study_7yrs",
    "fieldtype": "Check",
-   "label": "Studied for not less than 7 years in a recognized educational institution in Karnataka"
+   "label": "Studied for not less than 7 years in a recognized educational institution in Karnataka",
+   "permlevel": 1
   },
   {
    "depends_on": "eval:doc.ka_study_7yrs",
    "fieldname": "ka_study_7yrs_certificate",
    "fieldtype": "Attach",
    "label": "Certificate",
-   "mandatory_depends_on": "eval:doc.ka_study_7yrs"
+   "mandatory_depends_on": "eval:doc.ka_study_7yrs",
+   "permlevel": 1
   },
   {
    "default": "0",
    "depends_on": "eval:doc.karnataka_category === \"Yes\"",
    "fieldname": "ka_defence_child",
    "fieldtype": "Check",
-   "label": "Child of Defence / Ex-Serviceman (Karnataka domicile)"
+   "label": "Child of Defence / Ex-Serviceman (Karnataka domicile)",
+   "permlevel": 1
   },
   {
    "depends_on": "eval:doc.ka_defence_child",
    "fieldname": "ka_defence_child_certificate",
    "fieldtype": "Attach",
    "label": "Certificate",
-   "mandatory_depends_on": "eval:doc.ka_defence_child"
+   "mandatory_depends_on": "eval:doc.ka_defence_child",
+   "permlevel": 1
   },
   {
    "default": "0",
    "depends_on": "eval:doc.karnataka_category === \"Yes\"",
    "fieldname": "ka_govt_child",
    "fieldtype": "Check",
-   "label": "Child of Karnataka cadre AIS employee (IAS/IFS/IPS)"
+   "label": "Child of Karnataka cadre AIS employee (IAS/IFS/IPS)",
+   "permlevel": 1
   },
   {
    "depends_on": "eval:doc.ka_govt_child",
    "fieldname": "ka_govt_child_certificate",
    "fieldtype": "Attach",
    "label": "Certificate",
-   "mandatory_depends_on": "eval:doc.ka_govt_child"
+   "mandatory_depends_on": "eval:doc.ka_govt_child",
+   "permlevel": 1
   },
   {
    "default": "0",
    "depends_on": "eval:doc.karnataka_category === \"Yes\"",
    "fieldname": "ka_ais_child",
    "fieldtype": "Check",
-   "label": "Child of CAPF employee with Karnataka domicile"
+   "label": "Child of CAPF employee with Karnataka domicile",
+   "permlevel": 1
   },
   {
    "depends_on": "eval:doc.ka_ais_child",
    "fieldname": "ka_ais_child_certificate",
    "fieldtype": "Attach",
    "label": "Certificate",
-   "mandatory_depends_on": "eval:doc.ka_ais_child"
+   "mandatory_depends_on": "eval:doc.ka_ais_child",
+   "permlevel": 1
   },
   {
    "default": "0",
    "depends_on": "eval:doc.karnataka_category === \"Yes\"",
    "fieldname": "ka_capf_child",
    "fieldtype": "Check",
-   "label": "Child of Central Armed Police Force employee (Karnataka domicile)"
+   "label": "Child of Central Armed Police Force employee (Karnataka domicile)",
+   "permlevel": 1
   },
   {
    "depends_on": "eval:doc.ka_capf_child",
    "fieldname": "ka_capf_child_certificate",
    "fieldtype": "Attach",
    "label": "Certificate",
-   "mandatory_depends_on": "eval:doc.ka_capf_child"
+   "mandatory_depends_on": "eval:doc.ka_capf_child",
+   "permlevel": 1
   },
   {
    "fieldname": "karnataka_category",
    "fieldtype": "Select",
    "label": "Whether Karnataka category",
    "length": 5,
-   "options": "\nYes\nNo"
+   "options": "\nYes\nNo",
+   "permlevel": 1
   },
   {
    "fieldname": "admission_tab",
@@ -1795,8 +1821,9 @@
   }
  ],
  "image_field": "passport_size_photo",
+ "link_display_mode": "Search",
  "links": [],
- "modified": "2026-11-19 11:36:25.720503",
+ "modified": "2026-11-25 11:36:43.888649",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Student Master",
@@ -1980,62 +2007,15 @@
    "write": 1
   },
   {
-   "permlevel": 1,
-   "read": 1,
-   "role": "AAD"
-  },
-  {
-   "permlevel": 2,
-   "read": 1,
-   "role": "AAD"
-  },
-  {
-   "permlevel": 3,
-   "read": 1,
-   "role": "AAD"
-  },
-  {
-   "create": 1,
+   "delete": 1,
    "email": 1,
    "export": 1,
+   "permlevel": 1,
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "AAD Staff",
+   "role": "AAD",
    "share": 1,
-   "write": 1
-  },
-  {
-   "permlevel": 1,
-   "read": 1,
-   "role": "AAD Staff"
-  },
-  {
-   "permlevel": 2,
-   "read": 1,
-   "role": "AAD Staff"
-  },
-  {
-   "permlevel": 3,
-   "read": 1,
-   "role": "AAD Staff"
-  },
-  {
-   "permlevel": 3,
-   "read": 1,
-   "role": "NLSIU Admin",
-   "write": 1
-  },
-  {
-   "permlevel": 2,
-   "read": 1,
-   "role": "NLSIU Admin",
-   "write": 1
-  },
-  {
-   "permlevel": 1,
-   "read": 1,
-   "role": "NLSIU Admin",
    "write": 1
   },
   {
@@ -2046,14 +2026,40 @@
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "NLSIU Admin",
+   "role": "AAD Staff",
    "share": 1,
    "write": 1
   },
   {
-   "permlevel": 4,
+   "email": 1,
+   "export": 1,
+   "permlevel": 1,
+   "print": 1,
    "read": 1,
-   "role": "NLSIU Admin",
+   "report": 1,
+   "role": "AAD Staff",
+   "share": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "permlevel": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "slcm_FINO Officer",
+   "share": 1
+  },
+  {
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "permlevel": 2,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "slcm_FINO Officer",
+   "share": 1,
    "write": 1
   }
  ],
