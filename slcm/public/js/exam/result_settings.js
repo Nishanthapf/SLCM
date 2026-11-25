@@ -42,13 +42,13 @@ slcm.exam_ui.result_settings = function (main, opts) {
 		.rs-select:focus { border-color:#920C24; box-shadow:0 0 0 3px rgba(146,12,36,.1); }
 
 		/* ── Sub-tab bar ── */
-		.rs-subtab-bar { display:flex; align-items:center; border-bottom:2px solid #e2e8f0;
-		                 margin-bottom:20px; gap:0; overflow-x:auto; }
-		.rs-subtab     { padding:10px 20px; font-size:13px; font-weight:600; color:#64748b;
-		                 border-bottom:2px solid transparent; margin-bottom:-2px; cursor:pointer;
-		                 white-space:nowrap; transition:all .18s; user-select:none; }
-		.rs-subtab:hover  { color:#1e293b; }
-		.rs-subtab.active { color:#920C24; border-bottom-color:#920C24; }
+		/* segmented tabs, same look as the Exam Planner's */
+		.rs-subtab-bar { display:inline-flex; align-items:center; gap:4px; padding:4px; margin-bottom:20px; max-width:100%;
+		                 overflow-x:auto; scrollbar-width:none; background:#f4f4f5; border:1px solid #e5e7eb; border-radius:12px; }
+		.rs-subtab-bar::-webkit-scrollbar { display:none; }
+		.rs-subtab     { background:transparent; border:0; border-radius:9px; padding:8px 16px; font-size:13.5px; font-weight:600; color:#6b7280; cursor:pointer; white-space:nowrap; user-select:none; display:inline-flex; align-items:center; gap:6px; transition:background .15s, color .15s, box-shadow .15s; }
+		.rs-subtab:hover:not(.active) { background:#FBEEF0; color:#920C24; }
+		.rs-subtab.active { background:#920C24; color:#fff; box-shadow:0 2px 6px rgba(146,12,36,.28); }
 
 		/* ── Generic buttons ── */
 		.rs-btn        { height:34px; padding:0 18px; border-radius:7px; border:1.5px solid #e2e8f0;
@@ -1248,7 +1248,9 @@ slcm.exam_ui.result_settings = function (main, opts) {
 	return {
 		destroy: function () {
 			$(document).off('.rs_add' + NS);
-			$body.empty();
+			// delegated handlers live on the mount element, which the planner reuses:
+			// without .off() every remount adds another (e.g. View courses opening twice)
+			$body.off().empty();
 		},
 	};
 };

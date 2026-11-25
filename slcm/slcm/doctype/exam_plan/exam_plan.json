@@ -16,7 +16,8 @@
   "section_reexam",
   "reexam_schedules",
   "reexam_timetable_published",
-  "reexam_show_invigilator"
+  "reexam_show_invigilator",
+  "ce_extra_columns"
  ],
  "fields": [
   {
@@ -94,12 +95,20 @@
    "default": "0",
    "depends_on": "reexam_timetable_published",
    "description": "Re-exam students also see who invigilates their room."
+  },
+  {
+   "fieldname": "ce_extra_columns",
+   "fieldtype": "JSON",
+   "label": "Evaluation Schedule Extra Columns",
+   "hidden": 1,
+   "allow_on_submit": 1,
+   "description": "[{key, label}] extra columns of the Continuing Evaluation Schedule"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-05 13:30:00.000000",
+ "modified": "2026-11-24 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "SLCM",
  "name": "Exam Plan",

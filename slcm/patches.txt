@@ -115,3 +115,4 @@ slcm.patches.v2_0.fix_status_of_dues_settled_from_excess
 slcm.patches.v2_0.backfill_punch_log_date_clock
 slcm.patches.v2_0.fee_certificate_receipt_current_year
 slcm.patches.v2_0.fee_certificate_opening_current_year
+slcm.patches.v2_0.fee_certificate_education_loan_format

@@ -1260,7 +1260,9 @@ slcm.exam_ui.term_results = function (main, opts) {
 	return {
 		destroy: function () {
 			$(document).off('.tr_dd' + NS);
-			$body.empty();
+			// delegated handlers live on the mount element, which the planner reuses:
+			// without .off() every remount adds another (e.g. View courses opening twice)
+			$body.off().empty();
 		},
 	};
 };

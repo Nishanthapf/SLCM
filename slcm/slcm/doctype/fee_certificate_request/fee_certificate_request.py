@@ -18,6 +18,7 @@ from slcm.slcm.doctype.fee_certificate_settings.fee_certificate_settings import 
 from slcm.slcm.fee.component_groups import (
 	ADMISSION,
 	HOUSING,
+	MESS,
 	READMISSION,
 	REFUNDABLE,
 	TUITION,
@@ -43,6 +44,7 @@ def _amt(amount):
 PER_ANNUM_LABELS = {
 	TUITION: "Tuition and Facilities fee – per annum",
 	HOUSING: "Housing fee – per annum",
+	MESS: "Mess Charges – per annum",
 }
 # Admission Fee prints for the student's first programme year only ("-" later).
 # Charged once, so never repeated into a later year that has no fee data of its own:
@@ -447,6 +449,14 @@ def _ordered_components(components):
 	return sorted(components, key=lambda c: _row_group(c, types.get(c)))
 
 
+def _balance(year):
+	"""What is left to pay for one certificate year (column): its fees less scholarship
+	(shown or not) and payments."""
+	return max(
+		sum(year["amounts"].values()) - year["waiver"] - flt(year.get("hidden_waiver")) - flt(year["paid"]), 0
+	)
+
+
 def _year_amounts(totals, certificate_type, has_scholarship):
 	"""{Fee Component: amount} as printed for one year, plus the scholarship deduction.
 
@@ -559,11 +569,14 @@ def get_fee_certificate_context(request_name):
 				"long_label": _long_ay_label(ay) if ay else (row.year_label or ""),
 				"has_academic_year": bool(ay),
 				"programme_year": programme_year,
+				"start_year": getdate(ay.year_start_date).year if ay and ay.year_start_date else cint((row.year_label or "")[:4]),
 				"amounts": amounts,
-				# What a later year with no fee data repeats.
-				"repeat_amounts": dict(amounts),
 				"waiver": waiver,
+				# Scholarship on the year's demands that the table doesn't show (box not ticked),
+				# still taken off the balance.
+				"hidden_waiver": 0 if waiver else sum(a["waiver"] for a in totals.values()),
 				"paid": sum(a["paid"] for a in totals.values()),
+				"has_demands": bool(totals),
 			}
 		)
 
@@ -576,17 +589,27 @@ def get_fee_certificate_context(request_name):
 		return group(component) in ONE_TIME_GROUPS or component_types.get(component) in ONE_TIME_TYPES
 
 	if certificate_type == MULTI_YEAR:
-		# A year with no fee data of its own (a future year) repeats the per-annum
-		# fees of the latest earlier year that has data; one-time fees aren't repeated.
-		last = None
+		# The fee structure for every programme year: from the current Academic Year on
+		# (and in any year with no demands at all), a per-annum fee (Tuition, Housing,
+		# Mess) the year doesn't have yet, and the scholarship, are taken from the latest
+		# earlier year that has them. Past years show only what was charged; one-time
+		# fees are never repeated.
+		current_ay = get_current_academic_year()
+		current_start = (
+			getdate(frappe.db.get_value("Academic Year", current_ay, "year_start_date")).year
+			if current_ay and frappe.db.get_value("Academic Year", current_ay, "year_start_date")
+			else None
+		)
+		last_amounts, last_waiver = {}, 0
 		for y in years:
-			if y["amounts"]:
-				last = y
-			elif last:
-				y["amounts"] = {
-					t: a for t, a in last["repeat_amounts"].items() if not one_time(t)
-				}
-				y["waiver"] = last["waiver"]
+			fill = not y["amounts"] or (current_start and y["start_year"] >= current_start)
+			if fill:
+				for component, amount in last_amounts.items():
+					y["amounts"].setdefault(component, amount)
+				if not y["waiver"] and request.has_scholarship:
+					y["waiver"] = last_waiver
+			last_amounts.update({c: a for c, a in y["amounts"].items() if group(c) in PER_ANNUM_LABELS and a})
+			last_waiver = y["waiver"] or last_waiver
 	if certificate_type != SINGLE_YEAR_RECEIPT:
 		# Admission Fee belongs to the first year only (programme_year 0 = unknown: keep as is).
 		for y in years:
@@ -605,12 +628,15 @@ def get_fee_certificate_context(request_name):
 		and template
 		and cint(template.get("show_paid_rows"))
 	):
-		nets = [sum(y["amounts"].values()) - y["waiver"] for y in years]
 		table["show_paid_rows"] = True
-		table["paid_row_label"] = template.get("paid_row_label") or "Total Fee paid"
-		table["outstanding_row_label"] = template.get("outstanding_row_label") or "Outstanding fee"
-		table["paid_row"] = [f"({_amt(y['paid'])})" if flt(y["paid"]) else "-" for y in years]
-		table["outstanding_row"] = [_amt(max(n - flt(y["paid"]), 0)) for n, y in zip(nets, years)]
+		table["paid_row_label"] = template.get("paid_row_label") or "Amount paid"
+		table["outstanding_row_label"] = template.get("outstanding_row_label") or "Balance payable"
+		table["paid_row"] = [_amt(y["paid"]) for y in years]
+		# Balance: the year's fee less scholarship and payments; "Nil" once a charged year is paid.
+		table["outstanding_row"] = [
+			"Nil" if _balance(y) <= 0 and (y["has_demands"] or flt(y["paid"])) else _amt(_balance(y))
+			for y in years
+		]
 
 	# First year from the certificate's year onward that still has fee to pay
 	# (the "now required to pay the course fee for III year i.e. AY 2027-28" year).
@@ -619,7 +645,7 @@ def get_fee_certificate_context(request_name):
 		(
 			y
 			for y in years[cert_index:]
-			if sum(y["amounts"].values()) - y["waiver"] - flt(y["paid"]) > 0
+			if _balance(y) > 0
 		),
 		years[cert_index] if years else None,
 	)

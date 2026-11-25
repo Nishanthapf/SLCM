@@ -984,7 +984,9 @@ slcm.exam_ui.publish_results = function (main, opts) {
 		destroy: function () {
 			$(document).off('.pr_dd' + NS);
 			$(document).off('.pr_stdd' + NS);
-			$body.empty();
+			// delegated handlers live on the mount element, which the planner reuses:
+			// without .off() every remount adds another (e.g. View courses opening twice)
+			$body.off().empty();
 		},
 	};
 };
