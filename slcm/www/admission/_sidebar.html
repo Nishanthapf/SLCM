@@ -254,6 +254,16 @@
       display: flex;
     }
 
+    /* Keep the first menu item clear of the close button */
+    .portal-sidebar-col > nav {
+      margin-top: 40px;
+    }
+
+    /* The navbar's mobile drawer covers the page: hide the sidebar toggle under it */
+    body.adm-drawer-open .mobile-menu-toggle {
+      display: none !important;
+    }
+
     .portal-content-col {
       padding: 70px 16px 40px !important;
     }

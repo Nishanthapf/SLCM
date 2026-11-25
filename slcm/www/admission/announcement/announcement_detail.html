@@ -11,10 +11,12 @@
   .ann-back .ms-icon { font-size: 18px; color: var(--primary); }
   .ann-detail .pp-rte { max-width: none; }
   .ann-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; color: var(--text-3); font-size: 13px; }
-  .ann-tag {
-    font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
-    padding: 2px 8px; border-radius: 20px; background: var(--primary-light); color: var(--primary);
-    line-height: 1.5;
+  /* !important: applicant_portal.css forces an !important font size on every span */
+  .ann-detail .ann-meta span { font-size: 13px !important; }
+  .ann-detail .ann-meta .ann-tag {
+    font-size: 10px !important; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 1px 8px; border-radius: 10px; background: var(--primary-light); color: var(--primary);
+    line-height: 1.5 !important;
   }
   .ann-detail h1 {
     color: var(--primary); font-size: var(--font-size-heading, 26px);

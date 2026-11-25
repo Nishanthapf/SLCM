@@ -1562,6 +1562,7 @@
                     drawer.setAttribute('aria-hidden', 'false');
                     overlay.classList.add('open');
                     document.body.style.overflow = 'hidden';
+                    document.body.classList.add('adm-drawer-open');
                 }
             }
             window.closeDrawer = function () {
@@ -1575,6 +1576,7 @@
                 drawer.setAttribute('aria-hidden', 'true');
                 overlay.classList.remove('open');
                 document.body.style.overflow = '';
+                document.body.classList.remove('adm-drawer-open');
             }
             // Close drawer on Escape key
             document.addEventListener('keydown', function (e) {

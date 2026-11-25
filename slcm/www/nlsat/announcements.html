@@ -60,8 +60,9 @@
 
   @media (max-width: 640px) {
     .ann-item { grid-template-columns: 1fr; gap: 4px; padding: 12px 14px; }
-    .ann-date { border-right: 0; }
-    .ann-date b { display: inline; margin-right: 4px; }
+    /* Date on one line above the badges, no divider */
+    .ann-list .ann-date { border-right: 0; }
+    .ann-list .ann-date b { display: inline; margin-right: 4px; }
     .ann-pager { justify-content: center; }
   }
 {% endblock %}
