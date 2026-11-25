@@ -391,10 +391,12 @@
     </a>
     {% endif %}
 
+    {% if not sb.is_guest %}
     <div class="adm-menu-item danger" onclick="window.doLogout && window.doLogout()" title="Logout">
       <span class="ms-icon" style="color:#dc2626;">logout</span>
       Logout
     </div>
+    {% endif %}
 
   </nav>
 

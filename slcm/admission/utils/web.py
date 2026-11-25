@@ -152,22 +152,40 @@ def mark_notifications_read(names=None):
         return {"success": False}
 
 
+def set_portal_announcement_read(user, name, read=True):
+    """Add (read=True) or remove (read=False) `name` in the user's read announcements."""
+    if not user or user == "Guest" or not name:
+        return False
+    reads = _get_portal_announcement_read_ids(user)
+    if (name in reads) == bool(read):
+        return True
+    if read:
+        reads.add(name)
+    else:
+        reads.discard(name)
+    frappe.cache().set_value(
+        _portal_ann_read_cache_key(user), list(reads), expires_in_sec=86400 * 365
+    )
+    return True
+
+
 @frappe.whitelist(methods=["POST", "GET"])
 def mark_portal_announcement_read(name=None):
     """Persist 'read' for a portal announcement (badge count) for this user."""
-    user = frappe.session.user
-    if user == "Guest" or not name:
-        return {"success": False}
     try:
-        reads = list(_get_portal_announcement_read_ids(user))
-        if name not in reads:
-            reads.append(name)
-            frappe.cache().set_value(
-                _portal_ann_read_cache_key(user), reads, expires_in_sec=86400 * 365
-            )
-        return {"success": True}
+        return {"success": set_portal_announcement_read(frappe.session.user, name, True)}
     except Exception as e:
         frappe.log_error(f"mark_portal_announcement_read failed: {e}", "Portal")
+        return {"success": False}
+
+
+@frappe.whitelist(methods=["POST"])
+def mark_portal_announcement_unread(name=None):
+    """Put a portal announcement back in this user's unread list."""
+    try:
+        return {"success": set_portal_announcement_read(frappe.session.user, name, False)}
+    except Exception as e:
+        frappe.log_error(f"mark_portal_announcement_unread failed: {e}", "Portal")
         return {"success": False}
 
 

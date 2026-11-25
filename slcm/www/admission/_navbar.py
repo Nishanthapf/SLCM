@@ -18,6 +18,13 @@ def _has_role(user, role):
 	return bool(frappe.db.get_value("Has Role", {"parent": user, "role": role}, "role"))
 
 
+def _can_open_nlsat_pages(user):
+	"""Logged-in users allowed into the NLSAT sidebar pages (same rule as prepare_sidebar_page)."""
+	from slcm.admission.utils.portal_pages import ALLOWED_ROLES
+
+	return bool(ALLOWED_ROLES & set(frappe.get_roles(user)))
+
+
 def get_nlsat_navbar_context(portal_config=None, current_path="", nlsat_login_url=""):
 	"""Values the navbar + mobile drawer need (roles, signed-in user, login link)."""
 	pc = portal_config or {}
@@ -67,6 +74,21 @@ def get_nlsat_navbar_context(portal_config=None, current_path="", nlsat_login_ur
 		else:
 			portal_type = get_current_portal_type()
 
+	# Announcements: NLSAT only, when the portal has the Announcements page switched on.
+	# Guests see it too (the page lists the portal's announcements without login).
+	show_announcements = False
+	if portal_type != "PACE" and (is_guest or _can_open_nlsat_pages(user)):
+		from slcm.admission.utils.portal import get_portal_sidebar_pages
+
+		show_announcements = bool(get_portal_sidebar_pages(portal_type).get("announcements"))
+
+	# Admission link is highlighted only on the admission landing pages
+	# (/nlsatadmissions, /nlsat-international and their sub-pages)
+	from slcm.admission.utils.nlsat_portal import _request_path
+
+	first_segment = ((current_path or _request_path() or "").split("?")[0].strip("/").split("/") or [""])[0]
+	admission_active = first_segment in ("nlsatadmissions", "nlsat-international")
+
 	return frappe._dict(
 		portal_type=portal_type,
 		user=user,
@@ -84,4 +106,7 @@ def get_nlsat_navbar_context(portal_config=None, current_path="", nlsat_login_ur
 		inst_logo=inst_logo,
 		profile_url=prefix + "/my-profile",
 		helpdesk_url=prefix + "/helpdesk",
+		show_announcements=show_announcements,
+		announcements_url="/nlsat/announcements",
+		admission_active=admission_active,
 	)

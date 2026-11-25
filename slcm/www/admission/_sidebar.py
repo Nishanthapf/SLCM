@@ -59,6 +59,25 @@ def get_nlsat_sidebar_context():
 
 	user = frappe.session.user
 	prefix = get_candidate_prefix(user)  # /nlsat or /pace — shared pages are served under it
+
+	# Logged-out visitors (Announcements opened from the navbar): only the Announcements item
+	if not user or user == "Guest":
+		pages = get_portal_sidebar_pages() if prefix == NLSAT_PREFIX else frappe._dict()
+		return frappe._dict(
+			is_guest=True,
+			show_profile=False,
+			show_applications=False,
+			show_pace_applications=False,
+			show_admission_items=False,
+			show_documents=False,
+			show_sample_questions=False,
+			show_announcements=bool(pages.get("announcements")),
+			show_scholarships=False,
+			show_offer_letter=False,
+			show_helpdesk=False,
+			urls=frappe._dict(announcements="/nlsat/announcements"),
+		)
+
 	roles = set(frappe.get_all("Has Role", filters={"parent": user}, pluck="role"))
 	is_admin = user == "Administrator" or bool({"Administrator", "System Manager"} & roles)
 	has_applicant = "Applicant" in roles
