@@ -54,10 +54,30 @@ def _show_offer_letter(user, roles):
 
 
 def get_nlsat_sidebar_context():
-	from slcm.admission.utils.nlsat_portal import get_candidate_prefix
+	from slcm.admission.utils.nlsat_portal import NLSAT_PREFIX, get_candidate_prefix
+	from slcm.admission.utils.portal import get_portal_sidebar_pages
 
 	user = frappe.session.user
 	prefix = get_candidate_prefix(user)  # /nlsat or /pace — shared pages are served under it
+
+	# Logged-out visitors (Announcements opened from the navbar): only the Announcements item
+	if not user or user == "Guest":
+		pages = get_portal_sidebar_pages() if prefix == NLSAT_PREFIX else frappe._dict()
+		return frappe._dict(
+			is_guest=True,
+			show_profile=False,
+			show_applications=False,
+			show_pace_applications=False,
+			show_admission_items=False,
+			show_documents=False,
+			show_sample_questions=False,
+			show_announcements=bool(pages.get("announcements")),
+			show_scholarships=False,
+			show_offer_letter=False,
+			show_helpdesk=False,
+			urls=frappe._dict(announcements="/nlsat/announcements"),
+		)
+
 	roles = set(frappe.get_all("Has Role", filters={"parent": user}, pluck="role"))
 	is_admin = user == "Administrator" or bool({"Administrator", "System Manager"} & roles)
 	has_applicant = "Applicant" in roles
@@ -66,11 +86,19 @@ def get_nlsat_sidebar_context():
 	pace_only = has_pace and not has_applicant and not is_admin
 	show_admission_items = not pace_only and not is_pace_staff
 
+	# Documents / Sample Question Papers / Announcements: NLSAT only, each switched on per
+	# portal (Domestic / International) in Applicant Portal Config.
+	nlsat_pages = show_admission_items and prefix == NLSAT_PREFIX
+	pages = get_portal_sidebar_pages() if nlsat_pages else frappe._dict()
+
 	return frappe._dict(
 		show_profile=not is_pace_staff,
 		show_applications=show_admission_items,
 		show_pace_applications=not (has_applicant and not has_pace),
 		show_admission_items=show_admission_items,
+		show_documents=bool(pages.get("documents")),
+		show_sample_questions=bool(pages.get("sample_questions")),
+		show_announcements=bool(pages.get("announcements")),
 		show_scholarships=show_admission_items and _show_scholarships(user),
 		show_offer_letter=show_admission_items and _show_offer_letter(user, roles),
 		show_helpdesk=not is_pace_staff,
@@ -78,6 +106,9 @@ def get_nlsat_sidebar_context():
 			profile=prefix + "/my-profile",
 			applications="/nlsat/dashboard?panel=applications",
 			pace_applications="/paceadmissions/application-card",
+			documents="/nlsat/documents",
+			sample_questions="/nlsat/sample-questions",
+			announcements="/nlsat/announcements",
 			scholarships="/nlsat/scholarships",
 			offer_letter="/nlsat/offer_letter/offer-letter-list",
 			helpdesk=prefix + "/helpdesk",

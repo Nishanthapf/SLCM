@@ -23,7 +23,10 @@
             {% set _show_pace = nav.show_pace %}
 
             {% if _show_admission %}
-            <a href="{{ nlsat_portal_base or '/nlsatadmissions' }}" class="nav-hide-mobile">Admission</a>
+            <a href="{{ nlsat_portal_base or '/nlsatadmissions' }}" class="nav-hide-mobile {{ 'active' if nav.admission_active else '' }}">Admission</a>
+            {% endif %}
+            {% if nav.show_announcements %}
+            <a href="{{ nav.announcements_url }}" class="nav-hide-mobile">Announcements</a>
             {% endif %}
             <a href="{{ nav.helpdesk_url }}" class="nav-hide-mobile">Helpdesk</a>
 
@@ -240,12 +243,21 @@
         {% endif %}
 
         {% if nav.show_admission %}
-        <a href="{{ nlsat_portal_base or '/nlsatadmissions' }}" class="drawer-link" onclick="closeDrawer()">
+        <a href="{{ nlsat_portal_base or '/nlsatadmissions' }}" class="drawer-link {{ 'active' if nav.admission_active else '' }}" onclick="closeDrawer()">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                 <polyline points="9 22 9 12 15 12 15 22" />
             </svg>
             Admission
+        </a>
+        {% endif %}
+        {% if nav.show_announcements %}
+        <a href="{{ nav.announcements_url }}" class="drawer-link" onclick="closeDrawer()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 11l18-5v12L3 14v-3z" />
+                <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
+            </svg>
+            Announcements
         </a>
         {% endif %}
         <a href="{{ nav.helpdesk_url }}" class="drawer-link" onclick="closeDrawer()">

@@ -1,6 +1,6 @@
 import frappe
 import json
-from frappe.utils import now, add_days, getdate, today, get_datetime
+from frappe.utils import now, add_days, getdate, today, get_datetime, cint
 from slcm.admission.utils.institution import is_multi_campus_enabled
 
 # Admission Cycle.application_form_type — DocType option is "Custom From"; accept "Custom Form" if relabelled.
@@ -522,6 +522,10 @@ NLSAT_PORTAL_FIELDS = (
     "show_announcement", "header_announcement",
     "hero_image", "admission_website_url", "admission_footer",
     "show_admission_page", "portal_tagline", "slideshow_images",
+    # Applicant sidebar pages (Documents, Sample Question Papers, Announcements)
+    "enable_documents_sidebar_menu", "document_upload_note",
+    "enable_sample_question_paper_sidebar_menu", "sample_question_paper",
+    "enable_announcements_sidebar_menu",
 )
 INTL_FIELD_PREFIX = "intl_"
 
@@ -550,6 +554,30 @@ def portal_fieldname(fieldname, portal_type=None):
     if fieldname in NLSAT_PORTAL_FIELDS and get_config_portal_type(portal_type) == INTERNATIONAL:
         return INTL_FIELD_PREFIX + fieldname
     return fieldname
+
+
+def get_portal_sidebar_pages(portal_type=None):
+    """Sidebar pages (Documents, Sample Question Papers, Announcements) of the NLSAT portal:
+    whether each is switched on, and the text-editor content of the first two."""
+    pages = frappe._dict(
+        documents=0, document_content="",
+        sample_questions=0, sample_question_content="",
+        announcements=0,
+    )
+    try:
+        config = frappe.get_cached_doc("Applicant Portal Config")
+    except Exception:
+        return pages
+
+    def pv(fieldname):
+        return config.get(portal_fieldname(fieldname, portal_type))
+
+    pages.documents = cint(pv("enable_documents_sidebar_menu"))
+    pages.document_content = pv("document_upload_note") or ""
+    pages.sample_questions = cint(pv("enable_sample_question_paper_sidebar_menu"))
+    pages.sample_question_content = pv("sample_question_paper") or ""
+    pages.announcements = cint(pv("enable_announcements_sidebar_menu"))
+    return pages
 
 
 def get_portal_config_doc_values(config=None, portal_type=None):

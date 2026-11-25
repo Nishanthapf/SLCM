@@ -508,6 +508,16 @@
   @media (max-width: 480px) {
     .adm-hero-wrap { height: clamp(220px, 80vw, 320px); }
   }
+  /* Phones / small tablets: the hero grows with its text instead of clipping it, and keeps
+     room at the bottom for the announcement card that overlaps it (margin-top:-48px). */
+  @media (max-width: 768px) {
+    .adm-hero-wrap { height: auto; min-height: clamp(280px, 70vw, 420px); }
+    .adm-hero-wrap .hero-slide.active { position: relative; min-height: inherit; }
+    .adm-hero-wrap .hero-slide.active .slide-content { min-height: inherit; padding-top: 40px; padding-bottom: 88px; }
+  }
+  @media (max-width: 480px) {
+    .adm-hero-wrap { min-height: clamp(260px, 80vw, 320px); }
+  }
 
   /* ── Announcement banner card ────────────────────────────── */
   .ann-banner-card {

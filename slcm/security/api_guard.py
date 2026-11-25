@@ -61,6 +61,7 @@ WEBSITE_ADMISSION_METHODS = frozenset({
 	"slcm.admission.utils.web.get_stage_tracker_data",
 	"slcm.admission.utils.web.mark_notifications_read",
 	"slcm.admission.utils.web.mark_portal_announcement_read",
+	"slcm.admission.utils.web.mark_portal_announcement_unread",
 	"slcm.admission.web_form.applicant_form.applicant_form.check_eligibility",
 	"slcm.admission.web_form.applicant_form.applicant_form.city_query",
 	"slcm.admission.web_form.applicant_form.applicant_form.download_portal_application_fee_receipt",

@@ -4,7 +4,6 @@ login_required = False
 
 def get_context(context):
     from slcm.admission.utils.portal import get_portal_config
-    from slcm.admission.utils.web import _get_portal_announcement_read_ids
 
     context.portal_config = get_portal_config()
 
@@ -48,7 +47,19 @@ def get_context(context):
     user = frappe.session.user or "Guest"
     context.portal_user_logged_in = user != "Guest"
     context.announcement_id = ann.name
+    # Opening an announcement marks it as read; the page offers "Mark as unread"
     if context.portal_user_logged_in:
-        context.announcement_marked_done = ann.name in _get_portal_announcement_read_ids(user)
-    else:
-        context.announcement_marked_done = False
+        from slcm.admission.utils.web import set_portal_announcement_read
+        set_portal_announcement_read(user, ann.name, True)
+
+    context.sidebar_active = "announcements"
+
+    # "Back" goes to the Announcements page when the NLSAT portal has it switched on
+    # (for visitors too — the Announcements page is open without login)
+    from slcm.admission.utils.portal import get_portal_sidebar_pages
+    ann_page_on = not is_pace and bool(get_portal_sidebar_pages().get("announcements"))
+    context.back_url = "/nlsat/announcements" if ann_page_on else ""
+
+    # Logged-in candidates see the page inside the portal sidebar layout. Visitors get the
+    # sidebar with only Announcements when that page is on, else no sidebar.
+    context.hide_sidebar = not context.portal_user_logged_in and not ann_page_on

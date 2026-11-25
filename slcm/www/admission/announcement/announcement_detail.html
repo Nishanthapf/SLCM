@@ -1,103 +1,131 @@
-
-{% extends "slcm/www/admission/admission_base.html" %}
+{% extends "slcm/templates/admission/portal_sidebar_page.html" %}
 
 {% block title %}{{ announcement.title }}{% endblock %}
 
-{% block theme_vars %}
-{{ get_typography_style_block(
-    portal_config.font_family,
-    font_size_heading=portal_config.font_size_heading,
-    font_size_subheading=portal_config.font_size_subheading,
-    font_size_body=portal_config.font_size_body,
-    font_size_form_title=portal_config.font_size_form_title,
-    font_size_toast=portal_config.font_size_toast,
-    primary_color=portal_config.primary_color,
-    secondary_color=portal_config.secondary_color,
-    navbar_color=portal_config.navbar_color,
-    footer_color=portal_config.footer_color,
-    button_border_radius=portal_config.button_border_radius
-) }}
-<style>
-    :root {
-        --primary: {{ portal_config.get('primary_color','#1a3c6e') if portal_config and portal_config.get else '#1a3c6e' }};
-        --secondary: {{ portal_config.get('secondary_color','#c8a14b') if portal_config and portal_config.get else '#c8a14b' }};
-        --accent: {{ portal_config.get('secondary_color','#c8a14b') if portal_config and portal_config.get else '#c8a14b' }};
-    }
-</style>
+{% block pp_css %}
+  .ann-back {
+    display: inline-flex; align-items: center; gap: 4px; margin-bottom: 16px;
+    color: var(--primary); text-decoration: none !important; font-weight: 600;
+  }
+  .ann-back:hover { text-decoration: underline !important; }
+  .ann-back .ms-icon { font-size: 18px; color: var(--primary); }
+  .ann-detail .pp-rte { max-width: none; }
+  .ann-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; color: var(--text-3); font-size: 13px; }
+  /* !important: applicant_portal.css forces an !important font size on every span */
+  .ann-detail .ann-meta span { font-size: 13px !important; }
+  .ann-detail .ann-meta .ann-tag {
+    font-size: 10px !important; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 1px 8px; border-radius: 10px; background: var(--primary-light); color: var(--primary);
+    line-height: 1.5 !important;
+  }
+  .ann-detail h1 {
+    color: var(--primary); font-size: var(--font-size-heading, 26px);
+    margin: 10px 0 18px; line-height: 1.25;
+  }
+  .ann-image { margin-bottom: 22px; border-radius: 10px; overflow: hidden; }
+  .ann-image img { width: 100%; max-height: 400px; object-fit: cover; display: block; }
+  .ann-event {
+    margin-top: 24px; padding: 16px 18px; border-radius: 10px;
+    background: var(--primary-light); border-left: 3px solid var(--primary);
+  }
+  .ann-event h2 { font-size: var(--font-size-subheading, 18px); margin: 0 0 8px; color: var(--text-1); }
+  .ann-event div { margin-bottom: 4px; }
+  .ann-footer {
+    margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--border);
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  }
+  .ann-hint { margin: 0; color: var(--text-3); font-size: 13px; }
+  .ann-done { margin: 0; color: #065f46; display: flex; align-items: center; gap: 8px; }
+  .ann-done span {
+    display: inline-flex; width: 22px; height: 22px; border-radius: 50%; background: #d1fae5;
+    align-items: center; justify-content: center; font-size: 12px;
+  }
 {% endblock %}
 
-{% block content %}
-<a href="#" onclick="window.history.back(); return false;" style="color:var(--primary);text-decoration:none;display:inline-flex;align-items:center;gap:4px;margin-bottom:20px;">← Back</a>
+{% block pp_header %}
+{% if back_url %}
+<a class="ann-back" href="{{ back_url }}"><span class="ms-icon">arrow_back</span>Back to announcements</a>
+{% else %}
+<a class="ann-back" href="#" onclick="window.history.back(); return false;"><span class="ms-icon">arrow_back</span>Back</a>
+{% endif %}
+{% endblock %}
 
-<div class="detail-section" style="background:#fff;border-radius:12px;padding:32px;box-shadow:0 2px 8px rgba(0,0,0,0.07);">
-    <div style="color:var(--muted);margin-bottom:8px;">
-        {{ frappe.utils.formatdate(announcement.publish_date, "dd MMM yyyy") if announcement.publish_date else '' }}
-        {% if announcement.announcement_type %} · {{ announcement.announcement_type }}{% endif %}
-    </div>
-    
-    <h1 style="color:var(--primary);margin-bottom:20px;">{{ announcement.title }}</h1>
+{% block pp_body %}
+<article class="pp-card ann-detail">
+  <div class="ann-meta">
+    {% if announcement.publish_date %}<span>{{ frappe.utils.formatdate(announcement.publish_date, "dd MMM yyyy") }}</span>{% endif %}
+    {% if announcement.announcement_type %}<span class="ann-tag">{{ announcement.announcement_type }}</span>{% endif %}
+  </div>
 
-    {% if announcement.featured_image %}
-    <div style="margin-bottom:24px;border-radius:8px;overflow:hidden;">
-        <img src="{{ announcement.featured_image }}" alt="{{ announcement.title }}" style="width:100%;max-height:400px;object-fit:cover;">
-    </div>
-    {% endif %}
+  <h1>{{ announcement.title }}</h1>
 
-    <div style="line-height:1.8;">{{ announcement.content | safe }}</div>
-    
-    {% if announcement.event_date or announcement.event_venue %}
-    <div style="margin-top:32px;padding:20px;background:var(--bg);border-radius:8px;border-left:4px solid var(--primary);">
-        <h4 style="margin-bottom:12px;">Event Details</h4>
-        {% if announcement.event_date %}<div style="margin-bottom:4px;"><strong>Date:</strong> {{ frappe.utils.format_datetime(announcement.event_date, "dd MMM yyyy, hh:mm a") }}</div>{% endif %}
-        {% if announcement.event_venue %}<div style="margin-bottom:12px;"><strong>Venue:</strong> {{ announcement.event_venue }}</div>{% endif %}
-        {% if announcement.event_registration_url %}<a href="{{ announcement.event_registration_url }}" target="_blank" class="btn-primary-adm">Register for event</a>{% endif %}
-    </div>
-    {% endif %}
+  {% if announcement.featured_image %}
+  <div class="ann-image"><img src="{{ announcement.featured_image }}" alt="{{ announcement.title }}"></div>
+  {% endif %}
 
-    {% if portal_user_logged_in %}
-    <div id="ann-mark-wrap" style="margin-top:28px;padding-top:24px;border-top:1px solid var(--border,#e5e7eb);">
-        {% if announcement_marked_done %}
-        <p id="ann-mark-status" style="margin:0;color:#065f46;display:flex;align-items:center;gap:8px;">
-            <span style="display:inline-flex;width:22px;height:22px;border-radius:50%;background:#d1fae5;align-items:center;justify-content:center;font-size:12px;">✓</span>
-            Marked as done — removed from your unread list.
-        </p>
-        {% else %}
-        <button type="button" id="ann-mark-done-btn" class="btn-primary-adm" data-ann-name="{{ announcement_id | e }}">Mark as done</button>
-        <p id="ann-mark-feedback" style="display:none;margin:12px 0 0;"></p>
-        {% endif %}
-    </div>
-    {% endif %}
-</div>
+  <div class="pp-rte">{{ (announcement.content or announcement.summary or '') | safe }}</div>
+
+  {% if announcement.event_date or announcement.event_venue %}
+  <div class="ann-event">
+    <h2>Event details</h2>
+    {% if announcement.event_date %}<div><strong>Date:</strong> {{ frappe.utils.format_datetime(announcement.event_date, "dd MMM yyyy, hh:mm a") }}</div>{% endif %}
+    {% if announcement.event_venue %}<div><strong>Venue:</strong> {{ announcement.event_venue }}</div>{% endif %}
+    {% if announcement.event_registration_url %}<a href="{{ announcement.event_registration_url }}" target="_blank" rel="noopener" class="btn-primary-adm" style="margin-top:8px;display:inline-block;">Register for event</a>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if portal_user_logged_in %}
+  {# Opening the page marks it as read (announcement_detail.py); the button toggles it back #}
+  <div class="ann-footer" id="ann-mark-wrap">
+    <button type="button" id="ann-read-toggle" class="btn-outline-adm" data-ann-name="{{ announcement_id | e }}" data-read="1">Mark as unread</button>
+    <p class="ann-hint" id="ann-mark-feedback">This announcement is marked as read.</p>
+  </div>
+  {% endif %}
+</article>
 {% endblock %}
 
 {% block extra_js %}
+{{ super() }}
 <script>
 (function () {
-    var btn = document.getElementById('ann-mark-done-btn');
+    var btn = document.getElementById('ann-read-toggle');
     if (!btn || typeof apiFetch !== 'function') return;
     var annName = btn.getAttribute('data-ann-name');
+    var fb = document.getElementById('ann-mark-feedback');
+
+    function render(isRead) {
+        btn.setAttribute('data-read', isRead ? '1' : '0');
+        btn.textContent = isRead ? 'Mark as unread' : 'Mark as read';
+        if (fb) {
+            fb.style.color = '';
+            fb.textContent = isRead
+                ? 'This announcement is marked as read.'
+                : 'This announcement is back in your unread list.';
+        }
+    }
+
     btn.addEventListener('click', async function () {
-        var fb = document.getElementById('ann-mark-feedback');
+        var makeRead = btn.getAttribute('data-read') !== '1';
         btn.disabled = true;
-        if (fb) { fb.style.display = 'block'; fb.style.color = '#6b7280'; fb.textContent = 'Saving…'; }
+        if (fb) { fb.style.color = ''; fb.textContent = 'Saving…'; }
         try {
-            await apiFetch('slcm.admission.utils.web.mark_portal_announcement_read', { name: annName });
+            var res = await apiFetch(
+                'slcm.admission.utils.web.' + (makeRead ? 'mark_portal_announcement_read' : 'mark_portal_announcement_unread'),
+                { name: annName }
+            );
+            if (!res || !res.success) throw new Error('Could not save. Try again.');
+            render(makeRead);
             if (typeof showToast === 'function') {
-                showToast('Announcement marked as read.', 'success');
+                showToast(makeRead ? 'Marked as read.' : 'Marked as unread.', 'success');
             }
-            var wrap = document.getElementById('ann-mark-wrap');
-            if (wrap) {
-                wrap.innerHTML = '<p id="ann-mark-status" style="margin:0;color:#065f46;display:flex;align-items:center;gap:8px;">' +
-                    '<span style="display:inline-flex;width:22px;height:22px;border-radius:50%;background:#d1fae5;align-items:center;justify-content:center;font-size:12px;">✓</span>' +
-                    'Marked as done — removed from your unread list.</p>';
-            }
+            // Refresh the bell's unread count
+            if (typeof loadPanelData === 'function') loadPanelData();
         } catch (e) {
-            btn.disabled = false;
             var errm = (e && e.message) ? e.message : 'Could not save. Try again.';
-            if (typeof showToast === 'function') {
-                showToast(errm, 'error');
-            }
+            if (typeof showToast === 'function') showToast(errm, 'error');
             if (fb) { fb.style.color = '#dc2626'; fb.textContent = errm; }
+        } finally {
+            btn.disabled = false;
         }
     });
 })();

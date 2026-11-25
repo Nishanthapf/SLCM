@@ -14,7 +14,8 @@
     {{ portal_sidebar_js() }}
 
   The `active` parameter must match one of:
-    'profile', 'applications', 'pace', 'scholarships', 'offer_letter', 'helpdesk', 'change_password'
+    'profile', 'applications', 'pace', 'documents', 'sample_questions', 'announcements',
+    'scholarships', 'offer_letter', 'helpdesk', 'change_password'
 #}
 
 {# ══════════════════════════════════════════════════════════════════════
@@ -253,6 +254,16 @@
       display: flex;
     }
 
+    /* Keep the first menu item clear of the close button */
+    .portal-sidebar-col > nav {
+      margin-top: 40px;
+    }
+
+    /* The navbar's mobile drawer covers the page: hide the sidebar toggle under it */
+    body.adm-drawer-open .mobile-menu-toggle {
+      display: none !important;
+    }
+
     .portal-content-col {
       padding: 70px 16px 40px !important;
     }
@@ -326,6 +337,33 @@
     </a>
     {% endif %}
 
+    {% if sb.show_documents %}
+    <a href="{{ sb.urls.documents }}"
+       class="adm-menu-item {{ 'active' if active == 'documents' else '' }}"
+       title="Documents">
+      <span class="ms-icon">folder_open</span>
+      Documents
+    </a>
+    {% endif %}
+
+    {% if sb.show_sample_questions %}
+    <a href="{{ sb.urls.sample_questions }}"
+       class="adm-menu-item {{ 'active' if active == 'sample_questions' else '' }}"
+       title="Sample Question Papers">
+      <span class="ms-icon">quiz</span>
+      Sample Questions
+    </a>
+    {% endif %}
+
+    {% if sb.show_announcements %}
+    <a href="{{ sb.urls.announcements }}"
+       class="adm-menu-item {{ 'active' if active == 'announcements' else '' }}"
+       title="Announcements">
+      <span class="ms-icon">campaign</span>
+      Announcements
+    </a>
+    {% endif %}
+
     {% if sb.show_admission_items %}
 
     {% if sb.show_scholarships %}
@@ -363,10 +401,12 @@
     </a>
     {% endif %}
 
+    {% if not sb.is_guest %}
     <div class="adm-menu-item danger" onclick="window.doLogout && window.doLogout()" title="Logout">
       <span class="ms-icon" style="color:#dc2626;">logout</span>
       Logout
     </div>
+    {% endif %}
 
   </nav>
 

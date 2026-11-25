@@ -188,6 +188,14 @@
             color: #fff;
         }
 
+        /* Current page's navbar link (Admission on the admission pages) */
+        .adm-nav-links a.active {
+            color: #fff;
+            font-weight: 700;
+            box-shadow: inset 0 -2px 0 #fff;
+            padding-bottom: 4px;
+        }
+
         /* Avatar button hover ring */
         #adm-avatar-btn:hover {
             border-color: rgba(255, 255, 255, 0.7) !important;
@@ -703,6 +711,12 @@
         }
 
         .drawer-link:hover {
+            background: #f8fafc;
+            border-left-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .drawer-link.active {
             background: #f8fafc;
             border-left-color: var(--primary);
             color: var(--primary);
@@ -1399,11 +1413,18 @@
                         'Info': ['#d1fae5', '#065f46'],
                     };
                     var colorPair = colors[annType] || ['var(--primary-light)', 'var(--primary)'];
-                    var initial = (title.charAt(0) || 'N').toUpperCase();
+                    // Announcements: calendar icon; notifications: first letter of the title
+                    var avatarInner = (_panelTab === 'ann')
+                        ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+                          'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+                          '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>' +
+                          '<line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line>' +
+                          '<line x1="3" y1="10" x2="21" y2="10"></line></svg>'
+                        : escPanel((title.charAt(0) || 'N').toUpperCase());
                     avatarHtml = '<div style="width:40px;height:40px;border-radius:50%;' +
                         'background:' + colorPair[0] + ';color:' + colorPair[1] + ';' +
                         'flex-shrink:0;display:flex;align-items:center;justify-content:center;' +
-                        'font-weight:700;font-size:16px;">' + escPanel(initial) + '</div>';
+                        'font-weight:700;font-size:16px;">' + avatarInner + '</div>';
                 }
 
                 var indicator = isUnread
@@ -1541,6 +1562,7 @@
                     drawer.setAttribute('aria-hidden', 'false');
                     overlay.classList.add('open');
                     document.body.style.overflow = 'hidden';
+                    document.body.classList.add('adm-drawer-open');
                 }
             }
             window.closeDrawer = function () {
@@ -1554,6 +1576,7 @@
                 drawer.setAttribute('aria-hidden', 'true');
                 overlay.classList.remove('open');
                 document.body.style.overflow = '';
+                document.body.classList.remove('adm-drawer-open');
             }
             // Close drawer on Escape key
             document.addEventListener('keydown', function (e) {

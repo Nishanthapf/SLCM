@@ -44,6 +44,16 @@ def get_context(context):
 
     _hide_child_table_name_field(context)
 
+    # The form's JS reads the nlsat_portal cookie to disable the Foreign National option the
+    # candidate may not choose: reset it to the candidate's registered portal on every load,
+    # so a stale or edited cookie can't show the wrong one (the server checks it anyway).
+    if frappe.session.user != "Guest":
+        from slcm.admission.utils.nlsat_portal import get_applicant_portal_type, set_portal_cookie
+
+        registered = get_applicant_portal_type()
+        if registered:
+            set_portal_cookie(registered)
+
     # Enforce Applicant DocType permissions
     is_new = frappe.form_dict.name == "new" or not frappe.form_dict.name
     if is_new:
@@ -213,48 +223,18 @@ def get_portal_shell_data():
 
 # ───────────────────────────────────────────────────────────────────
 #  NLSAT PORTAL ↔ APPLICANT TYPE
-#  A candidate who logged in through the Domestic portal (nlsat_portal cookie, set by
-#  /nlsatadmissions/login) may only apply as Domestic, and the International portal
-#  (/nlsat-international/login) only as International. Checked whenever the applicant
-#  type is newly chosen (new application, or a draft that had none) — existing drafts
-#  are left as they are.
+#  A candidate registered on the Domestic portal (User.nlsat_portal) may only apply as an
+#  Indian national, and one on the International portal only as a foreign national. Checked
+#  here for a friendly reply, and on every save in Applicant validate
+#  (nlsat_portal.validate_applicant_portal), which also covers the REST API.
 # ───────────────────────────────────────────────────────────────────
 
 def _portal_applicant_type_error(foriegn_national):
-    """
-    Message refusing `foriegn_national` ("Yes" / "No") for the portal the candidate
-    logged in through, else None. The portal cookie is required; System Users
-    (staff working on the portal) are not restricted.
-    """
-    from slcm.admission.utils.nlsat_portal import DOMESTIC, INTERNATIONAL, get_portal_cookie
+    """Message refusing `foriegn_national` ("Yes" / "No") for the candidate's portal, else None."""
+    from slcm.admission.utils.nlsat_portal import get_portal_applicant_type_error
 
-    user = frappe.session.user
-    if not user or user == "Guest":
-        return None
-    if frappe.db.get_value("User", user, "user_type") == "System User":
-        return None
-
-    portal = get_portal_cookie()
-    if not portal:
-        return _(
-            "We could not identify your admission portal. Please log in again through the "
-            "Domestic or International Admission Portal to continue your application."
-        )
-
-    fn = (foriegn_national or "").strip().lower()
-    if portal == DOMESTIC and fn in ("yes", "true", "1"):
-        return _(
-            "You are currently on the Domestic Admission Portal (for Indian nationals). "
-            "International applicants must apply through the International Admission Portal. "
-            "You cannot submit an international application from this portal."
-        )
-    if portal == INTERNATIONAL and fn in ("no", "false", "0"):
-        return _(
-            "You are currently on the International Admission Portal. Domestic applicants "
-            "must apply through the Domestic Admission Portal. You cannot submit a domestic "
-            "application from this portal."
-        )
-    return None
+    error = get_portal_applicant_type_error(foriegn_national)
+    return _(error) if error else None
 
 
 # ───────────────────────────────────────────────────────────────────

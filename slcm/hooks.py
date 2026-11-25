@@ -539,7 +539,11 @@ doc_events = {
     },
     "Applicant": {
         "before_validate": "slcm.security.files.make_applicant_attachments_private",
-        "validate": "slcm.security.applicant_access.guard_applicant_protected_fields",
+        "validate": [
+            "slcm.security.applicant_access.guard_applicant_protected_fields",
+            # Candidates: Foreign National must match their NLSAT portal (User.nlsat_portal)
+            "slcm.admission.utils.nlsat_portal.validate_applicant_portal",
+        ],
         "on_update": "slcm.admission.api.profile.sync_applicant_to_user",
         "on_submit": "slcm.admission.events.on_applicant_submit",
         "on_cancel": "slcm.admission.events.on_applicant_cancel"
@@ -672,7 +676,12 @@ on_logout = [
     "slcm.utils.activity_log.on_logout",
 ]
 # /login (slcm/www/login.py): faculty and students may only sign in with Google
-on_login = ["slcm.utils.login_page.enforce_password_login_policy"]
+on_login = [
+    "slcm.utils.login_page.enforce_password_login_policy",
+    # NLSAT login pages: candidates sign in only on their own portal (Indian Nationals /
+    # International); PACE-only applicants are refused there
+    "slcm.admission.utils.nlsat_portal.enforce_login_portal",
+]
 on_session_creation = [
     # Google sign-ins: portal switched on, allowed domain, link Faculty / Student Master
     "slcm.utils.login_page.enforce_google_login",
