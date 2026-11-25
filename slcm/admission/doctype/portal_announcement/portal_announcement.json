@@ -95,7 +95,8 @@
    "description": "Short preview text shown on card (max 200 characters)",
    "fieldname": "summary",
    "fieldtype": "Text Editor",
-   "label": "Summary"
+   "label": "Summary",
+   "reqd": 1
   },
   {
    "fieldname": "featured_image",
