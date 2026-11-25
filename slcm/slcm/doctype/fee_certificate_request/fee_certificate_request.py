@@ -482,11 +482,11 @@ def _ordered_components(components):
 
 
 def _balance(year):
-	"""What is left to pay for one certificate year (column): its fees less scholarship
-	(shown or not) and payments."""
-	return max(
-		sum(year["amounts"].values()) - year["waiver"] - flt(year.get("hidden_waiver")) - flt(year["paid"]), 0
-	)
+	"""What is left to pay for one certificate year (column): what is still outstanding on
+	the year's own demands, or, for a year with no demands yet, its fees less scholarship."""
+	if year.get("has_demands"):
+		return max(flt(year.get("outstanding")), 0)
+	return max(sum(year["amounts"].values()) - year["waiver"] - flt(year["paid"]), 0)
 
 
 def _year_amounts(totals, certificate_type, has_scholarship):
@@ -605,9 +605,7 @@ def get_fee_certificate_context(request_name):
 				"start_year": getdate(ay.year_start_date).year if ay and ay.year_start_date else cint((row.year_label or "")[:4]),
 				"amounts": amounts,
 				"waiver": waiver,
-				# Scholarship on the year's demands that the table doesn't show (box not ticked),
-				# still taken off the balance.
-				"hidden_waiver": 0 if waiver else sum(a["waiver"] for a in totals.values()),
+				"outstanding": sum(a["outstanding"] for a in totals.values()),
 				"paid": sum(a["paid"] for a in totals.values()),
 				"has_demands": bool(totals),
 			}
@@ -622,27 +620,30 @@ def get_fee_certificate_context(request_name):
 		return group(component) in ONE_TIME_GROUPS or component_types.get(component) in ONE_TIME_TYPES
 
 	if certificate_type == MULTI_YEAR:
-		# The fee structure for every programme year: from the current Academic Year on
-		# (and in any year with no demands at all), a per-annum fee (Tuition, Housing,
-		# Mess) the year doesn't have yet, and the scholarship, are taken from the latest
-		# earlier year that has them. Past years show only what was charged; one-time
-		# fees are never repeated.
+		# Fee structure: every column shows the same per-annum fees (Tuition, Housing,
+		# Mess) and scholarship, taken from the current Academic Year's demands (or the
+		# latest year before it that has them). One-time and other fees show only in the
+		# year they were charged. Amount paid / Balance payable stay each year's own.
 		current_ay = get_current_academic_year()
-		current_start = (
-			getdate(frappe.db.get_value("Academic Year", current_ay, "year_start_date")).year
-			if current_ay and frappe.db.get_value("Academic Year", current_ay, "year_start_date")
-			else None
-		)
-		last_amounts, last_waiver = {}, 0
+		current_start = frappe.db.get_value("Academic Year", current_ay, "year_start_date") if current_ay else None
+		current_start = getdate(current_start).year if current_start else None
+		reference, reference_waiver = {}, 0
 		for y in years:
-			fill = not y["amounts"] or (current_start and y["start_year"] >= current_start)
-			if fill:
-				for component, amount in last_amounts.items():
-					y["amounts"].setdefault(component, amount)
-				if not y["waiver"] and request.has_scholarship:
-					y["waiver"] = last_waiver
-			last_amounts.update({c: a for c, a in y["amounts"].items() if group(c) in PER_ANNUM_LABELS and a})
-			last_waiver = y["waiver"] or last_waiver
+			if current_start and y["start_year"] > current_start:
+				break
+			per_annum = {c: a for c, a in y["amounts"].items() if group(c) in PER_ANNUM_LABELS and a}
+			if per_annum:
+				# Replace by group, so a renamed component doesn't appear twice.
+				groups = {group(c) for c in per_annum}
+				reference = {c: a for c, a in reference.items() if group(c) not in groups}
+				reference.update(per_annum)
+			if y["waiver"]:
+				reference_waiver = y["waiver"]
+		for y in years:
+			y["amounts"] = {c: a for c, a in y["amounts"].items() if group(c) not in PER_ANNUM_LABELS}
+			y["amounts"].update(reference)
+			if request.has_scholarship:
+				y["waiver"] = reference_waiver
 	if certificate_type != SINGLE_YEAR_RECEIPT:
 		# Admission Fee belongs to the first year only (programme_year 0 = unknown: keep as is).
 		for y in years:
