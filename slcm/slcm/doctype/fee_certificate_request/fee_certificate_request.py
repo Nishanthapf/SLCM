@@ -207,8 +207,15 @@ def academic_year_rows(student_doc, from_academic_year, purpose=None):
 		for ay in frappe.get_all("Academic Year", fields=["name", "year_start_date"])
 		if ay.year_start_date
 	}
+	# At least up to the chosen year and the current Academic Year, so a student is never
+	# cut off before the year they are in (e.g. a programme with no duration recorded).
+	needed = getdate(first_year.year_start_date).year - start + 1
+	current_ay = get_current_academic_year()
+	current_start = frappe.db.get_value("Academic Year", current_ay, "year_start_date") if current_ay else None
+	if current_start:
+		needed = max(needed, getdate(current_start).year - start + 1)
 	rows = []
-	for i in range(_programme_duration(student_doc) or 1):
+	for i in range(max(_programme_duration(student_doc), needed, 1)):
 		year = start + i
 		rows.append(
 			{
@@ -253,22 +260,47 @@ def _short_ay_label(academic_year_doc):
 	return f"{year}-{str(year + 1)[-2:]}"
 
 
+def _years_in_text(text):
+	"""Years from "5", "Five", "5 years" or a programme name such as "5-Year B.A., LL.B.
+	(Hons.)", "1- Year LL.M." or "Bridge Course- Two Year"; 0 if none."""
+	import re
+
+	text = (text or "").strip().lower()
+	if not text:
+		return 0
+	first = text.split()[0]
+	if first in DURATION_WORDS:
+		return DURATION_WORDS.index(first) + 1
+	if cint(first):
+		return cint(first)
+	match = re.search(r"(\d+|" + "|".join(DURATION_WORDS) + r")\s*-?\s*years?\b", text)
+	if not match:
+		return 0
+	value = match.group(1)
+	return cint(value) if value.isdigit() else DURATION_WORDS.index(value) + 1
+
+
 def _programme_duration(student):
-	"""Programme length in years, from Programme Master's "Programme duration
-	(in years)" (free text: "5" or "Five"), falling back to Programme.program_duration."""
-	master, programme_years = student.master_programme, 0
+	"""Programme length in years: Programme Master "Programme duration (in years)"
+	("5" or "Five"), else Programme.program_duration, else the years in the programme's
+	name ("5-Year B.A., LL.B. (Hons.)"), since the duration fields are often left blank."""
+	master, programme_years, name = student.master_programme, 0, None
 	if student.programme_of_study:
 		name, programme_years = frappe.db.get_value(
 			"Programme", student.programme_of_study, ["program_name", "program_duration"]
 		) or (None, 0)
 		master = master or name
 	if master:
-		text = (frappe.db.get_value("Programme Master", master, "programme_duration_in_years") or "").strip().lower()
-		if text.split() and text.split()[0] in DURATION_WORDS:
-			return DURATION_WORDS.index(text.split()[0]) + 1
-		if cint(text.split()[0] if text.split() else 0):
-			return cint(text.split()[0])
-	return cint(programme_years)
+		years = _years_in_text(frappe.db.get_value("Programme Master", master, "programme_duration_in_years"))
+		if years:
+			return years
+	if cint(programme_years):
+		return cint(programme_years)
+	for text in (master, name, student.programme_of_study):
+		years = _years_in_text(text)
+		if years:
+			return years
+	return 0
 
 
 def _year_offset(student, academic_year_doc):
@@ -543,9 +575,10 @@ def get_fee_certificate_context(request_name):
 	certificate_type = request.certificate_type or (template and template.certificate_type)
 
 	certificate_ay = request.from_academic_year or get_current_academic_year()
-	year_rows = request.years or [
-		frappe._dict(row) for row in academic_year_rows(student, certificate_ay, request.purpose)
-	]
+	computed_rows = [frappe._dict(row) for row in academic_year_rows(student, certificate_ay, request.purpose)]
+	# Saved year rows, unless the programme now has more years than were saved (e.g. a
+	# request made while the programme's duration was unknown).
+	year_rows = request.years if len(request.years or []) >= len(computed_rows) else computed_rows
 
 	seen, unique_rows = set(), []
 	for row in year_rows:
